@@ -1,0 +1,143 @@
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { callApi, endpoints, httpMethods } from '../../utils/axios';
+
+// Async thunks
+export const getAssistants = createAsyncThunk(
+  'assistant/getAssistants',
+  async ({ page = 1, limit = 10, fetchAll, status, name }, { rejectWithValue }) => {
+    try {
+      const fetchAllParam = fetchAll ? `&fetchAll=${fetchAll}` : '';
+      const statusParam = status && status !== 'all' ? `&status=${status}` : '';
+      const nameParam = name ? `&name=${encodeURIComponent(name)}` : '';
+
+      const url = `${endpoints.assistants.getAssistants}?page=${page}&limit=${limit}${fetchAllParam}${statusParam}${nameParam}`;
+      const response = await callApi(url, httpMethods.GET);
+
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to fetch assistants');
+      }
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const getAssistant = createAsyncThunk(
+  'assistant/getAssistant',
+  async (id, { rejectWithValue }) => {
+    try {
+      const url = `${endpoints.assistants.getAssistant}/${id}`;
+      const response = await callApi(url, httpMethods.GET);
+
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to fetch assistant');
+      }
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const getAssistantStats = createAsyncThunk(
+  'assistant/getAssistantStats',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await callApi(endpoints.assistants.getAssistantStats, httpMethods.GET);
+
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to fetch assistant stats');
+      }
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// Initial state
+const initialState = {
+  assistants: [],
+  selectedAssistant: null,
+  assistantsStatus: 'idle',
+  assistantsError: null,
+  assistantStatus: 'idle',
+  assistantError: null,
+  statsStatus: 'idle',
+  statsError: null,
+  totalAssistants: 0,
+  activeAssistants: 0,
+  inactiveAssistants: 0,
+  totalResults: 0,
+};
+
+// Slice
+const assistantSlice = createSlice({
+  name: 'assistant',
+  initialState,
+  reducers: {
+    setSelectedAssistant: (state, action) => {
+      state.selectedAssistant = action.payload;
+    },
+    clearAssistantError: (state) => {
+      state.assistantsError = null;
+      state.assistantError = null;
+      state.statsError = null;
+    },
+  },
+  extraReducers: (builder) => {
+    // Get Assistants
+    builder
+      .addCase(getAssistants.pending, (state) => {
+        state.assistantsStatus = 'loading';
+        state.assistantsError = null;
+      })
+      .addCase(getAssistants.fulfilled, (state, action) => {
+        state.assistantsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.assistants = data.assistants || [];
+        state.totalResults = data.totalResults || 0;
+      })
+      .addCase(getAssistants.rejected, (state, action) => {
+        state.assistantsStatus = 'failed';
+        state.assistantsError = action.payload;
+      });
+
+    // Get Assistant
+    builder
+      .addCase(getAssistant.pending, (state) => {
+        state.assistantStatus = 'loading';
+        state.assistantError = null;
+      })
+      .addCase(getAssistant.fulfilled, (state, action) => {
+        state.assistantStatus = 'succeeded';
+        state.selectedAssistant = action.payload.data || action.payload;
+      })
+      .addCase(getAssistant.rejected, (state, action) => {
+        state.assistantStatus = 'failed';
+        state.assistantError = action.payload;
+      });
+
+    // Get Assistant Stats
+    builder
+      .addCase(getAssistantStats.pending, (state) => {
+        state.statsStatus = 'loading';
+        state.statsError = null;
+      })
+      .addCase(getAssistantStats.fulfilled, (state, action) => {
+        state.statsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.totalAssistants = data.total || 0;
+        state.activeAssistants = data.active || 0;
+        state.inactiveAssistants = data.inactive || 0;
+      })
+      .addCase(getAssistantStats.rejected, (state, action) => {
+        state.statsStatus = 'failed';
+        state.statsError = action.payload;
+      });
+  },
+});
+
+export const { setSelectedAssistant, clearAssistantError } = assistantSlice.actions;
+export default assistantSlice.reducer;

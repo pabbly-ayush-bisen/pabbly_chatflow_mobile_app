@@ -1,0 +1,45 @@
+// Typography configuration matching MUI Minimal Theme
+export const typography = {
+  fontFamily: {
+    primary: 'System', // Will use system default, can be customized
+    secondary: 'System',
+  },
+  fontWeights: {
+    light: '300',
+    regular: '400',
+    medium: '500',
+    semiBold: '600',
+    bold: '700',
+    extraBold: '800',
+  },
+  fontSizes: {
+    h1: 40,
+    h2: 32,
+    h3: 24,
+    h4: 20,
+    h5: 18,
+    h6: 17,
+    subtitle1: 16,
+    subtitle2: 14,
+    body1: 16,
+    body2: 14,
+    caption: 12,
+    overline: 12,
+    button: 14,
+  },
+  lineHeights: {
+    h1: 1.25,
+    h2: 1.33,
+    h3: 1.5,
+    h4: 1.5,
+    h5: 1.5,
+    h6: 1.55,
+    subtitle1: 1.5,
+    subtitle2: 1.57,
+    body1: 1.5,
+    body2: 1.57,
+    caption: 1.5,
+    overline: 1.5,
+    button: 1.71,
+  },
+};
