@@ -8,8 +8,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  TextInput as RNTextInput,
 } from 'react-native';
-import { Text, ActivityIndicator, TextInput } from 'react-native-paper';
+import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import * as ImagePicker from 'expo-image-picker';
@@ -66,6 +67,7 @@ const AddQuickReplyModal = ({
     setFileName('');
     setSelectedFile(null);
     setScrollOffset(0);
+    setShowTypeSelector(false);
   }, []);
 
   const handleClose = () => {
@@ -188,352 +190,342 @@ const AddQuickReplyModal = ({
     }
   };
 
+  const handleSelectType = (key) => {
+    if (key !== messageType) {
+      setHeaderFileURL('');
+      setFileName('');
+      setSelectedFile(null);
+    }
+    setMessageType(key);
+    setShowTypeSelector(false);
+  };
+
   const getTypeConfig = (type) => {
     return MESSAGE_TYPES[type] || MESSAGE_TYPES.text;
   };
 
   const typeConfig = getTypeConfig(messageType);
 
-  // Type Selector Modal
-  const renderTypeSelector = () => (
+  return (
     <Modal
-      isVisible={showTypeSelector}
-      onBackdropPress={() => setShowTypeSelector(false)}
-      onSwipeComplete={() => setShowTypeSelector(false)}
-      swipeDirection={['down']}
+      isVisible={visible}
+      onBackdropPress={handleClose}
+      onSwipeComplete={handleClose}
+      swipeDirection={isSaving ? [] : ['down']}
       style={styles.bottomModal}
+      propagateSwipe={true}
+      scrollTo={handleScrollTo}
+      scrollOffset={scrollOffset}
+      scrollOffsetMax={400}
       backdropOpacity={0.5}
       animationIn="slideInUp"
       animationOut="slideOutDown"
+      avoidKeyboard={true}
     >
-      <View style={styles.typeSelectorSheet}>
-        <View style={styles.handleBar} />
-        <Text style={styles.typeSelectorTitle}>Select Message Type</Text>
-        <View style={styles.typeOptionsGrid}>
-          {Object.entries(MESSAGE_TYPES).map(([key, config]) => (
-            <TouchableOpacity
-              key={key}
-              style={[
-                styles.typeOption,
-                messageType === key && { backgroundColor: config.bg, borderColor: config.color },
-              ]}
-              onPress={() => {
-                if (key !== messageType) {
-                  setHeaderFileURL('');
-                  setFileName('');
-                  setSelectedFile(null);
-                }
-                setMessageType(key);
-                setShowTypeSelector(false);
-              }}
-            >
-              <View style={[styles.typeOptionIcon, { backgroundColor: config.bg }]}>
-                <Icon name={config.icon} size={24} color={config.color} />
-              </View>
-              <Text style={[
-                styles.typeOptionText,
-                messageType === key && { color: config.color, fontWeight: '600' },
-              ]}>
-                {config.label}
-              </Text>
-              {messageType === key && (
-                <Icon name="check-circle" size={18} color={config.color} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    </Modal>
-  );
-
-  return (
-    <>
-      <Modal
-        isVisible={visible}
-        onBackdropPress={handleClose}
-        onSwipeComplete={handleClose}
-        swipeDirection={isSaving ? [] : ['down']}
-        style={styles.bottomModal}
-        propagateSwipe={true}
-        scrollTo={handleScrollTo}
-        scrollOffset={scrollOffset}
-        scrollOffsetMax={400}
-        backdropOpacity={0.5}
-        animationIn="slideInUp"
-        animationOut="slideOutDown"
-        avoidKeyboard={true}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardView}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.keyboardView}
-        >
-          <View style={styles.formSheet}>
-            {/* Handle Bar */}
-            <View style={styles.handleBar} />
+        <View style={styles.formSheet}>
+          {/* Handle Bar */}
+          <View style={styles.handleBar} />
 
-            {/* Header */}
-            <View style={styles.formHeader}>
-              <View style={styles.formHeaderLeft}>
-                <View style={styles.formHeaderIcon}>
-                  <Icon name="lightning-bolt" size={24} color={colors.primary.main} />
-                </View>
-                <View>
-                  <Text style={styles.formHeaderTitle}>Add Quick Reply</Text>
-                  <Text style={styles.formHeaderSubtitle}>Create a new quick reply shortcut</Text>
-                </View>
+          {/* Header */}
+          <View style={styles.formHeader}>
+            <View style={styles.formHeaderLeft}>
+              <View style={styles.formHeaderIcon}>
+                <Icon name="lightning-bolt" size={24} color={colors.primary.main} />
               </View>
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.formCloseBtn}
-                disabled={isSaving}
-              >
-                <Icon name="close" size={24} color={colors.text.secondary} />
-              </TouchableOpacity>
+              <View>
+                <Text style={styles.formHeaderTitle}>Add Quick Reply</Text>
+                <Text style={styles.formHeaderSubtitle}>Create a new quick reply shortcut</Text>
+              </View>
             </View>
-
-            {/* Form Content */}
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.formScrollView}
-              contentContainerStyle={styles.formScrollContent}
-              onScroll={handleOnScroll}
-              scrollEventThrottle={16}
-              showsVerticalScrollIndicator={true}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled={true}
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.formCloseBtn}
+              disabled={isSaving}
             >
-              {/* Shortcut Input */}
-              <View style={styles.formGroup}>
-                <View style={styles.labelRow}>
-                  <Icon name="slash-forward" size={18} color={colors.primary.main} />
-                  <Text style={styles.formLabel}>
-                    Shortcut <Text style={styles.required}>*</Text>
-                  </Text>
-                </View>
-                <View style={styles.shortcutInputRow}>
-                  <View style={styles.shortcutPrefixBox}>
-                    <Text style={styles.shortcutPrefix}>/</Text>
-                  </View>
-                  <TextInput
-                    value={shortcut}
-                    onChangeText={(text) => setShortcut(text.replace(/\s/g, ''))}
-                    placeholder="hello, thanks, welcome"
-                    placeholderTextColor={colors.text.tertiary}
-                    style={styles.shortcutTextInput}
-                    mode="outlined"
-                    outlineStyle={styles.inputOutline}
-                    disabled={isSaving}
-                    autoCapitalize="none"
-                  />
-                </View>
-                <Text style={styles.formHint}>
-                  Type "/" followed by this shortcut in chat to insert the reply.
+              <Icon name="close" size={24} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Form Content */}
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.formScrollView}
+            contentContainerStyle={styles.formScrollContent}
+            onScroll={handleOnScroll}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
+          >
+            {/* Shortcut Input */}
+            <View style={styles.formGroup}>
+              <View style={styles.labelRow}>
+                <Icon name="slash-forward" size={18} color={colors.primary.main} />
+                <Text style={styles.formLabel}>
+                  Shortcut <Text style={styles.required}>*</Text>
                 </Text>
               </View>
+              <View style={styles.shortcutInputContainer}>
+                <View style={styles.shortcutPrefixBox}>
+                  <Text style={styles.shortcutPrefix}>/</Text>
+                </View>
+                <RNTextInput
+                  value={shortcut}
+                  onChangeText={(text) => setShortcut(text.replace(/\s/g, ''))}
+                  placeholder="hello, thanks, welcome"
+                  placeholderTextColor={colors.text.tertiary}
+                  style={styles.shortcutInput}
+                  editable={!isSaving}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              <Text style={styles.formHint}>
+                Type "/" followed by this shortcut in chat to insert the reply.
+              </Text>
+            </View>
 
-              {/* Message Type */}
+            {/* Message Type */}
+            <View style={styles.formGroup}>
+              <View style={styles.labelRow}>
+                <Icon name="format-list-bulleted-type" size={18} color={colors.primary.main} />
+                <Text style={styles.formLabel}>Message Type</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.typeSelectorBtn}
+                onPress={() => setShowTypeSelector(!showTypeSelector)}
+                activeOpacity={0.7}
+                disabled={isSaving}
+              >
+                <View style={[styles.typeSelectorIcon, { backgroundColor: typeConfig.bg }]}>
+                  <Icon name={typeConfig.icon} size={20} color={typeConfig.color} />
+                </View>
+                <Text style={styles.typeSelectorBtnText}>{typeConfig.label}</Text>
+                <Icon
+                  name={showTypeSelector ? "chevron-up" : "chevron-down"}
+                  size={22}
+                  color={colors.text.tertiary}
+                />
+              </TouchableOpacity>
+
+              {/* Inline Type Options */}
+              {showTypeSelector && (
+                <View style={styles.typeOptionsContainer}>
+                  {Object.entries(MESSAGE_TYPES).map(([key, config]) => (
+                    <TouchableOpacity
+                      key={key}
+                      style={[
+                        styles.typeOption,
+                        messageType === key && { backgroundColor: config.bg, borderColor: config.color },
+                      ]}
+                      onPress={() => handleSelectType(key)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.typeOptionIcon, { backgroundColor: config.bg }]}>
+                        <Icon name={config.icon} size={22} color={config.color} />
+                      </View>
+                      <Text style={[
+                        styles.typeOptionText,
+                        messageType === key && { color: config.color, fontWeight: '600' },
+                      ]}>
+                        {config.label}
+                      </Text>
+                      {messageType === key && (
+                        <Icon name="check-circle" size={18} color={config.color} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Message Input */}
+            {(messageType === 'text' || messageType === 'image' || messageType === 'video') && (
               <View style={styles.formGroup}>
                 <View style={styles.labelRow}>
-                  <Icon name="format-list-bulleted-type" size={18} color={colors.primary.main} />
-                  <Text style={styles.formLabel}>Message Type</Text>
+                  <Icon name="message-text-outline" size={18} color={colors.primary.main} />
+                  <Text style={styles.formLabel}>
+                    {messageType === 'text' ? 'Message' : 'Caption'}
+                    {messageType === 'text' && <Text style={styles.required}> *</Text>}
+                  </Text>
+                  {messageType !== 'text' && (
+                    <View style={styles.optionalBadge}>
+                      <Text style={styles.optionalText}>Optional</Text>
+                    </View>
+                  )}
                 </View>
-                <TouchableOpacity
-                  style={styles.typeSelectorBtn}
-                  onPress={() => setShowTypeSelector(true)}
-                  activeOpacity={0.7}
-                  disabled={isSaving}
-                >
-                  <View style={[styles.typeSelectorIcon, { backgroundColor: typeConfig.bg }]}>
-                    <Icon name={typeConfig.icon} size={20} color={typeConfig.color} />
-                  </View>
-                  <Text style={styles.typeSelectorBtnText}>{typeConfig.label}</Text>
-                  <Icon name="chevron-down" size={22} color={colors.text.tertiary} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Message Input */}
-              {(messageType === 'text' || messageType === 'image' || messageType === 'video') && (
-                <View style={styles.formGroup}>
-                  <View style={styles.labelRow}>
-                    <Icon name="message-text-outline" size={18} color={colors.primary.main} />
-                    <Text style={styles.formLabel}>
-                      {messageType === 'text' ? 'Message' : 'Caption'}
-                      {messageType === 'text' && <Text style={styles.required}> *</Text>}
-                    </Text>
-                    {messageType !== 'text' && (
-                      <View style={styles.optionalBadge}>
-                        <Text style={styles.optionalText}>Optional</Text>
-                      </View>
-                    )}
-                  </View>
-                  <TextInput
+                <View style={styles.messageInputContainer}>
+                  <RNTextInput
                     value={message}
                     onChangeText={setMessage}
                     placeholder="Type your message here..."
                     placeholderTextColor={colors.text.tertiary}
-                    style={styles.messageTextInput}
-                    mode="outlined"
+                    style={styles.messageInput}
                     multiline
                     numberOfLines={4}
-                    outlineStyle={styles.inputOutline}
-                    disabled={isSaving}
+                    textAlignVertical="top"
+                    editable={!isSaving}
                   />
-                  <Text style={styles.formHint}>
-                    Use *bold* and _italic_ for text formatting.
+                </View>
+                <Text style={styles.formHint}>
+                  Use *bold* and _italic_ for text formatting.
+                </Text>
+              </View>
+            )}
+
+            {/* File Upload Section */}
+            {messageType !== 'text' && (
+              <View style={styles.formGroup}>
+                <View style={styles.labelRow}>
+                  <Icon name="cloud-upload-outline" size={18} color={colors.primary.main} />
+                  <Text style={styles.formLabel}>
+                    Upload {typeConfig.label} <Text style={styles.required}>*</Text>
                   </Text>
                 </View>
-              )}
 
-              {/* File Upload Section */}
-              {messageType !== 'text' && (
-                <View style={styles.formGroup}>
-                  <View style={styles.labelRow}>
-                    <Icon name="cloud-upload-outline" size={18} color={colors.primary.main} />
-                    <Text style={styles.formLabel}>
-                      Upload {typeConfig.label} <Text style={styles.required}>*</Text>
-                    </Text>
-                  </View>
-
-                  {/* URL Input */}
-                  <TextInput
+                {/* URL Input */}
+                <View style={styles.urlInputContainer}>
+                  <Icon name="link" size={20} color={colors.text.tertiary} style={styles.urlIcon} />
+                  <RNTextInput
                     value={headerFileURL}
                     onChangeText={setHeaderFileURL}
                     placeholder={`Paste ${typeConfig.label.toLowerCase()} URL here`}
                     placeholderTextColor={colors.text.tertiary}
-                    style={styles.urlTextInput}
-                    mode="outlined"
-                    outlineStyle={styles.inputOutline}
-                    disabled={isSaving || !!selectedFile}
-                    left={<TextInput.Icon icon="link" color={colors.text.tertiary} />}
+                    style={styles.urlInput}
+                    editable={!isSaving && !selectedFile}
+                    autoCapitalize="none"
+                    autoCorrect={false}
                   />
+                </View>
 
-                  <View style={styles.dividerRow}>
-                    <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>or</Text>
-                    <View style={styles.dividerLine} />
-                  </View>
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
 
-                  {/* Upload Button */}
-                  <TouchableOpacity
-                    style={[
-                      styles.uploadButton,
-                      (selectedFile || headerFileURL) && styles.uploadButtonWithFile,
-                    ]}
-                    onPress={handlePickFile}
-                    disabled={isSaving || isUploading}
-                    activeOpacity={0.7}
-                  >
-                    {isUploading ? (
-                      <ActivityIndicator size="small" color={colors.primary.main} />
-                    ) : (
-                      <>
-                        <View style={[styles.uploadIconContainer, { backgroundColor: typeConfig.bg }]}>
-                          <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
-                        </View>
-                        <View style={styles.uploadTextContainer}>
-                          <Text style={styles.uploadButtonTitle}>
-                            {selectedFile ? 'Change File' : `Upload ${typeConfig.label}`}
-                          </Text>
-                          <Text style={styles.uploadButtonHint}>
-                            {messageType === 'image' && 'JPG, PNG, GIF up to 5MB'}
-                            {messageType === 'video' && 'MP4, MOV up to 16MB'}
-                            {messageType === 'audio' && 'MP3, WAV, OGG up to 16MB'}
-                            {messageType === 'file' && 'PDF, DOC, XLS up to 100MB'}
-                          </Text>
-                        </View>
-                        <Icon name="chevron-right" size={22} color={colors.text.tertiary} />
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  {/* File Preview Card */}
-                  {(selectedFile || headerFileURL) && (
-                    <View style={styles.filePreviewCard}>
-                      <View style={[styles.filePreviewIcon, { backgroundColor: typeConfig.bg }]}>
-                        {messageType === 'image' && headerFileURL ? (
-                          <Image
-                            source={{ uri: headerFileURL }}
-                            style={styles.filePreviewThumb}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
-                        )}
+                {/* Upload Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.uploadButton,
+                    (selectedFile || headerFileURL) && styles.uploadButtonWithFile,
+                  ]}
+                  onPress={handlePickFile}
+                  disabled={isSaving || isUploading}
+                  activeOpacity={0.7}
+                >
+                  {isUploading ? (
+                    <ActivityIndicator size="small" color={colors.primary.main} />
+                  ) : (
+                    <>
+                      <View style={[styles.uploadIconContainer, { backgroundColor: typeConfig.bg }]}>
+                        <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
                       </View>
-                      <View style={styles.filePreviewInfo}>
-                        <Text style={styles.filePreviewName} numberOfLines={1}>
-                          {fileName || `${typeConfig.label} file`}
+                      <View style={styles.uploadTextContainer}>
+                        <Text style={styles.uploadButtonTitle}>
+                          {selectedFile ? 'Change File' : `Upload ${typeConfig.label}`}
                         </Text>
-                        <Text style={styles.filePreviewType}>
-                          {typeConfig.label} file selected
+                        <Text style={styles.uploadButtonHint}>
+                          {messageType === 'image' && 'JPG, PNG, GIF up to 5MB'}
+                          {messageType === 'video' && 'MP4, MOV up to 16MB'}
+                          {messageType === 'audio' && 'MP3, WAV, OGG up to 16MB'}
+                          {messageType === 'file' && 'PDF, DOC, XLS up to 100MB'}
                         </Text>
                       </View>
-                      <TouchableOpacity
-                        onPress={handleClearFile}
-                        style={styles.fileRemoveBtn}
-                        activeOpacity={0.7}
-                        disabled={isSaving}
-                      >
-                        <Icon name="close-circle" size={22} color={colors.error.main} />
-                      </TouchableOpacity>
-                    </View>
+                      <Icon name="chevron-right" size={22} color={colors.text.tertiary} />
+                    </>
                   )}
+                </TouchableOpacity>
 
-                  {/* File Name for document type */}
-                  {messageType === 'file' && headerFileURL && (
-                    <View style={styles.fileNameInputGroup}>
-                      <View style={styles.labelRow}>
-                        <Icon name="file-document-edit-outline" size={18} color={colors.primary.main} />
-                        <Text style={styles.formLabel}>Display Name</Text>
-                      </View>
-                      <TextInput
+                {/* File Preview Card */}
+                {(selectedFile || headerFileURL) && (
+                  <View style={styles.filePreviewCard}>
+                    <View style={[styles.filePreviewIcon, { backgroundColor: typeConfig.bg }]}>
+                      {messageType === 'image' && headerFileURL ? (
+                        <Image
+                          source={{ uri: headerFileURL }}
+                          style={styles.filePreviewThumb}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
+                      )}
+                    </View>
+                    <View style={styles.filePreviewInfo}>
+                      <Text style={styles.filePreviewName} numberOfLines={1}>
+                        {fileName || `${typeConfig.label} file`}
+                      </Text>
+                      <Text style={styles.filePreviewType}>
+                        {typeConfig.label} file selected
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={handleClearFile}
+                      style={styles.fileRemoveBtn}
+                      activeOpacity={0.7}
+                      disabled={isSaving}
+                    >
+                      <Icon name="close-circle" size={22} color={colors.error.main} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* File Name for document type */}
+                {messageType === 'file' && headerFileURL && (
+                  <View style={styles.fileNameInputGroup}>
+                    <View style={styles.labelRow}>
+                      <Icon name="file-document-edit-outline" size={18} color={colors.primary.main} />
+                      <Text style={styles.formLabel}>Display Name</Text>
+                    </View>
+                    <View style={styles.urlInputContainer}>
+                      <RNTextInput
                         value={fileName}
                         onChangeText={setFileName}
                         placeholder="File display name"
                         placeholderTextColor={colors.text.tertiary}
-                        style={styles.urlTextInput}
-                        mode="outlined"
-                        outlineStyle={styles.inputOutline}
-                        disabled={isSaving}
+                        style={[styles.urlInput, { paddingLeft: 16 }]}
+                        editable={!isSaving}
                       />
                     </View>
-                  )}
-                </View>
-              )}
-            </ScrollView>
-
-            {/* Action Buttons */}
-            <View style={styles.formActionContainer}>
-              <TouchableOpacity
-                style={styles.formCancelBtn}
-                onPress={handleClose}
-                disabled={isSaving}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.formCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.formSaveBtn, isSaving && styles.formSaveBtnDisabled]}
-                onPress={handleSave}
-                disabled={isSaving}
-                activeOpacity={0.8}
-              >
-                {isSaving ? (
-                  <ActivityIndicator size="small" color={colors.common.white} />
-                ) : (
-                  <>
-                    <Icon name="plus" size={18} color={colors.common.white} />
-                    <Text style={styles.formSaveText}>Create</Text>
-                  </>
+                  </View>
                 )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+              </View>
+            )}
+          </ScrollView>
 
-      {renderTypeSelector()}
-    </>
+          {/* Action Buttons */}
+          <View style={styles.formActionContainer}>
+            <TouchableOpacity
+              style={styles.formCancelBtn}
+              onPress={handleClose}
+              disabled={isSaving}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.formCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.formSaveBtn, isSaving && styles.formSaveBtnDisabled]}
+              onPress={handleSave}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color={colors.common.white} />
+              ) : (
+                <>
+                  <Icon name="plus" size={18} color={colors.common.white} />
+                  <Text style={styles.formSaveText}>Create</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 };
 
@@ -554,48 +546,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 12,
     marginBottom: 8,
-  },
-
-  // Type Selector Sheet
-  typeSelectorSheet: {
-    backgroundColor: colors.common.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-  },
-  typeSelectorTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text.primary,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  typeOptionsGrid: {
-    gap: 8,
-  },
-  typeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.grey[200],
-    gap: 14,
-  },
-  typeOptionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  typeOptionText: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.text.primary,
-    fontWeight: '500',
   },
 
   // Form Sheet
@@ -680,6 +630,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
+    marginLeft: 'auto',
   },
   optionalText: {
     fontSize: 11,
@@ -691,39 +642,38 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     marginTop: 6,
   },
-  inputOutline: {
-    borderRadius: 12,
-    borderColor: colors.grey[300],
-  },
 
-  // Shortcut Input
-  shortcutInputRow: {
+  // Shortcut Input - Fixed UI
+  shortcutInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.grey[300],
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: colors.common.white,
   },
   shortcutPrefixBox: {
-    width: 44,
-    height: 54,
+    width: 48,
+    height: 52,
     backgroundColor: colors.grey[100],
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRightWidth: 0,
-    borderColor: colors.grey[300],
+    borderRightWidth: 1,
+    borderRightColor: colors.grey[300],
   },
   shortcutPrefix: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.text.primary,
   },
-  shortcutTextInput: {
+  shortcutInput: {
     flex: 1,
-    backgroundColor: colors.common.white,
+    height: 52,
+    paddingHorizontal: 14,
     fontSize: 15,
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
+    color: colors.text.primary,
+    backgroundColor: colors.common.white,
   },
 
   // Type Selector Button
@@ -752,18 +702,76 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Message Input
-  messageTextInput: {
+  // Type Options - Inline dropdown
+  typeOptionsContainer: {
+    marginTop: 8,
+    backgroundColor: colors.grey[50],
+    borderRadius: 12,
+    padding: 8,
+    gap: 6,
+  },
+  typeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
     backgroundColor: colors.common.white,
+    gap: 12,
+  },
+  typeOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  typeOptionText: {
+    flex: 1,
     fontSize: 15,
-    minHeight: 100,
+    color: colors.text.primary,
+    fontWeight: '500',
   },
 
-  // URL Input
-  urlTextInput: {
+  // Message Input - Fixed UI
+  messageInputContainer: {
+    borderWidth: 1,
+    borderColor: colors.grey[300],
+    borderRadius: 12,
     backgroundColor: colors.common.white,
+    overflow: 'hidden',
+  },
+  messageInput: {
+    minHeight: 100,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 15,
-    height: 54,
+    color: colors.text.primary,
+    backgroundColor: colors.common.white,
+  },
+
+  // URL Input - Fixed UI
+  urlInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.grey[300],
+    borderRadius: 12,
+    backgroundColor: colors.common.white,
+    overflow: 'hidden',
+  },
+  urlIcon: {
+    marginLeft: 14,
+  },
+  urlInput: {
+    flex: 1,
+    height: 52,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    color: colors.text.primary,
+    backgroundColor: colors.common.white,
   },
 
   // Divider

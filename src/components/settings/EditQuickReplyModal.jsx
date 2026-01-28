@@ -8,8 +8,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  TextInput as RNTextInput,
 } from 'react-native';
-import { Text, ActivityIndicator, TextInput } from 'react-native-paper';
+import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import * as ImagePicker from 'expo-image-picker';
@@ -209,61 +210,8 @@ const EditQuickReplyModal = ({
 
   const typeConfig = getTypeConfig(messageType);
 
-  // Type Selector Modal
-  const renderTypeSelector = () => (
-    <Modal
-      isVisible={showTypeSelector}
-      onBackdropPress={() => setShowTypeSelector(false)}
-      onSwipeComplete={() => setShowTypeSelector(false)}
-      swipeDirection={['down']}
-      style={styles.bottomModal}
-      backdropOpacity={0.5}
-      animationIn="slideInUp"
-      animationOut="slideOutDown"
-    >
-      <View style={styles.typeSelectorSheet}>
-        <View style={styles.handleBar} />
-        <Text style={styles.typeSelectorTitle}>Select Message Type</Text>
-        <View style={styles.typeOptionsGrid}>
-          {Object.entries(MESSAGE_TYPES).map(([key, config]) => (
-            <TouchableOpacity
-              key={key}
-              style={[
-                styles.typeOption,
-                messageType === key && { backgroundColor: config.bg, borderColor: config.color },
-              ]}
-              onPress={() => {
-                if (key !== messageType) {
-                  setHeaderFileURL('');
-                  setFileName('');
-                  setSelectedFile(null);
-                }
-                setMessageType(key);
-                setShowTypeSelector(false);
-              }}
-            >
-              <View style={[styles.typeOptionIcon, { backgroundColor: config.bg }]}>
-                <Icon name={config.icon} size={24} color={config.color} />
-              </View>
-              <Text style={[
-                styles.typeOptionText,
-                messageType === key && { color: config.color, fontWeight: '600' },
-              ]}>
-                {config.label}
-              </Text>
-              {messageType === key && (
-                <Icon name="check-circle" size={18} color={config.color} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    </Modal>
-  );
-
   return (
-    <>
-      <Modal
+    <Modal
         isVisible={visible}
         onBackdropPress={handleClose}
         onSwipeComplete={handleClose}
@@ -325,19 +273,17 @@ const EditQuickReplyModal = ({
                     Shortcut <Text style={styles.required}>*</Text>
                   </Text>
                 </View>
-                <View style={styles.shortcutInputRow}>
+                <View style={styles.shortcutInputContainer}>
                   <View style={styles.shortcutPrefixBox}>
                     <Text style={styles.shortcutPrefix}>/</Text>
                   </View>
-                  <TextInput
+                  <RNTextInput
                     value={shortcut}
                     onChangeText={(text) => setShortcut(text.replace(/\s/g, ''))}
                     placeholder="hello, thanks, welcome"
                     placeholderTextColor={colors.text.tertiary}
-                    style={styles.shortcutTextInput}
-                    mode="outlined"
-                    outlineStyle={styles.inputOutline}
-                    disabled={isSaving}
+                    style={styles.shortcutInput}
+                    editable={!isSaving}
                     autoCapitalize="none"
                   />
                 </View>
@@ -354,7 +300,7 @@ const EditQuickReplyModal = ({
                 </View>
                 <TouchableOpacity
                   style={styles.typeSelectorBtn}
-                  onPress={() => setShowTypeSelector(true)}
+                  onPress={() => setShowTypeSelector(!showTypeSelector)}
                   activeOpacity={0.7}
                   disabled={isSaving}
                 >
@@ -362,8 +308,45 @@ const EditQuickReplyModal = ({
                     <Icon name={typeConfig.icon} size={20} color={typeConfig.color} />
                   </View>
                   <Text style={styles.typeSelectorBtnText}>{typeConfig.label}</Text>
-                  <Icon name="chevron-down" size={22} color={colors.text.tertiary} />
+                  <Icon name={showTypeSelector ? "chevron-up" : "chevron-down"} size={22} color={colors.text.tertiary} />
                 </TouchableOpacity>
+
+                {/* Inline Type Options */}
+                {showTypeSelector && (
+                  <View style={styles.typeOptionsContainer}>
+                    {Object.entries(MESSAGE_TYPES).map(([key, config]) => (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          styles.typeOption,
+                          messageType === key && { backgroundColor: config.bg, borderColor: config.color },
+                        ]}
+                        onPress={() => {
+                          if (key !== messageType) {
+                            setHeaderFileURL('');
+                            setFileName('');
+                            setSelectedFile(null);
+                          }
+                          setMessageType(key);
+                          setShowTypeSelector(false);
+                        }}
+                      >
+                        <View style={[styles.typeOptionIcon, { backgroundColor: config.bg }]}>
+                          <Icon name={config.icon} size={24} color={config.color} />
+                        </View>
+                        <Text style={[
+                          styles.typeOptionText,
+                          messageType === key && { color: config.color, fontWeight: '600' },
+                        ]}>
+                          {config.label}
+                        </Text>
+                        {messageType === key && (
+                          <Icon name="check-circle" size={18} color={config.color} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Message Input */}
@@ -381,17 +364,16 @@ const EditQuickReplyModal = ({
                       </View>
                     )}
                   </View>
-                  <TextInput
+                  <RNTextInput
                     value={message}
                     onChangeText={setMessage}
                     placeholder="Type your message here..."
                     placeholderTextColor={colors.text.tertiary}
-                    style={styles.messageTextInput}
-                    mode="outlined"
+                    style={styles.messageInput}
                     multiline
                     numberOfLines={4}
-                    outlineStyle={styles.inputOutline}
-                    disabled={isSaving}
+                    textAlignVertical="top"
+                    editable={!isSaving}
                   />
                   <Text style={styles.formHint}>
                     Use *bold* and _italic_ for text formatting.
@@ -410,17 +392,17 @@ const EditQuickReplyModal = ({
                   </View>
 
                   {/* URL Input */}
-                  <TextInput
-                    value={headerFileURL}
-                    onChangeText={setHeaderFileURL}
-                    placeholder={`Paste ${typeConfig.label.toLowerCase()} URL here`}
-                    placeholderTextColor={colors.text.tertiary}
-                    style={styles.urlTextInput}
-                    mode="outlined"
-                    outlineStyle={styles.inputOutline}
-                    disabled={isSaving || !!selectedFile}
-                    left={<TextInput.Icon icon="link" color={colors.text.tertiary} />}
-                  />
+                  <View style={styles.urlInputContainer}>
+                    <Icon name="link" size={20} color={colors.text.tertiary} style={styles.urlInputIcon} />
+                    <RNTextInput
+                      value={headerFileURL}
+                      onChangeText={setHeaderFileURL}
+                      placeholder={`Paste ${typeConfig.label.toLowerCase()} URL here`}
+                      placeholderTextColor={colors.text.tertiary}
+                      style={styles.urlInput}
+                      editable={!isSaving && !selectedFile}
+                    />
+                  </View>
 
                   <View style={styles.dividerRow}>
                     <View style={styles.dividerLine} />
@@ -501,16 +483,16 @@ const EditQuickReplyModal = ({
                         <Icon name="file-document-edit-outline" size={18} color={colors.primary.main} />
                         <Text style={styles.formLabel}>Display Name</Text>
                       </View>
-                      <TextInput
-                        value={fileName}
-                        onChangeText={setFileName}
-                        placeholder="File display name"
-                        placeholderTextColor={colors.text.tertiary}
-                        style={styles.urlTextInput}
-                        mode="outlined"
-                        outlineStyle={styles.inputOutline}
-                        disabled={isSaving}
-                      />
+                      <View style={styles.urlInputContainer}>
+                        <RNTextInput
+                          value={fileName}
+                          onChangeText={setFileName}
+                          placeholder="File display name"
+                          placeholderTextColor={colors.text.tertiary}
+                          style={styles.fileNameInput}
+                          editable={!isSaving}
+                        />
+                      </View>
                     </View>
                   )}
                 </View>
@@ -545,10 +527,7 @@ const EditQuickReplyModal = ({
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
-
-      {renderTypeSelector()}
-    </>
+    </Modal>
   );
 };
 
@@ -569,48 +548,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 12,
     marginBottom: 8,
-  },
-
-  // Type Selector Sheet
-  typeSelectorSheet: {
-    backgroundColor: colors.common.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-  },
-  typeSelectorTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text.primary,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  typeOptionsGrid: {
-    gap: 8,
-  },
-  typeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.grey[200],
-    gap: 14,
-  },
-  typeOptionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  typeOptionText: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.text.primary,
-    fontWeight: '500',
   },
 
   // Form Sheet
@@ -706,39 +643,37 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     marginTop: 6,
   },
-  inputOutline: {
-    borderRadius: 12,
-    borderColor: colors.grey[300],
-  },
 
   // Shortcut Input
-  shortcutInputRow: {
+  shortcutInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.grey[300],
+    borderRadius: 12,
+    backgroundColor: colors.common.white,
+    overflow: 'hidden',
   },
   shortcutPrefixBox: {
     width: 44,
-    height: 54,
+    height: 52,
     backgroundColor: colors.grey[100],
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRightWidth: 0,
-    borderColor: colors.grey[300],
+    borderRightWidth: 1,
+    borderRightColor: colors.grey[300],
   },
   shortcutPrefix: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.text.primary,
   },
-  shortcutTextInput: {
+  shortcutInput: {
     flex: 1,
-    backgroundColor: colors.common.white,
+    height: 52,
+    paddingHorizontal: 14,
     fontSize: 15,
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
+    color: colors.text.primary,
   },
 
   // Type Selector Button
@@ -767,18 +702,74 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  // Inline Type Options
+  typeOptionsContainer: {
+    marginTop: 8,
+    gap: 8,
+  },
+  typeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.grey[200],
+    gap: 12,
+    backgroundColor: colors.common.white,
+  },
+  typeOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  typeOptionText: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.text.primary,
+    fontWeight: '500',
+  },
+
   // Message Input
-  messageTextInput: {
+  messageInput: {
     backgroundColor: colors.common.white,
     fontSize: 15,
     minHeight: 100,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderWidth: 1,
+    borderColor: colors.grey[300],
+    borderRadius: 12,
+    color: colors.text.primary,
   },
 
   // URL Input
-  urlTextInput: {
+  urlInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.grey[300],
+    borderRadius: 12,
     backgroundColor: colors.common.white,
+    height: 52,
+    paddingHorizontal: 14,
+  },
+  urlInputIcon: {
+    marginRight: 10,
+  },
+  urlInput: {
+    flex: 1,
     fontSize: 15,
-    height: 54,
+    color: colors.text.primary,
+  },
+  fileNameInput: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.text.primary,
+    paddingVertical: 14,
   },
 
   // Divider
