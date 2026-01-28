@@ -9,13 +9,15 @@ import {
   Platform,
   Dimensions,
   TextInput as RNTextInput,
+  Alert,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { colors } from '../../theme/colors';
+import { colors, chatColors } from '../../theme/colors';
+import { uploadFile, validateFileSize } from '../../services/fileUploadService';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -44,6 +46,8 @@ const AddQuickReplyModal = ({
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
+  const [uploadedMedia, setUploadedMedia] = useState(null);
+  const [fileSize, setFileSize] = useState('');
 
   // Scroll handling for bottom sheet
   const scrollViewRef = useRef(null);
@@ -68,6 +72,8 @@ const AddQuickReplyModal = ({
     setSelectedFile(null);
     setScrollOffset(0);
     setShowTypeSelector(false);
+    setUploadedMedia(null);
+    setFileSize('');
   }, []);
 
   const handleClose = () => {
@@ -77,81 +83,330 @@ const AddQuickReplyModal = ({
     }
   };
 
-  const handlePickFile = async () => {
+  // Handle image picker - matches TemplatePreviewDialog
+  const handlePickImage = useCallback(async () => {
     try {
-      setIsUploading(true);
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to your photo library to upload images.');
+        return;
+      }
 
-      if (messageType === 'image') {
-        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permission.granted) {
-          showSnackbar?.('Permission to access gallery is required');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+        aspect: [4, 3],
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+
+        // Check file size (max 5MB for images)
+        if (asset.fileSize) {
+          const validation = validateFileSize(asset.fileSize, 'image');
+          if (!validation.valid) {
+            Alert.alert('File Too Large', validation.message);
+            return;
+          }
+        }
+
+        const localMedia = {
+          uri: asset.uri,
+          type: 'image',
+          fileName: asset.fileName || `IMG_${Date.now()}.jpg`,
+          fileSize: asset.fileSize ? (asset.fileSize / (1024 * 1024)).toFixed(2) : '0',
+        };
+
+        // Set local preview immediately
+        setSelectedFile(asset);
+        setHeaderFileURL(asset.uri);
+        setFileName(localMedia.fileName);
+        setFileSize(localMedia.fileSize);
+        setUploadedMedia(localMedia);
+
+        // Upload to server in background
+        setIsUploading(true);
+        try {
+          const uploadResult = await uploadFile({
+            uri: asset.uri,
+            fileName: localMedia.fileName,
+            fileType: 'image',
+            mimeType: asset.mimeType || 'image/jpeg',
+            fileSize: asset.fileSize,
+          });
+
+          // Update with server URL
+          setHeaderFileURL(uploadResult.url);
+          setUploadedMedia({
+            ...localMedia,
+            fileUrl: uploadResult.url,
+            mediaId: uploadResult.fileId,
+          });
+        } catch (uploadError) {
+          console.error('Failed to upload image:', uploadError);
+          Alert.alert('Upload Failed', 'Failed to upload image to server. Please try again.');
+          // Clear file on upload failure
+          handleClearFile();
+        } finally {
           setIsUploading(false);
-          return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: false,
-          quality: 0.8,
-        });
-
-        if (!result.canceled && result.assets[0]) {
-          const asset = result.assets[0];
-          setSelectedFile(asset);
-          setHeaderFileURL(asset.uri);
-          setFileName(asset.fileName || `IMG_${Date.now()}.jpg`);
-        }
-      } else if (messageType === 'video') {
-        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permission.granted) {
-          showSnackbar?.('Permission to access gallery is required');
-          setIsUploading(false);
-          return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-          allowsEditing: false,
-          quality: 0.8,
-        });
-
-        if (!result.canceled && result.assets[0]) {
-          const asset = result.assets[0];
-          setSelectedFile(asset);
-          setHeaderFileURL(asset.uri);
-          setFileName(asset.fileName || `VID_${Date.now()}.mp4`);
-        }
-      } else if (messageType === 'audio' || messageType === 'file') {
-        const mimeTypes = messageType === 'audio'
-          ? ['audio/*']
-          : ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-
-        const result = await DocumentPicker.getDocumentAsync({
-          type: mimeTypes,
-          copyToCacheDirectory: true,
-        });
-
-        const doc = result.assets?.[0] || (result.type === 'success' ? result : null);
-
-        if (doc && doc.uri) {
-          setSelectedFile(doc);
-          setHeaderFileURL(doc.uri);
-          setFileName(doc.name || `FILE_${Date.now()}`);
         }
       }
     } catch (error) {
-      console.error('Error picking file:', error);
-      showSnackbar?.('Failed to select file');
-    } finally {
-      setIsUploading(false);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      console.error('Image picker error:', error);
     }
-  };
+  }, []);
+
+  // Handle video picker - matches TemplatePreviewDialog
+  const handlePickVideo = useCallback(async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to your photo library to upload videos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: false,
+        quality: 0.8,
+        videoMaxDuration: 120, // 2 minutes max
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+
+        // Check file size (max 16MB for videos)
+        if (asset.fileSize) {
+          const validation = validateFileSize(asset.fileSize, 'video');
+          if (!validation.valid) {
+            Alert.alert('File Too Large', validation.message);
+            return;
+          }
+        }
+
+        const localMedia = {
+          uri: asset.uri,
+          type: 'video',
+          fileName: asset.fileName || `VID_${Date.now()}.mp4`,
+          fileSize: asset.fileSize ? (asset.fileSize / (1024 * 1024)).toFixed(2) : '0',
+        };
+
+        // Set local preview immediately
+        setSelectedFile(asset);
+        setHeaderFileURL(asset.uri);
+        setFileName(localMedia.fileName);
+        setFileSize(localMedia.fileSize);
+        setUploadedMedia(localMedia);
+
+        // Upload to server in background
+        setIsUploading(true);
+        try {
+          const uploadResult = await uploadFile({
+            uri: asset.uri,
+            fileName: localMedia.fileName,
+            fileType: 'video',
+            mimeType: asset.mimeType || 'video/mp4',
+            fileSize: asset.fileSize,
+          });
+
+          // Update with server URL
+          setHeaderFileURL(uploadResult.url);
+          setUploadedMedia({
+            ...localMedia,
+            fileUrl: uploadResult.url,
+            mediaId: uploadResult.fileId,
+          });
+        } catch (uploadError) {
+          console.error('Failed to upload video:', uploadError);
+          Alert.alert('Upload Failed', 'Failed to upload video to server. Please try again.');
+          // Clear file on upload failure
+          handleClearFile();
+        } finally {
+          setIsUploading(false);
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick video. Please try again.');
+      console.error('Video picker error:', error);
+    }
+  }, []);
+
+  // Handle audio picker
+  const handlePickAudio = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*'],
+        copyToCacheDirectory: true,
+      });
+
+      const doc = result.assets?.[0] || (result.type === 'success' ? result : null);
+
+      if (doc && doc.uri) {
+        // Check file size (max 16MB for audio)
+        if (doc.size) {
+          const validation = validateFileSize(doc.size, 'audio');
+          if (!validation.valid) {
+            Alert.alert('File Too Large', validation.message);
+            return;
+          }
+        }
+
+        const localMedia = {
+          uri: doc.uri,
+          type: 'audio',
+          fileName: doc.name || `AUD_${Date.now()}.mp3`,
+          fileSize: doc.size ? (doc.size / (1024 * 1024)).toFixed(2) : '0',
+        };
+
+        // Set local preview immediately
+        setSelectedFile(doc);
+        setHeaderFileURL(doc.uri);
+        setFileName(localMedia.fileName);
+        setFileSize(localMedia.fileSize);
+        setUploadedMedia(localMedia);
+
+        // Upload to server in background
+        setIsUploading(true);
+        try {
+          const uploadResult = await uploadFile({
+            uri: doc.uri,
+            fileName: localMedia.fileName,
+            fileType: 'audio',
+            mimeType: doc.mimeType || 'audio/mpeg',
+            fileSize: doc.size,
+          });
+
+          // Update with server URL
+          setHeaderFileURL(uploadResult.url);
+          setUploadedMedia({
+            ...localMedia,
+            fileUrl: uploadResult.url,
+            mediaId: uploadResult.fileId,
+          });
+        } catch (uploadError) {
+          console.error('Failed to upload audio:', uploadError);
+          Alert.alert('Upload Failed', 'Failed to upload audio to server. Please try again.');
+          handleClearFile();
+        } finally {
+          setIsUploading(false);
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick audio. Please try again.');
+      console.error('Audio picker error:', error);
+    }
+  }, []);
+
+  // Handle document picker
+  const handlePickDocument = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      const doc = result.assets?.[0] || (result.type === 'success' ? result : null);
+
+      if (doc && doc.uri) {
+        // Check file size (max 100MB for documents)
+        if (doc.size) {
+          const validation = validateFileSize(doc.size, 'document');
+          if (!validation.valid) {
+            Alert.alert('File Too Large', validation.message);
+            return;
+          }
+        }
+
+        const localMedia = {
+          uri: doc.uri,
+          type: 'document',
+          fileName: doc.name || `DOC_${Date.now()}.pdf`,
+          fileSize: doc.size ? (doc.size / (1024 * 1024)).toFixed(2) : '0',
+        };
+
+        // Set local preview immediately
+        setSelectedFile(doc);
+        setHeaderFileURL(doc.uri);
+        setFileName(localMedia.fileName);
+        setFileSize(localMedia.fileSize);
+        setUploadedMedia(localMedia);
+
+        // Upload to server in background
+        setIsUploading(true);
+        try {
+          const uploadResult = await uploadFile({
+            uri: doc.uri,
+            fileName: localMedia.fileName,
+            fileType: 'document',
+            mimeType: doc.mimeType || 'application/pdf',
+            fileSize: doc.size,
+          });
+
+          // Update with server URL
+          setHeaderFileURL(uploadResult.url);
+          setUploadedMedia({
+            ...localMedia,
+            fileUrl: uploadResult.url,
+            mediaId: uploadResult.fileId,
+          });
+        } catch (uploadError) {
+          console.error('Failed to upload document:', uploadError);
+          Alert.alert('Upload Failed', 'Failed to upload document to server. Please try again.');
+          handleClearFile();
+        } finally {
+          setIsUploading(false);
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick document. Please try again.');
+      console.error('Document picker error:', error);
+    }
+  }, []);
+
+  // Handle media upload based on type
+  const handlePickFile = useCallback(() => {
+    if (messageType === 'image') {
+      handlePickImage();
+    } else if (messageType === 'video') {
+      handlePickVideo();
+    } else if (messageType === 'audio') {
+      handlePickAudio();
+    } else if (messageType === 'file') {
+      handlePickDocument();
+    }
+  }, [messageType, handlePickImage, handlePickVideo, handlePickAudio, handlePickDocument]);
 
   const handleClearFile = useCallback(() => {
     setSelectedFile(null);
     setHeaderFileURL('');
     setFileName('');
+    setFileSize('');
+    setUploadedMedia(null);
   }, []);
+
+  // Handle remove media with confirmation
+  const handleRemoveMedia = useCallback(() => {
+    Alert.alert(
+      'Remove Media',
+      'Are you sure you want to remove the uploaded media?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: handleClearFile,
+        },
+      ]
+    );
+  }, [handleClearFile]);
 
   const handleSave = async () => {
     const trimmedShortcut = shortcut.trim();
@@ -408,68 +663,100 @@ const AddQuickReplyModal = ({
                   <View style={styles.dividerLine} />
                 </View>
 
-                {/* Upload Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.uploadButton,
-                    (selectedFile || headerFileURL) && styles.uploadButtonWithFile,
-                  ]}
-                  onPress={handlePickFile}
-                  disabled={isSaving || isUploading}
-                  activeOpacity={0.7}
-                >
-                  {isUploading ? (
-                    <ActivityIndicator size="small" color={colors.primary.main} />
-                  ) : (
-                    <>
-                      <View style={[styles.uploadIconContainer, { backgroundColor: typeConfig.bg }]}>
-                        <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
-                      </View>
-                      <View style={styles.uploadTextContainer}>
-                        <Text style={styles.uploadButtonTitle}>
-                          {selectedFile ? 'Change File' : `Upload ${typeConfig.label}`}
-                        </Text>
-                        <Text style={styles.uploadButtonHint}>
-                          {messageType === 'image' && 'JPG, PNG, GIF up to 5MB'}
-                          {messageType === 'video' && 'MP4, MOV up to 16MB'}
-                          {messageType === 'audio' && 'MP3, WAV, OGG up to 16MB'}
-                          {messageType === 'file' && 'PDF, DOC, XLS up to 100MB'}
-                        </Text>
-                      </View>
-                      <Icon name="chevron-right" size={22} color={colors.text.tertiary} />
-                    </>
-                  )}
-                </TouchableOpacity>
+                {/* Upload Button - only show when no file selected */}
+                {!selectedFile && !uploadedMedia ? (
+                  <TouchableOpacity
+                    style={styles.uploadButton}
+                    onPress={handlePickFile}
+                    disabled={isSaving || isUploading}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.uploadIconContainer, { backgroundColor: typeConfig.bg }]}>
+                      <Icon
+                        name={
+                          messageType === 'image' ? 'image-plus' :
+                          messageType === 'video' ? 'video-plus' :
+                          messageType === 'audio' ? 'microphone-plus' :
+                          'file-upload'
+                        }
+                        size={24}
+                        color={typeConfig.color}
+                      />
+                    </View>
+                    <View style={styles.uploadTextContainer}>
+                      <Text style={styles.uploadButtonTitle}>
+                        Upload {typeConfig.label}
+                      </Text>
+                      <Text style={styles.uploadButtonHint}>
+                        {messageType === 'image' && 'JPG, PNG, GIF up to 5MB'}
+                        {messageType === 'video' && 'MP4, MOV up to 16MB'}
+                        {messageType === 'audio' && 'MP3, WAV, OGG up to 16MB'}
+                        {messageType === 'file' && 'PDF, DOC, XLS up to 100MB'}
+                      </Text>
+                    </View>
+                    <Icon name="chevron-right" size={22} color={colors.text.tertiary} />
+                  </TouchableOpacity>
+                ) : null}
 
-                {/* File Preview Card */}
-                {(selectedFile || headerFileURL) && (
-                  <View style={styles.filePreviewCard}>
-                    <View style={[styles.filePreviewIcon, { backgroundColor: typeConfig.bg }]}>
-                      {messageType === 'image' && headerFileURL ? (
-                        <Image
-                          source={{ uri: headerFileURL }}
-                          style={styles.filePreviewThumb}
-                          resizeMode="cover"
+                {/* File Preview Card - matches TemplatePreviewDialog style */}
+                {(selectedFile || uploadedMedia) && (
+                  <View style={styles.uploadedMediaContainer}>
+                    <View style={styles.uploadedMediaInfo}>
+                      <View style={[styles.mediaTypeIcon, { backgroundColor: typeConfig.bg }]}>
+                        {isUploading ? (
+                          <ActivityIndicator size="small" color={typeConfig.color} />
+                        ) : messageType === 'image' && headerFileURL ? (
+                          <Image
+                            source={{ uri: uploadedMedia?.uri || headerFileURL }}
+                            style={styles.mediaThumb}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
+                        )}
+                      </View>
+                      <View style={styles.mediaFileInfo}>
+                        <Text style={styles.mediaFileName} numberOfLines={1}>
+                          {fileName || `${typeConfig.label} file`}
+                        </Text>
+                        <Text style={styles.mediaFileSize}>
+                          {fileSize ? `${fileSize} MB` : ''} • {typeConfig.label}
+                          {isUploading && ' • Uploading...'}
+                          {!isUploading && uploadedMedia?.fileUrl && ' • Uploaded'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={handleRemoveMedia}
+                        style={styles.removeMediaButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        disabled={isSaving || isUploading}
+                      >
+                        <Icon
+                          name="close-circle"
+                          size={24}
+                          color={isUploading ? colors.grey[300] : colors.error.main}
                         />
-                      ) : (
-                        <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
-                      )}
+                      </TouchableOpacity>
                     </View>
-                    <View style={styles.filePreviewInfo}>
-                      <Text style={styles.filePreviewName} numberOfLines={1}>
-                        {fileName || `${typeConfig.label} file`}
-                      </Text>
-                      <Text style={styles.filePreviewType}>
-                        {typeConfig.label} file selected
-                      </Text>
-                    </View>
+
+                    {/* Replace Media Button */}
                     <TouchableOpacity
-                      onPress={handleClearFile}
-                      style={styles.fileRemoveBtn}
+                      style={styles.replaceMediaButton}
+                      onPress={handlePickFile}
                       activeOpacity={0.7}
-                      disabled={isSaving}
+                      disabled={isSaving || isUploading}
                     >
-                      <Icon name="close-circle" size={22} color={colors.error.main} />
+                      <Icon
+                        name="refresh"
+                        size={18}
+                        color={isUploading ? colors.grey[400] : chatColors.primary}
+                      />
+                      <Text style={[
+                        styles.replaceMediaText,
+                        isUploading && { color: colors.grey[400] }
+                      ]}>
+                        Replace Media
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -804,10 +1091,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     gap: 14,
   },
-  uploadButtonWithFile: {
-    borderStyle: 'solid',
-    backgroundColor: colors.common.white,
-  },
   uploadIconContainer: {
     width: 48,
     height: 48,
@@ -829,43 +1112,61 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // File Preview Card
-  filePreviewCard: {
+  // Uploaded Media Container - matches TemplatePreviewDialog
+  uploadedMediaContainer: {
+    backgroundColor: colors.grey[50],
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  uploadedMediaInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.grey[50],
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 12,
     gap: 12,
   },
-  filePreviewIcon: {
+  mediaTypeIcon: {
     width: 48,
     height: 48,
-    borderRadius: 10,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
   },
-  filePreviewThumb: {
+  mediaThumb: {
     width: 48,
     height: 48,
+    borderRadius: 8,
   },
-  filePreviewInfo: {
+  mediaFileInfo: {
     flex: 1,
   },
-  filePreviewName: {
+  mediaFileName: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.text.primary,
   },
-  filePreviewType: {
+  mediaFileSize: {
     fontSize: 12,
     color: colors.text.tertiary,
     marginTop: 2,
   },
-  fileRemoveBtn: {
+  removeMediaButton: {
     padding: 4,
+  },
+  replaceMediaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey[200],
+  },
+  replaceMediaText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: chatColors.primary,
   },
   fileNameInputGroup: {
     marginTop: 16,
