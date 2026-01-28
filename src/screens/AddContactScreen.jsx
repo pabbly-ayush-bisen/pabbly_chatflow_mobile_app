@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, TextInput, Button, ActivityIndicator, Surface, HelperText } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { Text, TextInput, Button, Surface, HelperText } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
-import { createContact } from '../redux/slices/contactSlice';
+import { createContact, gotoChat } from '../redux/slices/contactSlice';
+import { sendMessageViaSocket } from '../services/socketService';
 import { colors } from '../theme/colors';
 
 export default function AddContactScreen({ navigation }) {
@@ -13,6 +14,7 @@ export default function AddContactScreen({ navigation }) {
     name: '',
     phoneNumber: '',
     email: '',
+    message: '',
   });
 
   const [errors, setErrors] = useState({
@@ -72,7 +74,7 @@ export default function AddContactScreen({ navigation }) {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async ({ sendMessageAlso = false } = {}) => {
     if (!validateForm()) {
       return;
     }
@@ -89,7 +91,7 @@ export default function AddContactScreen({ navigation }) {
     }
 
     try {
-      await dispatch(
+      const createResponse = await dispatch(
         createContact({
           bodyData,
           isSingleContact: true,
@@ -97,16 +99,73 @@ export default function AddContactScreen({ navigation }) {
         })
       ).unwrap();
 
-      // Success - navigate back
-      navigation.goBack();
+      const createdData = createResponse?.data || {};
+      const createdContact =
+        createdData.contact ||
+        createdData.contacts?.[0] ||
+        createdData.newContact ||
+        createdData;
+
+      const createdContactId = createdContact?._id;
+
+      const trimmedMessage = formData.message.trim();
+
+      if (sendMessageAlso && trimmedMessage && createdContactId) {
+        try {
+          const gotoResponse = await dispatch(
+            gotoChat({ id: createdContactId })
+          ).unwrap();
+
+          const gotoData = gotoResponse?.data || {};
+          const chat = gotoData.chat || gotoData.chatData || gotoData;
+          const chatId = chat?._id || chat?.chatId || chat?.id;
+
+          const phoneNumber =
+            createdContact.phoneNumber ||
+            createdContact.phone_number ||
+            createdContact.mobile;
+
+          if (chatId && phoneNumber) {
+            // Send initial message via socket
+            sendMessageViaSocket({
+              to: phoneNumber,
+              type: 'text',
+              chatId,
+              message: trimmedMessage,
+            });
+
+            // Navigate straight into the conversation
+            navigation.navigate('ChatDetails', { chatId, chat });
+          } else {
+            // Fallback: just go back if we cannot open chat reliably
+            navigation.goBack();
+          }
+        } catch (gotoError) {
+          console.error('Failed to open chat from contact:', gotoError);
+          Alert.alert(
+            'Contact Saved',
+            'The contact was saved, but we could not open the chat. Please try from the Inbox.'
+          );
+          navigation.goBack();
+        }
+      } else {
+        // Simple save – go back to previous screen
+        navigation.goBack();
+      }
     } catch (error) {
       // Error handling
       setErrors((prev) => ({
         ...prev,
-        phoneNumber: error || 'Failed to create contact',
+        phoneNumber:
+          typeof error === 'string'
+            ? error
+            : error?.message || 'Failed to create contact',
       }));
       setIsSubmitting(false);
+      return;
     }
+
+    setIsSubmitting(false);
   };
 
   const handleCancel = () => {
@@ -192,6 +251,24 @@ export default function AddContactScreen({ navigation }) {
               ) : null}
             </View>
 
+            {/* Optional first message */}
+            <View style={styles.inputGroup}>
+              <TextInput
+                label="Message (Optional)"
+                value={formData.message}
+                onChangeText={(value) => handleInputChange('message', value)}
+                mode="outlined"
+                style={[styles.input, styles.messageInput]}
+                disabled={isSubmitting}
+                placeholder="Type a message to send right after saving this contact"
+                multiline
+                numberOfLines={3}
+              />
+              <HelperText type="info" visible={true}>
+                If you type a message and tap "Save &amp; Send", we will open a chat and send it instantly.
+              </HelperText>
+            </View>
+
             {/* Action Buttons */}
             <View style={styles.buttonContainer}>
               <Button
@@ -205,12 +282,22 @@ export default function AddContactScreen({ navigation }) {
 
               <Button
                 mode="contained"
-                onPress={handleSubmit}
+                onPress={() => handleSubmit({ sendMessageAlso: false })}
                 style={styles.saveButton}
                 disabled={isSubmitting}
-                loading={isSubmitting}
               >
                 {isSubmitting ? 'Saving...' : 'Save Contact'}
+              </Button>
+            </View>
+
+            <View style={styles.secondaryButtonRow}>
+              <Button
+                mode="contained-tonal"
+                onPress={() => handleSubmit({ sendMessageAlso: true })}
+                style={styles.saveAndMessageButton}
+                disabled={isSubmitting || !formData.message.trim()}
+              >
+                Save &amp; Send Message
               </Button>
             </View>
           </Surface>
@@ -266,5 +353,15 @@ const styles = StyleSheet.create({
   saveButton: {
     flex: 1,
     backgroundColor: colors.primary.main,
+  },
+  messageInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  secondaryButtonRow: {
+    marginTop: 12,
+  },
+  saveAndMessageButton: {
+    backgroundColor: colors.secondary?.main || colors.primary.light,
   },
 });

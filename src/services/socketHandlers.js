@@ -9,15 +9,18 @@ import {
   setContactCreateError,
   addMessageToCurrentConversation,
   updateMessageInCurrentConversation,
+  updateMessageReactionInConversation,
+  fetchChatsByContacts,
 } from '../redux/slices/inboxSlice';
 import { logout } from '../redux/slices/userSlice';
+import { setUpdatedTemplate } from '../redux/slices/templateSlice';
 
 /**
  * Handle new message from socket
  * @param {Function} dispatch - Redux dispatch
  * @param {Object} newChat - New chat data with messages
  */
-export const handleNewMessage = async (dispatch, newChat, getState) => {
+export const handleNewMessage = async (dispatch, newChat) => {
   try {
     // Try both possible keys for settingId (for backwards compatibility)
     let settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
@@ -49,14 +52,45 @@ export const handleNewMessage = async (dispatch, newChat, getState) => {
       messageId: lastMessage?.wamid || lastMessage?._id,
     });
 
-    // Check if it's a system message
-    const isSystemMessage = lastMessage?.type === 'system';
+    // Handle reaction messages - update the original message's reactions instead of adding new message
+    if (lastMessage?.type === 'reaction') {
+      console.log('[SocketHandler] Handling reaction message:', {
+        emoji: lastMessage?.reaction?.emoji || lastMessage?.message?.emoji,
+        reactedToMessageId: lastMessage?.reaction?.message_id || lastMessage?.message?.message_id || lastMessage?.context?.id,
+      });
+
+      const emoji = lastMessage?.reaction?.emoji || lastMessage?.message?.emoji || '';
+      const reactedToMessageId = lastMessage?.reaction?.message_id || lastMessage?.message?.message_id || lastMessage?.context?.id;
+
+      if (reactedToMessageId) {
+        dispatch(updateMessageReactionInConversation({
+          chatId: newChat._id,
+          messageWaId: reactedToMessageId,
+          reaction: { emoji },
+          sentBy: lastMessage?.sentBy || lastMessage?.from,
+        }));
+
+        // Update chat list without adding reaction as lastMessage (reactions don't show in chat list)
+        const chatForList = {
+          ...newChat,
+          messages: undefined,
+          // Don't update lastMessage for reactions
+          lastMessageTime: newChat?.updatedAt || newChat?.createdAt,
+          unreadCount: newChat.unreadCount || 0,
+        };
+        dispatch(updateChatInList(chatForList));
+
+        console.log('[SocketHandler] Reaction handling complete');
+        return;
+      }
+    }
 
     // Create chat object for list (without full messages array)
     const chatForList = {
       ...newChat,
       messages: undefined,
       lastMessage,
+      lastMessageTime: lastMessage?.timestamp || lastMessage?.createdAt || newChat?.updatedAt || newChat?.createdAt,
       // Ensure unread count is updated for incoming messages
       unreadCount: newChat.unreadCount || (lastMessage?.sentBy !== 'user' ? 1 : 0),
     };
@@ -183,21 +217,37 @@ export const handleTeamMemberLogout = async (dispatch, emailsToLogout, getState)
  * @param {Function} dispatch - Redux dispatch
  * @param {Object} response - Response with contactIds
  */
-export const handleUpdateChatOnContactUpdate = async (dispatch, response, fetchChatsByContacts) => {
+export const handleUpdateChatOnContactUpdate = async (dispatch, response) => {
   try {
+    console.log('[SocketHandler] updateChatOnContactUpdate received:', response);
+
     if (response?.contactIds && Array.isArray(response.contactIds) && response.contactIds.length > 0) {
       // Fetch updated chats for the specific contact IDs
       const updatedChatsResponse = await dispatch(fetchChatsByContacts(response.contactIds));
 
-      if (updatedChatsResponse.payload?.chats) {
+      if (updatedChatsResponse.payload?.data?.chats || updatedChatsResponse.payload?.chats) {
+        const chats = updatedChatsResponse.payload?.data?.chats || updatedChatsResponse.payload?.chats;
         // Merge with existing chats - this will be handled in the slice
-        for (const chat of updatedChatsResponse.payload.chats) {
+        for (const chat of chats) {
           dispatch(updateChatInList(chat));
         }
+        console.log('[SocketHandler] Updated chats for contacts:', chats.length);
       }
     }
   } catch (error) {
-    console.error('Error updating chats for contact IDs:', error);
+    console.error('[SocketHandler] Error updating chats for contact IDs:', error);
+  }
+};
+
+/**
+ * Handle template status update from socket
+ * @param {Function} dispatch - Redux dispatch
+ * @param {Object} template - Updated template data
+ */
+export const handleUpdateTemplateStatus = (dispatch, template) => {
+  console.log('[SocketHandler] updateTemplateStatus received:', template);
+  if (template && template._id) {
+    dispatch(setUpdatedTemplate(template));
   }
 };
 
@@ -210,4 +260,5 @@ export default {
   handleSendMessageError,
   handleTeamMemberLogout,
   handleUpdateChatOnContactUpdate,
+  handleUpdateTemplateStatus,
 };

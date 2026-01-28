@@ -41,10 +41,10 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
     );
   }
 
-  const { templateName, type, bodyParams, headerParams, link } = templateData;
+  const { templateName, type, bodyParams, headerParams, link, components: templateDataComponents } = templateData;
 
-  // Get template components from raw message data first
-  let components = message?.message?.template?.components || [];
+  // Get template components from raw message data first, then from templateData, then from Redux
+  let components = message?.message?.template?.components || templateDataComponents || [];
 
   // If components are not in the message, look up from Redux store using templateName or templateId
   if (components.length === 0 && templates && templates.length > 0) {
@@ -251,9 +251,9 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
         <Icon
           name="file-document-outline"
           size={12}
-          color={isOutgoing ? 'rgba(255,255,255,0.7)' : colors.grey[500]}
+          color={colors.grey[500]}
         />
-        <Text style={[styles.templateBadgeText, isOutgoing && styles.templateBadgeTextOutgoing]}>
+        <Text style={styles.templateBadgeText}>
           Template: {templateName}
         </Text>
       </View>
@@ -263,14 +263,14 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
 
       {/* Body */}
       {bodyText && (
-        <Text style={[styles.bodyText, isOutgoing && styles.bodyTextOutgoing]}>
+        <Text style={styles.bodyText}>
           {bodyText}
         </Text>
       )}
 
       {/* Footer */}
       {footerText && (
-        <Text style={[styles.footerText, isOutgoing && styles.footerTextOutgoing]}>
+        <Text style={styles.footerText}>
           {footerText}
         </Text>
       )}
@@ -297,9 +297,6 @@ const styles = StyleSheet.create({
     color: colors.grey[500],
     fontStyle: 'italic',
   },
-  templateBadgeTextOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
-  },
   headerTextContainer: {
     marginBottom: 8,
   },
@@ -307,9 +304,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.text.primary,
-  },
-  headerTextOutgoing: {
-    color: colors.common.white,
   },
   headerImage: {
     width: '100%',
@@ -396,16 +390,10 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     marginBottom: 4,
   },
-  bodyTextOutgoing: {
-    color: colors.common.white,
-  },
   footerText: {
     fontSize: 12,
     color: colors.text.secondary,
     marginTop: 4,
-  },
-  footerTextOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
   },
   buttonsContainer: {
     marginTop: 8,

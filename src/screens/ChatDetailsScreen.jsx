@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Alert, Modal, ScrollView } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
@@ -12,6 +12,9 @@ import {
   setChatStatus,
   setAiAssistantStatus,
   sendMessageReaction,
+  clearInboxError,
+  addOptimisticMessage,
+  markOptimisticMessageFailed,
 } from '../redux/slices/inboxSlice';
 import { fetchAllTemplates } from '../redux/slices/templateSlice';
 import { getSettings } from '../redux/slices/settingsSlice';
@@ -45,6 +48,8 @@ export default function ChatDetailsScreen({ route, navigation }) {
   const [showChatNotes, setShowChatNotes] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [sharedContacts, setSharedContacts] = useState([]);
+  const [showSharedContactSheet, setShowSharedContactSheet] = useState(false);
 
   // Upload state management for WhatsApp-style progress UI
   const {
@@ -64,6 +69,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
     conversationStatus,
     conversationError,
     sendMessageStatus,
+    sendMessageError,
     chatStatus: reduxChatStatus,
     aiAssistantStatus: reduxAiAssistantStatus,
     updateContactChatStatus,
@@ -103,7 +109,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
   useEffect(() => {
     if (chatId) {
-      dispatch(fetchConversation(chatId));
+      // Fetch all messages at once (no pagination)
+      dispatch(fetchConversation({ chatId, all: true }));
+
       // Reset unread count
       dispatch(resetUnreadCount(chatId));
       resetUnreadCountViaSocket(chatId);
@@ -122,14 +130,31 @@ export default function ChatDetailsScreen({ route, navigation }) {
   }, [chatId, dispatch, setCurrentChatId]);
 
   useEffect(() => {
-    if (sendMessageStatus === 'succeeded') {
-      setIsSending(false);
-      setReplyingTo(null);
-      dispatch(fetchConversation(chatId));
-    } else if (sendMessageStatus === 'failed') {
+    // With optimistic updates, we no longer need to refresh on success
+    // The message is already in the UI and socket handlers update the status
+    if (sendMessageStatus === 'failed') {
       setIsSending(false);
     }
-  }, [sendMessageStatus, chatId, dispatch]);
+  }, [sendMessageStatus]);
+
+  // Display socket send message errors as Alert
+  useEffect(() => {
+    if (sendMessageError) {
+      setIsSending(false);
+      Alert.alert(
+        'Message Failed',
+        typeof sendMessageError === 'string' ? sendMessageError : 'Failed to send message. Please try again.',
+        [{
+          text: 'OK',
+          onPress: () => {
+            dispatch(clearInboxError());
+            // Refresh templates in case the error was due to stale template data
+            dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
+          }
+        }]
+      );
+    }
+  }, [sendMessageError, dispatch]);
 
   // Group messages by date and include pending uploads
   const groupedMessages = useMemo(() => {
@@ -195,6 +220,13 @@ export default function ChatDetailsScreen({ route, navigation }) {
     return groups;
   }, [messages, getAllUploads]);
 
+  // For inverted list (no jump): reverse grouped items so latest appears at bottom.
+  const groupedMessagesInverted = useMemo(
+    () => [...groupedMessages].reverse(),
+    [groupedMessages]
+  );
+
+
   const handleSendMessage = useCallback(async (messageData) => {
     console.log('[ChatDetails] handleSendMessage called with:', messageData);
 
@@ -211,6 +243,10 @@ export default function ChatDetailsScreen({ route, navigation }) {
     }
 
     setIsSending(true);
+
+    // Generate a unique temp ID for optimistic message
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = new Date().toISOString();
 
     try {
       let uploadedFileUrl = null;
@@ -307,10 +343,47 @@ export default function ChatDetailsScreen({ route, navigation }) {
         return 'document';
       };
 
+      const messageType = uploadedFileUrl ? getMessageType(file.fileType) : 'text';
+
+      // Create optimistic message for immediate UI display (WhatsApp-style)
+      const optimisticMessage = {
+        tempId,
+        _id: tempId,
+        type: messageType,
+        status: 'pending', // Clock icon
+        sentBy: 'user',
+        timestamp,
+        createdAt: timestamp,
+        ...(messageType === 'text' ? {
+          message: { body: text?.trim() || '' },
+        } : {
+          message: {
+            [messageType]: {
+              link: uploadedFileUrl,
+              url: uploadedFileUrl,
+              caption: text?.trim() || '',
+            },
+            caption: text?.trim() || '',
+          },
+        }),
+        ...(replyTo && { replyToWamid: replyTo, context: { id: replyTo } }),
+      };
+
+      // Immediately add optimistic message to UI
+      console.log('[ChatDetails] Adding optimistic message:', optimisticMessage);
+      dispatch(addOptimisticMessage({
+        chatId,
+        message: optimisticMessage,
+      }));
+
+      // Clear reply state immediately for better UX
+      setReplyingTo(null);
+
       const socketData = {
         to: contactPhoneNumber,  // Backend expects 'to' field, not 'phoneNumber'
-        type: uploadedFileUrl ? getMessageType(file.fileType) : 'text',
+        type: messageType,
         chatId,
+        tempId, // Include tempId so server can echo it back
         // For text messages, send message field; for media, send caption
         ...(uploadedFileUrl
           ? { caption: text?.trim() || '' }
@@ -329,15 +402,26 @@ export default function ChatDetailsScreen({ route, navigation }) {
         // Message was sent successfully via socket
         console.log('[ChatDetails] Message sent successfully via socket');
         setIsSending(false);
-        setReplyingTo(null);
-        // Refresh conversation to show the new message
-        dispatch(fetchConversation(chatId));
+        // Don't refresh conversation - socket handlers will update the message status
+        // The optimistic message is already in the UI with pending status
       } else {
+        // Mark the optimistic message as failed
+        dispatch(markOptimisticMessageFailed({
+          chatId,
+          tempId,
+          error: 'Could not send message. Please check your connection.',
+        }));
         Alert.alert('Send Failed', 'Could not send message. Please check your connection.');
         setIsSending(false);
       }
     } catch (error) {
       console.error('[ChatDetails] Send message error:', error);
+      // Mark the optimistic message as failed
+      dispatch(markOptimisticMessageFailed({
+        chatId,
+        tempId,
+        error: error.message || 'Failed to send message',
+      }));
       Alert.alert('Error', 'Failed to send message. Please try again.');
       setIsSending(false);
     }
@@ -353,6 +437,10 @@ export default function ChatDetailsScreen({ route, navigation }) {
     const file = prepareRetry(tempId);
     if (!file) return;
 
+    // Generate new temp ID for the optimistic message
+    const msgTempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = new Date().toISOString();
+
     try {
       const abortController = getAbortController(tempId);
 
@@ -366,7 +454,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
       if (uploadResult.success && uploadResult.url) {
         // Complete upload and send message
-        const uploadData = completeUpload(tempId);
+        completeUpload(tempId);
 
         // Send the message via socket
         const getMessageType = (fileType) => {
@@ -378,18 +466,50 @@ export default function ChatDetailsScreen({ route, navigation }) {
           return 'document';
         };
 
+        const messageType = getMessageType(file.fileType);
+
+        // Create optimistic message
+        const optimisticMessage = {
+          tempId: msgTempId,
+          _id: msgTempId,
+          type: messageType,
+          status: 'pending',
+          sentBy: 'user',
+          timestamp,
+          createdAt: timestamp,
+          message: {
+            [messageType]: {
+              link: uploadResult.url,
+              url: uploadResult.url,
+              caption: file.caption || '',
+            },
+            caption: file.caption || '',
+          },
+        };
+
+        // Add optimistic message to UI
+        dispatch(addOptimisticMessage({
+          chatId,
+          message: optimisticMessage,
+        }));
+
         const socketData = {
           to: contactPhoneNumber,
-          type: getMessageType(file.fileType),
+          type: messageType,
           chatId,
+          tempId: msgTempId,
           caption: file.caption || '',
           link: uploadResult.url,
           filename: uploadResult.fileName || file.fileName,
         };
 
         const sent = sendMessageViaSocket(socketData);
-        if (sent) {
-          dispatch(fetchConversation(chatId));
+        if (!sent) {
+          dispatch(markOptimisticMessageFailed({
+            chatId,
+            tempId: msgTempId,
+            error: 'Failed to send message',
+          }));
         }
       }
     } catch (error) {
@@ -406,36 +526,253 @@ export default function ChatDetailsScreen({ route, navigation }) {
     };
   }, [cleanupUploads]);
 
-  // Handle template send - now receives template with bodyParams and headerParams from preview dialog
-  const handleSendTemplate = useCallback(async (templateWithParams) => {
-    if (!templateWithParams || isSending) return;
+  // Handle template send - receives payload from ChatInput with templateName, bodyParams, headerParams, etc.
+  const handleSendTemplate = useCallback(async (templatePayload) => {
+    console.log('[ChatDetails] handleSendTemplate received:', {
+      templatePayload,
+      bodyParams: templatePayload?.bodyParams,
+      headerParams: templatePayload?.headerParams,
+      templateName: templatePayload?.templateName,
+    });
+
+    if (!templatePayload || isSending) return;
 
     setIsSending(true);
 
-    // Extract the template object (may have bodyParams and headerParams attached)
-    const template = templateWithParams;
-    const bodyParams = template.bodyParams || [];
-    const headerParams = template.headerParams || [];
+    // Generate a unique temp ID for optimistic message
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = new Date().toISOString();
 
-    // Extract header component to check for media
-    const headerComponent = template.components?.find(c => c.type === 'HEADER');
-    const hasMediaHeader = headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format);
+    // Extract values from the payload sent by ChatInput/TemplatePreviewDialog
+    // The payload structure is: { templateName, languageCode, templateType, bodyParams, headerParams, row (actual template), media, fileName, fileUrl, mediaId }
+    // For carousel: { template, isCarousel, carouselBodies, carouselMedia, fileData, carouselMediaType }
+    const template = templatePayload.template || templatePayload.row || templatePayload;
+    const templateName = templatePayload.templateName || template?.name;
+    const languageCode = templatePayload.languageCode || template?.language || 'en';
+    const templateType = templatePayload.templateType || template?.type || 'TEXT';
+    const bodyParams = templatePayload.bodyParams || [];
+    const headerParams = templatePayload.headerParams || [];
+    const media = templatePayload.media;
 
+    console.log('[ChatDetails] Extracted template values:', {
+      templateName,
+      languageCode,
+      templateType,
+      bodyParams,
+      headerParams,
+      hasTemplate: !!template,
+    });
+
+    // Check if this is a carousel template
+    const isCarouselTemplate = templatePayload.isCarousel || templateType?.toUpperCase() === 'CAROUSEL';
+
+    // Handle carousel template separately
+    if (isCarouselTemplate) {
+      // Create optimistic message for carousel
+      const carouselOptimisticMessage = {
+        tempId,
+        _id: tempId,
+        type: 'template',
+        status: 'pending',
+        sentBy: 'user',
+        timestamp,
+        createdAt: timestamp,
+        message: {
+          template: {
+            name: templateName,
+            language: { code: languageCode },
+            templateId: template._id,
+            components: template.components,
+          },
+          body: { text: `Carousel: ${templateName}` },
+          type: 'CAROUSEL',
+          isCarousel: true,
+          ...(templatePayload.carouselFileData?.[0]?.fileUrl && { link: templatePayload.carouselFileData[0].fileUrl }),
+        },
+        templateName: templateName,
+        ...(replyingTo && { replyToWamid: replyingTo.wamid, context: { id: replyingTo.wamid } }),
+      };
+
+      // Add optimistic message to UI
+      console.log('[ChatDetails] Adding optimistic carousel template message:', carouselOptimisticMessage);
+      dispatch(addOptimisticMessage({
+        chatId,
+        message: carouselOptimisticMessage,
+      }));
+
+      setReplyingTo(null);
+
+      // Build carousel socket payload EXACTLY like web app's handleSendTemplate:
+      // dispatch({ type: 'socket/sendMessage', payload: {
+      //   to, type: 'template', chatId, ...payload,
+      //   bodyParams: Object.values(payload.bodyParams || {}),
+      //   headerParams: Object.values(payload.headerParams || {}),
+      //   filename: payload.fileName, link: payload.fileUrl, replyToWamid
+      // }})
+      const carouselTemplateData = {
+        to: contactPhoneNumber,
+        type: 'template',
+        chatId,
+        // Spread ALL fields from templatePayload (like web app does with ...payload)
+        ...templatePayload,
+        // Web app converts bodyParams/headerParams from objects to arrays
+        bodyParams: Object.values(templatePayload.bodyParams || {}),
+        headerParams: Object.values(templatePayload.headerParams || {}),
+        // Web app uses 'filename' and 'link' (not fileName/fileUrl)
+        filename: templatePayload.fileName || '',
+        link: templatePayload.fileUrl || '',
+        ...(replyingTo && { replyToWamid: replyingTo.wamid }),
+      };
+
+      console.log('[ChatDetails] Sending carousel template:', carouselTemplateData);
+
+      // Use sendMessageViaSocket (no transformation) like web app does
+      // Web app: socket.emit('sendMessage', action.payload) - direct, no transformation
+      const sent = sendMessageViaSocket(carouselTemplateData);
+
+      if (sent) {
+        setIsSending(false);
+      } else {
+        dispatch(markOptimisticMessageFailed({
+          chatId,
+          tempId,
+          error: 'Failed to send carousel template. Please try again.',
+        }));
+        setIsSending(false);
+        Alert.alert('Error', 'Failed to send carousel template. Please try again.');
+      }
+      return;
+    }
+
+    // Extract header component to check for media (case-insensitive)
+    const headerComponent = template.components?.find(c => c.type?.toUpperCase() === 'HEADER');
+    const headerFormat = headerComponent?.format?.toUpperCase();
+    const hasMediaHeader = headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerFormat);
+
+    // Also check if template type itself indicates media (for templates where type is IMAGE/VIDEO/DOCUMENT)
+    const templateTypeUpper = templateType?.toUpperCase();
+    const isMediaTemplate = ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(templateTypeUpper);
+
+    // Get template body text for optimistic message preview
+    const bodyComponent = template.components?.find(c => c.type?.toUpperCase() === 'BODY');
+    let bodyText = bodyComponent?.text || templateName || 'Template message';
+
+    console.log('[ChatDetails] Body text substitution:', {
+      originalBodyText: bodyText,
+      bodyParams,
+      bodyParamsLength: bodyParams?.length,
+    });
+
+    // Replace placeholders with params
+    bodyParams.forEach((param, index) => {
+      const placeholder = `{{${index + 1}}}`;
+      console.log(`[ChatDetails] Replacing ${placeholder} with "${param}"`);
+      bodyText = bodyText.replace(placeholder, param);
+    });
+
+    console.log('[ChatDetails] Final bodyText:', bodyText);
+
+    // Get media link for optimistic message (needed for immediate rendering)
+    const mediaLink = media?.fileUrl || media?.uri || templatePayload.fileUrl || null;
+
+    // Create optimistic message for immediate UI display
+    const optimisticMessage = {
+      tempId,
+      _id: tempId,
+      type: 'template',
+      status: 'pending',
+      sentBy: 'user',
+      timestamp,
+      createdAt: timestamp,
+      message: {
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          templateId: template._id,
+          components: template.components, // Include components for variable substitution in display
+        },
+        body: { text: bodyText },
+        // Include body and header params for display
+        bodyParams: bodyParams,
+        headerParams: headerParams,
+        // Include media link for immediate rendering
+        ...(mediaLink && { link: mediaLink }),
+        // Include template type for header rendering
+        type: templateTypeUpper,
+      },
+      templateName: templateName,
+      ...(replyingTo && { replyToWamid: replyingTo.wamid, context: { id: replyingTo.wamid } }),
+    };
+
+    // Immediately add optimistic message to UI
+    console.log('[ChatDetails] Adding optimistic template message:', optimisticMessage);
+    dispatch(addOptimisticMessage({
+      chatId,
+      message: optimisticMessage,
+    }));
+
+    // Clear reply state immediately for better UX
+    setReplyingTo(null);
+
+    // Build the socket payload
     const templateData = {
       to: contactPhoneNumber,
       chatId,
-      templateName: template.name,
+      tempId, // Include tempId so server can echo it back
+      templateName: templateName,
       templateId: template._id,
-      language: template.language || 'en',
+      languageCode: languageCode,
       bodyParams: bodyParams,
       headerParams: headerParams,
+      templateType: templateType,
       ...(replyingTo && { replyToWamid: replyingTo.wamid }),
-      // If template has media header and user provided a link, include it
-      ...(hasMediaHeader && template.headerMediaUrl && {
-        link: template.headerMediaUrl,
-        filename: template.headerMediaFilename,
-      }),
+      // LTO (Limited Time Offer) fields
+      ...(templatePayload.ltoFields && { ltoFields: templatePayload.ltoFields }),
+      // Location fields
+      ...(templatePayload.location && { location: templatePayload.location }),
+      // Catalog product ID
+      ...(templatePayload.catalogProductId && { catalogProductId: templatePayload.catalogProductId }),
+      // Copy code/Authentication param
+      ...(templatePayload.copyCodeParam && { copyCodeParam: templatePayload.copyCodeParam }),
+      // URL button variables
+      ...(templatePayload.urlVariables && templatePayload.urlVariables.length > 0 && { urlVariables: templatePayload.urlVariables }),
     };
+
+    // If template has media header or is a media type template, include file info
+    // Check both hasMediaHeader and isMediaTemplate to cover all cases
+    const needsMedia = hasMediaHeader || isMediaTemplate;
+
+    console.log('[ChatDetails] Media check:', {
+      hasMediaHeader,
+      isMediaTemplate,
+      needsMedia,
+      hasMedia: !!media,
+      mediaFileUrl: media?.fileUrl,
+      mediaUri: media?.uri,
+      mediaId: media?.mediaId,
+      payloadFileUrl: templatePayload.fileUrl,
+      payloadMediaId: templatePayload.mediaId,
+    });
+
+    if (needsMedia && media) {
+      templateData.link = media.fileUrl || media.uri;
+      templateData.filename = media.fileName;
+      if (media.mediaId) {
+        templateData.mediaId = media.mediaId;
+      }
+    } else if (needsMedia && templatePayload.fileUrl) {
+      // Also check for fileUrl directly on payload
+      templateData.link = templatePayload.fileUrl;
+      templateData.filename = templatePayload.fileName;
+      if (templatePayload.mediaId) {
+        templateData.mediaId = templatePayload.mediaId;
+      }
+    }
+
+    // Final validation: if this is a media template and we have no link/mediaId, warn
+    if (needsMedia && !templateData.link && !templateData.mediaId) {
+      console.warn('[ChatDetails] WARNING: Media template being sent without link or mediaId!');
+    }
 
     console.log('[ChatDetails] Sending template:', templateData);
 
@@ -443,13 +780,19 @@ export default function ChatDetailsScreen({ route, navigation }) {
     const sent = sendTemplateViaSocket(templateData);
 
     if (sent) {
-      // Clear replying state on success
-      setReplyingTo(null);
+      // Clear sending state - socket handlers will update the message status
+      setIsSending(false);
     } else {
+      // Mark the optimistic message as failed
+      dispatch(markOptimisticMessageFailed({
+        chatId,
+        tempId,
+        error: 'Failed to send template. Please try again.',
+      }));
       setIsSending(false);
       Alert.alert('Error', 'Failed to send template. Please try again.');
     }
-  }, [chatId, contactPhoneNumber, isSending, replyingTo]);
+  }, [chatId, contactPhoneNumber, isSending, replyingTo, dispatch]);
 
   // Handle intervene - take over conversation from AI/automation
   const handleIntervene = useCallback(async () => {
@@ -577,6 +920,33 @@ export default function ChatDetailsScreen({ route, navigation }) {
     return name.substring(0, 2).toUpperCase();
   };
 
+  const handleSharedContactPress = useCallback((contactsArray) => {
+    if (!contactsArray || !Array.isArray(contactsArray) || contactsArray.length === 0) return;
+    setSharedContacts(contactsArray);
+    setShowSharedContactSheet(true);
+  }, []);
+
+  // Scroll to a particular message (used when tapping reply preview)
+  const scrollToMessage = useCallback((targetId) => {
+    if (!flatListRef.current || !targetId) return;
+
+    try {
+      // Find index of the message in the non-inverted grouped list
+      const baseIndex = groupedMessages.findIndex(
+        (item) =>
+          item.type === 'message' &&
+          (item.data?._id === targetId || item.data?.wamid === targetId)
+      );
+      if (baseIndex === -1) return;
+
+      // Convert to index in the inverted data array
+      const invertedIndex = groupedMessages.length - 1 - baseIndex;
+      flatListRef.current.scrollToIndex({ index: invertedIndex, animated: true });
+    } catch (e) {
+      console.warn('[ChatDetails] scrollToMessage error', e);
+    }
+  }, [groupedMessages]);
+
   const renderItem = useCallback(({ item }) => {
     if (item.type === 'date') {
       return <DateSeparator date={item.date} />;
@@ -605,17 +975,36 @@ export default function ChatDetailsScreen({ route, navigation }) {
       );
     }
 
+    const msg = item.data;
+    const replyId = msg?.replyToWamid || msg?.context?.id;
+    const originalMessage = replyId
+      ? messages.find(
+          (m) =>
+            m?._id === replyId ||
+            m?.wamid === replyId
+        )
+      : null;
+
     return (
       <MessageBubble
-        message={item.data}
+        message={msg}
+        originalMessage={originalMessage}
         onImagePress={handleImagePress}
         onLongPress={handleMessageLongPress}
-        onReplyPress={(messageId) => {
-          // Scroll to replied message
+        // onReplyPress is used both for tapping reply preview and right-swipe-to-reply
+        onReplyPress={(target) => {
+          // If target looks like an ID of another message → scroll to it (tap on reply preview)
+          if (typeof target === 'string' && (target.startsWith('msg-') || target.length > 16)) {
+            scrollToMessage(target);
+          } else {
+            // Otherwise treat as current message → start replying
+            setReplyingTo(msg);
+          }
         }}
+        onContactPress={handleSharedContactPress}
       />
     );
-  }, [handleImagePress, handleMessageLongPress, handleCancelUpload, handleRetryUpload]);
+  }, [handleImagePress, handleMessageLongPress, handleCancelUpload, handleRetryUpload, messages, scrollToMessage]);
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
@@ -625,6 +1014,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
       </Text>
     </View>
   );
+
 
   // Custom header
   const renderHeader = () => (
@@ -701,28 +1091,19 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
           <FlatList
             ref={flatListRef}
-            data={groupedMessages}
+            data={groupedMessagesInverted}
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
+            inverted
             contentContainerStyle={[
               styles.messagesList,
-              groupedMessages.length === 0 && styles.emptyList,
+              groupedMessagesInverted.length === 0 && styles.emptyList,
             ]}
             showsVerticalScrollIndicator={false}
-            onContentSizeChange={() => {
-              if (groupedMessages.length > 0) {
-                flatListRef.current?.scrollToEnd({ animated: false });
-              }
-            }}
-            onLayout={() => {
-              if (groupedMessages.length > 0) {
-                flatListRef.current?.scrollToEnd({ animated: false });
-              }
-            }}
             ListEmptyComponent={renderEmptyState}
-            initialNumToRender={20}
-            maxToRenderPerBatch={10}
-            windowSize={15}
+            initialNumToRender={30}
+            maxToRenderPerBatch={20}
+            windowSize={21}
           />
         </View>
 
@@ -789,6 +1170,84 @@ export default function ChatDetailsScreen({ route, navigation }) {
         imageUrl={lightboxImage}
         onClose={() => setLightboxImage(null)}
       />
+
+      {/* Shared contact bottom sheet */}
+      <Modal
+        visible={showSharedContactSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSharedContactSheet(false)}
+      >
+        <View style={styles.contactSheetOverlay}>
+          <TouchableOpacity
+            style={styles.contactSheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowSharedContactSheet(false)}
+          />
+          <View style={styles.contactSheetContainer}>
+            <View style={styles.contactSheetHandle} />
+            {sharedContacts && sharedContacts.length > 0 && (
+              <ScrollView
+                showsVerticalScrollIndicator
+                contentContainerStyle={styles.contactSheetScrollContent}
+                bounces
+              >
+                {sharedContacts.map((c, contactIdx) => (
+                  <View
+                    key={contactIdx}
+                    style={styles.contactSheetSection}
+                  >
+                    <View style={styles.contactSheetContactHeaderRow}>
+                      <View
+                        style={[
+                          styles.contactSheetContactAvatarSmall,
+                          { backgroundColor: getAvatarColor(c.name) },
+                        ]}
+                      >
+                        <Text style={styles.contactSheetAvatarText}>
+                          {getInitials(c.name)}
+                        </Text>
+                      </View>
+                      <View style={styles.contactSheetRowText}>
+                        <Text style={styles.contactSheetContactName} numberOfLines={1}>
+                          {c.name}
+                        </Text>
+                      </View>
+                    </View>
+                    {(c.phones || []).length > 0 ? (
+                      c.phones.map((p, idx) => (
+                        <View key={idx} style={styles.contactSheetRow}>
+                          <View style={styles.contactSheetRowIcon}>
+                            <Icon name="phone" size={18} color={chatColors.primary} />
+                          </View>
+                          <View style={styles.contactSheetRowText}>
+                            <Text style={styles.contactSheetPhone}>
+                              {p.phone || 'N/A'}
+                            </Text>
+                          </View>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.contactSheetEmptyText}>
+                        No phone numbers in this contact.
+                      </Text>
+                    )}
+
+                    {c.wa_id && (
+                      <View style={styles.contactSheetRow}>
+                        <View style={styles.contactSheetRowIcon}>
+                          <Icon name="whatsapp" size={18} color="#25D366" />
+                        </View>
+                        <Text style={styles.contactSheetPhone}>{c.wa_id}</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -924,5 +1383,142 @@ const styles = StyleSheet.create({
   uploadingTimestamp: {
     fontSize: 11,
     color: 'rgba(255,255,255,0.7)',
+  },
+
+  // Shared contact bottom sheet styles
+  contactSheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  contactSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  contactSheetContainer: {
+    backgroundColor: colors.common.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    height: '70%',
+    maxHeight: '70%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  contactSheetScrollContent: {
+    paddingBottom: 4,
+  },
+  contactSheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.grey[300],
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  contactSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  contactSheetAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  contactSheetAvatarText: {
+    color: colors.common.white,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  contactSheetHeaderInfo: {
+    flex: 1,
+  },
+  contactSheetName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  contactSheetLabel: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  contactSheetSection: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  contactSheetSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.secondary,
+    marginBottom: 6,
+  },
+  contactSheetContactHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  contactSheetSectionDivider: {
+    // no explicit border; spacing handled by contactSheetSection margin
+  },
+  contactSheetContactTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  contactSheetContactName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  contactSheetContactAvatarSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contactSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  contactSheetRowIcon: {
+    width: 28,
+    alignItems: 'center',
+  },
+  contactSheetRowText: {
+    flex: 1,
+  },
+  contactSheetPhone: {
+    fontSize: 15,
+    color: colors.text.primary,
+  },
+  contactSheetPhoneLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  contactSheetEmptyText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginTop: 4,
   },
 });

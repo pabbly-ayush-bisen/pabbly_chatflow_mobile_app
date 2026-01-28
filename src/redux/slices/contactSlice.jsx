@@ -234,8 +234,33 @@ const contactSlice = createSlice({
       .addCase(getContacts.fulfilled, (state, action) => {
         state.contactsStatus = 'succeeded';
         const data = action.payload.data || action.payload;
-        state.contacts = data.contacts || [];
-        state.totalCount = data.totalCount || 0;
+        const newContacts = data.contacts || [];
+
+        // Support simple pagination by appending when skip > 0
+        const queryString = action.meta?.arg || '';
+        let skip = 0;
+        if (typeof queryString === 'string') {
+          const match = queryString.match(/(?:^|&)skip=(\d+)/);
+          if (match && match[1]) {
+            const parsed = parseInt(match[1], 10);
+            if (!Number.isNaN(parsed)) {
+              skip = parsed;
+            }
+          }
+        }
+
+        if (skip > 0) {
+          state.contacts = [...state.contacts, ...newContacts];
+        } else {
+          state.contacts = newContacts;
+        }
+
+        // Use totalCount exactly as returned by backend for this query (including 0)
+        if (typeof data.totalCount === 'number') {
+          state.totalCount = data.totalCount;
+        } else if (state.totalCount === undefined) {
+          state.totalCount = 0;
+        }
       })
       .addCase(getContacts.rejected, (state, action) => {
         state.contactsStatus = 'failed';

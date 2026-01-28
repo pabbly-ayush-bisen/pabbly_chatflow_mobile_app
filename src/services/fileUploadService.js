@@ -54,7 +54,7 @@ export const uploadFile = async (file, onProgress = null) => {
         const fileName = file.fileName || file.name || `file_${Date.now()}`;
         let extension = fileName.split('.').pop()?.toLowerCase() || getExtensionFromType(file.fileType);
         // Normalize extension for backend compatibility (e.g., .mov -> .mp4)
-        const extensionNormMap = { mov: 'mp4', avi: 'mp4', mkv: 'mp4', m4v: 'mp4' };
+        const extensionNormMap = { mov: 'mp4', avi: 'mp4', mkv: 'mp4', m4v: 'mp4', m4: 'mp4' };
         extension = extensionNormMap[extension] || extension;
         const destUri = `${FileSystem.cacheDirectory}upload_${Date.now()}.${extension}`;
 
@@ -233,7 +233,7 @@ export const uploadToMediaLibrary = async (file, onProgress = null) => {
         const fileName = file.fileName || file.name || `file_${Date.now()}`;
         let extension = fileName.split('.').pop()?.toLowerCase() || getExtensionFromType(file.fileType);
         // Normalize extension for backend compatibility (e.g., .mov -> .mp4)
-        const extensionNormMap = { mov: 'mp4', avi: 'mp4', mkv: 'mp4', m4v: 'mp4' };
+        const extensionNormMap = { mov: 'mp4', avi: 'mp4', mkv: 'mp4', m4v: 'mp4', m4: 'mp4' };
         extension = extensionNormMap[extension] || extension;
         const destUri = `${FileSystem.cacheDirectory}media_${Date.now()}.${extension}`;
 
@@ -340,6 +340,7 @@ const getMimeType = (fileName, fileType) => {
     '3gp': 'video/3gpp',     // Android format
     '3g2': 'video/3gpp2',
     m4v: 'video/mp4',        // Send as mp4 for compatibility
+    m4: 'video/mp4',         // .m4 video files - send as mp4
     mpeg: 'video/mpeg',
     mpg: 'video/mpeg',
 
@@ -410,9 +411,19 @@ const normalizeMimeType = (mimeType) => {
     'video/x-msvideo': 'video/mp4',      // .avi files
     'video/x-matroska': 'video/mp4',     // .mkv files
     'video/x-m4v': 'video/mp4',          // .m4v files
+    'video/m4': 'video/mp4',             // .m4 video files
+    'video/m4v': 'video/mp4',            // .m4v files (alternate)
+    'video/3gp': 'video/3gpp',           // .3gp files
+    'video/3gpp2': 'video/3gpp2',        // .3g2 files
+    'application/octet-stream': null,    // Will be handled by fileType fallback
   };
 
-  return videoMimeTypeMap[mimeType] || mimeType;
+  const normalized = videoMimeTypeMap[mimeType];
+  // If mapped to null, it means we need to use a fallback
+  if (normalized === null) {
+    return mimeType; // Keep original, let fileType-based logic handle it
+  }
+  return normalized || mimeType;
 };
 
 /**
@@ -431,12 +442,21 @@ const normalizeFileName = (fileName, mimeType) => {
     '.avi': '.mp4',
     '.mkv': '.mp4',
     '.m4v': '.mp4',
+    '.m4': '.mp4',    // .m4 video files
   };
 
   const lowerFileName = fileName.toLowerCase();
   for (const [oldExt, newExt] of Object.entries(extensionMap)) {
     if (lowerFileName.endsWith(oldExt)) {
       return fileName.slice(0, -oldExt.length) + newExt;
+    }
+  }
+
+  // If MIME type is video/mp4 but extension is not .mp4, fix it
+  if (mimeType === 'video/mp4' && !lowerFileName.endsWith('.mp4')) {
+    const lastDot = fileName.lastIndexOf('.');
+    if (lastDot > 0) {
+      return fileName.slice(0, lastDot) + '.mp4';
     }
   }
 
@@ -525,7 +545,7 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
           const fileName = file.fileName || file.name || `file_${Date.now()}`;
           let extension = fileName.split('.').pop()?.toLowerCase() || getExtensionFromType(file.fileType);
           // Normalize extension for backend compatibility (e.g., .mov -> .mp4)
-          const extensionNormMap = { mov: 'mp4', avi: 'mp4', mkv: 'mp4', m4v: 'mp4' };
+          const extensionNormMap = { mov: 'mp4', avi: 'mp4', mkv: 'mp4', m4v: 'mp4', m4: 'mp4' };
           extension = extensionNormMap[extension] || extension;
           const destUri = `${FileSystem.cacheDirectory}upload_${Date.now()}.${extension}`;
 

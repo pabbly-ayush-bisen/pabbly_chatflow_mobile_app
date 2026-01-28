@@ -1,9 +1,14 @@
-import React, { memo, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Image, Linking, Pressable } from 'react-native';
+import React, { memo, useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, TouchableOpacity, Image, Linking, Pressable, PanResponder, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { colors, chatColors } from '../../theme/colors';
 import PaymentMessage from './messages/PaymentMessage';
+import TemplateMessage from './messages/TemplateMessage';
+import WebFormTableMessage from './messages/WebFormTableMessage';
+import AskAddressReplyMessage from './messages/AskAddressReplyMessage';
+import InteractiveMessage from './messages/interactive/InteractiveMessage';
 import {
   getMessageText,
   getMessageCaption,
@@ -23,14 +28,71 @@ import {
   getErrorInfo,
 } from '../../utils/messageHelpers';
 
-const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => {
+const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, onLongPress, onContactPress }) => {
   const [imageError, setImageError] = useState(false);
+  const [generatedVideoThumbnail, setGeneratedVideoThumbnail] = useState(null);
+  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+
+  // Determine if outgoing message (used for animation direction)
+  const isOutgoing = isOutgoingMessage(message);
+
+  // Check if message is new (created within last 3 seconds) for animation
+  const isNewMessage = useRef(() => {
+    if (message.isOptimistic) return true;
+    const messageTime = new Date(message.timestamp || message.createdAt).getTime();
+    const now = Date.now();
+    // Animate if message is less than 3 seconds old
+    return (now - messageTime) < 3000;
+  }).current;
+
+  const shouldAnimate = isNewMessage();
+
+  // Animation values for new message appearance (WhatsApp-style)
+  // Outgoing: scale + slide up, Incoming: slide from left
+  const scaleAnim = useRef(new Animated.Value(shouldAnimate ? (isOutgoing ? 0.3 : 0.8) : 1)).current;
+  const translateYAnim = useRef(new Animated.Value(shouldAnimate ? (isOutgoing ? 20 : 10) : 0)).current;
+  const translateXAnim = useRef(new Animated.Value(shouldAnimate ? (isOutgoing ? 0 : -30) : 0)).current;
+  const opacityAnim = useRef(new Animated.Value(shouldAnimate ? 0 : 1)).current;
+
+  // Run entrance animation for new messages (both sent and received)
+  useEffect(() => {
+    if (shouldAnimate) {
+      // WhatsApp-style entrance animation
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 100,
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateYAnim, {
+          toValue: 0,
+          friction: 7,
+          tension: 100,
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateXAnim, {
+          toValue: 0,
+          friction: 7,
+          tension: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, []); // Run only once on mount
 
   // Get reactions if present
   const reactions = message.reactions || [];
 
-  const isOutgoing = isOutgoingMessage(message);
-  const messageType = message.type || 'text';
+  // Some incoming WhatsApp interactive replies come as:
+  // { type: 'interactive', interactive: { type: 'button_reply' | 'list_reply', ... } }
+  // or in some cases `type` may be missing but `interactive` is present.
+  const messageType = message?.type || (message?.interactive ? 'interactive' : 'text');
   const messageText = getMessageText(message);
   const caption = getMessageCaption(message);
   const timestamp = message.timestamp || message.createdAt;
@@ -39,6 +101,48 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
 
   // Check for file size error from WhatsApp Business App
   const isFileSizeErr = hasFileSizeError(message);
+
+  // Check for nfm_reply message type (Node Flow Message reply)
+  // Check both message.message.type and message.type for compatibility
+  const isNfmReply = message?.message?.type === 'nfm_reply' || message?.type === 'nfm_reply';
+  let nfmReplyObject = null;
+  let nfmReplyName = null;
+  if (isNfmReply) {
+    // Try to get payload from message.message.payload first, then message.payload
+    const payload = message?.message?.payload || message?.payload;
+    if (payload) {
+      nfmReplyName = payload.name;
+      try {
+        const responseJson = payload.response_json;
+        if (responseJson) {
+          nfmReplyObject = typeof responseJson === 'string' 
+            ? JSON.parse(responseJson) 
+            : responseJson;
+        }
+      } catch (error) {
+        console.warn('[MessageBubble] Failed to parse nfm_reply response_json:', error);
+      }
+    }
+  }
+
+  // Swipe-to-reply (WhatsApp-style right swipe)
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Horizontal movement more than vertical, small threshold
+        const { dx, dy } = gestureState;
+        return Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy);
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const { dx } = gestureState;
+        // Right swipe threshold → trigger reply
+        if (dx > 40) {
+          onReplyPress?.(message._id || message.wamid);
+        }
+      },
+    })
+  ).current;
 
   // Format time
   const formatTime = (ts) => {
@@ -174,30 +278,99 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
     );
   };
 
-  // Render video message
+  // Generate a thumbnail from the video on the device if backend did not provide one
+  useEffect(() => {
+    const generateThumbnail = async () => {
+      try {
+        const videoUrl = getMediaUrl(message);
+        if (!videoUrl) return;
+
+        // Skip if backend already provided a thumbnail
+        const backendThumbnail =
+          message?.message?.thumbnail ||
+          message?.thumbnail ||
+          message?.waResponse?.video?.thumbnail ||
+          null;
+
+        if (backendThumbnail) return;
+
+        setIsGeneratingThumbnail(true);
+        const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, {
+          time: 1000, // 1 second into the video
+        });
+        setGeneratedVideoThumbnail(uri);
+      } catch (e) {
+        console.warn('[MessageBubble] Failed to generate video thumbnail', e);
+      } finally {
+        setIsGeneratingThumbnail(false);
+      }
+    };
+
+    if (messageType === 'video') {
+      generateThumbnail();
+    }
+  }, [message, messageType]);
+
+  // Render video message with thumbnail
   const renderVideoMessage = () => {
     if (isFileSizeErr) {
       return renderFileSizeError();
     }
 
     const videoUrl = getMediaUrl(message);
+    const hasCaption = Boolean(caption);
 
     if (!videoUrl) {
       return renderErrorMessage('Video not available', 'video');
     }
 
+    // Get thumbnail URL if available from backend or generated on device
+    const thumbnailUrl =
+      message?.message?.thumbnail ||
+      message?.thumbnail ||
+      message?.waResponse?.video?.thumbnail ||
+      generatedVideoThumbnail ||
+      null;
+
     return (
       <View>
         <TouchableOpacity
-          style={styles.videoContainer}
+          style={[
+            styles.videoContainer,
+            hasCaption ? styles.videoWithCaption : styles.videoWithoutCaption,
+          ]}
           onPress={() => Linking.openURL(videoUrl)}
+          activeOpacity={0.9}
         >
+          {/* Video thumbnail or placeholder */}
+          {thumbnailUrl && !imageError ? (
+            <Image
+              source={{ uri: thumbnailUrl }}
+              style={styles.videoThumbnail}
+              resizeMode="cover"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <View style={styles.videoPlaceholder}>
+              <Icon name="video" size={40} color={colors.grey[400]} />
+            </View>
+          )}
+
+          {/* Play button overlay */}
           <View style={styles.videoOverlay}>
-            <Icon name="play-circle" size={48} color={colors.common.white} />
+            <View style={styles.playButtonCircle}>
+              <Icon name="play" size={32} color={colors.common.white} />
+            </View>
           </View>
-          <View style={styles.videoPlaceholder}>
-            <Icon name="video" size={40} color={colors.grey[400]} />
-          </View>
+
+          {/* Duration badge if available */}
+          {message?.message?.duration && (
+            <View style={styles.videoDurationBadge}>
+              <Text style={styles.videoDurationText}>
+                {formatVideoDuration(message.message.duration)}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
         {caption ? (
           <Text style={[styles.caption, isOutgoing && styles.outgoingText]}>
@@ -206,6 +379,14 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
         ) : null}
       </View>
     );
+  };
+
+  // Format video duration
+  const formatVideoDuration = (seconds) => {
+    if (!seconds) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Render audio message
@@ -290,142 +471,24 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
     );
   };
 
-  // Render template message (aligned with web app)
-  const renderTemplateMessage = () => {
-    const templateData = getTemplateData(message);
+  // Render template message using dedicated component (header, body, footer, buttons)
+  const renderTemplateMessage = () => (
+    <TemplateMessage
+      message={message}
+      isOutgoing={isOutgoing}
+      onImagePress={onImagePress}
+    />
+  );
 
-    if (!templateData) {
-      return renderErrorMessage('Template data is missing', 'template');
-    }
-
-    const { templateName, type } = templateData;
-    const mediaUrl = getMediaUrl(message);
-
-    return (
-      <View style={styles.templateContainer}>
-        {/* Template header with media if present */}
-        {type === 'image' && mediaUrl && (
-          <TouchableOpacity onPress={() => onImagePress?.(mediaUrl)}>
-            <Image
-              source={{ uri: mediaUrl }}
-              style={styles.templateMedia}
-              resizeMode="cover"
-            />
-          </TouchableOpacity>
-        )}
-        {type === 'video' && mediaUrl && (
-          <TouchableOpacity
-            style={styles.templateVideoContainer}
-            onPress={() => Linking.openURL(mediaUrl)}
-          >
-            <View style={styles.videoOverlay}>
-              <Icon name="play-circle" size={36} color={colors.common.white} />
-            </View>
-            <View style={styles.templateVideoPlaceholder}>
-              <Icon name="video" size={30} color={colors.grey[400]} />
-            </View>
-          </TouchableOpacity>
-        )}
-        {type === 'document' && mediaUrl && (
-          <TouchableOpacity
-            style={styles.templateDocContainer}
-            onPress={() => Linking.openURL(mediaUrl)}
-          >
-            <Icon name="file-document" size={20} color={colors.grey[600]} />
-            <Text style={styles.templateDocText}>Document</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Template body */}
-        <View style={styles.templateBody}>
-          <Icon
-            name="file-document-outline"
-            size={16}
-            color={colors.grey[500]}
-            style={styles.templateIcon}
-          />
-          <Text style={[styles.messageText, isOutgoing && styles.outgoingText]}>
-            {templateName}
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
-  // Render interactive message (aligned with web app)
-  const renderInteractiveMessage = () => {
-    const interactiveData = getInteractiveData(message);
-    const { type, body, buttons, sections, header, footer } = interactiveData;
-
-    // Validate interactive message
-    if (!type) {
-      return renderErrorMessage('Interactive message type is missing', 'interactive');
-    }
-
-    const bodyText = typeof body === 'string' ? body : 'Interactive message';
-
-    return (
-      <View style={styles.interactiveContainer}>
-        {/* Header if present */}
-        {header?.text && (
-          <Text style={[styles.interactiveHeader, isOutgoing && styles.outgoingText]}>
-            {header.text}
-          </Text>
-        )}
-
-        {/* Body text */}
-        <Text style={[styles.messageText, isOutgoing && styles.outgoingText]}>
-          {bodyText}
-        </Text>
-
-        {/* Footer if present */}
-        {footer && (
-          <Text style={[styles.interactiveFooter, isOutgoing && styles.outgoingTextSecondary]}>
-            {footer}
-          </Text>
-        )}
-
-        {/* Buttons for button type */}
-        {(type === 'button' || type === 'cta_url') && buttons.length > 0 && (
-          <View style={styles.interactiveButtons}>
-            {buttons.map((btn, index) => (
-              <TouchableOpacity key={index} style={styles.interactiveButton}>
-                <Text style={styles.interactiveButtonText}>
-                  {btn.reply?.title || btn.title || 'Button'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* List indicator for list type */}
-        {type === 'list' && sections.length > 0 && (
-          <View style={styles.listIndicator}>
-            <Icon name="menu" size={16} color={chatColors.primary} />
-            <Text style={styles.listIndicatorText}>
-              View options ({sections.reduce((acc, s) => acc + (s.rows?.length || 0), 0)} items)
-            </Text>
-          </View>
-        )}
-
-        {/* Product indicator */}
-        {(type === 'product' || type === 'product_list') && (
-          <View style={styles.productIndicator}>
-            <Icon name="shopping" size={16} color={chatColors.primary} />
-            <Text style={styles.productIndicatorText}>View products</Text>
-          </View>
-        )}
-
-        {/* Catalog indicator */}
-        {type === 'catalog_message' && (
-          <View style={styles.catalogIndicator}>
-            <Icon name="store" size={16} color={chatColors.primary} />
-            <Text style={styles.catalogIndicatorText}>View catalog</Text>
-          </View>
-        )}
-      </View>
-    );
-  };
+  // Render interactive message using dedicated component (aligned with web app)
+  // Routes to specialized components: ButtonMessage, ListMessage, AddressMessage, etc.
+  const renderInteractiveMessage = () => (
+    <InteractiveMessage
+      message={message}
+      isOutgoing={isOutgoing}
+      onImagePress={onImagePress}
+    />
+  );
 
   // Render location message
   const renderLocationMessage = () => {
@@ -500,10 +563,18 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
       return name.match(/\b\w/g)?.join('')?.slice(0, 2)?.toUpperCase() || '?';
     };
 
+    // Both single and multiple contacts: pass full array to parent so modal can show all
+    const primaryName = contacts[0].name;
+    const otherCount = contacts.length - 1;
+
     if (contacts.length === 1) {
       const contact = contacts[0];
       return (
-        <View style={styles.contactContainer}>
+        <TouchableOpacity
+          style={styles.contactContainer}
+          activeOpacity={0.7}
+          onPress={() => onContactPress?.(contacts)}
+        >
           <View style={styles.contactAvatar}>
             <Text style={styles.contactAvatarText}>{getInitials(contact.name)}</Text>
           </View>
@@ -526,16 +597,17 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
               </Text>
             )}
           </View>
-        </View>
+        </TouchableOpacity>
       );
     }
 
     // Multiple contacts
-    const primaryName = contacts[0].name;
-    const otherCount = contacts.length - 1;
-
     return (
-      <View style={styles.multiContactContainer}>
+      <TouchableOpacity
+        style={styles.multiContactContainer}
+        activeOpacity={0.7}
+        onPress={() => onContactPress?.(contacts)}
+      >
         <View style={styles.multiContactAvatars}>
           {contacts.slice(0, 3).map((contact, idx) => (
             <View
@@ -549,7 +621,7 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
         <Text style={[styles.multiContactText, isOutgoing && styles.outgoingText]}>
           {primaryName} {otherCount > 0 ? `and ${otherCount} other contacts` : ''}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -620,10 +692,237 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
     </View>
   );
 
+  // Reply preview content (for replied-to messages) - aligned with web behavior
+  const renderReplyPreviewContent = () => {
+    if (!originalMessage) {
+      return (
+        <Text style={styles.replyText} numberOfLines={1}>
+          Replying to message
+        </Text>
+      );
+    }
+
+    const origType = originalMessage?.type || 'text';
+
+    // Text-like preview for many types
+    const baseText = () => {
+      const text = getMessageText(originalMessage) || getMessageCaption(originalMessage);
+      if (!text) return null;
+      const trimmed = text.length > 60 ? `${text.slice(0, 57)}...` : text;
+      return trimmed;
+    };
+
+    switch (origType) {
+      case 'text': {
+        const text = baseText() || 'Text message';
+        return (
+          <Text style={styles.replyText} numberOfLines={1}>
+            {text}
+          </Text>
+        );
+      }
+      case 'image': {
+        const imgUrl = getMediaUrl(originalMessage);
+        if (!imgUrl) {
+          const text = getMessageCaption(originalMessage) || 'Image';
+          return (
+            <Text style={styles.replyText} numberOfLines={1}>
+              {text}
+            </Text>
+          );
+        }
+        return (
+          <View style={styles.replyMediaRow}>
+            <Image
+              source={{ uri: imgUrl }}
+              style={styles.replyImageThumb}
+              resizeMode="cover"
+            />
+            <Text style={styles.replyText} numberOfLines={1}>
+              Image
+            </Text>
+          </View>
+        );
+      }
+      case 'video': {
+        return (
+          <View style={styles.replyMediaRow}>
+            <View style={styles.replyVideoThumb}>
+              <Icon name="play-circle" size={18} color={colors.common.white} />
+            </View>
+            <Text style={styles.replyText} numberOfLines={1}>
+              Video
+            </Text>
+          </View>
+        );
+      }
+      case 'audio': {
+        return (
+          <View style={styles.replyMediaRow}>
+            <Icon name="music" size={16} color={colors.grey[600]} />
+            <Text style={styles.replyText} numberOfLines={1}>
+              Audio
+            </Text>
+          </View>
+        );
+      }
+      case 'document':
+      case 'file': {
+        const fileName = getFilename(originalMessage);
+        return (
+          <View style={styles.replyMediaRow}>
+            <Icon name="file-document" size={16} color={colors.grey[700]} />
+            <Text style={styles.replyText} numberOfLines={1}>
+              {fileName}
+            </Text>
+          </View>
+        );
+      }
+      case 'location':
+        return (
+          <View style={styles.replyMediaRow}>
+            <Icon name="map-marker" size={16} color={colors.error.main} />
+            <Text style={styles.replyText} numberOfLines={1}>
+              Location
+            </Text>
+          </View>
+        );
+      case 'contact':
+      case 'contacts':
+        return (
+          <View style={styles.replyMediaRow}>
+            <Icon name="account" size={16} color={colors.grey[700]} />
+            <Text style={styles.replyText} numberOfLines={1}>
+              Contact
+            </Text>
+          </View>
+        );
+      case 'template': {
+        const tpl = getTemplateData(originalMessage);
+        const name = tpl?.templateName || 'Template message';
+        return (
+          <Text style={styles.replyText} numberOfLines={1}>
+            {name}
+          </Text>
+        );
+      }
+      case 'interactive': {
+        // Match web app behavior: prefer header/body depending on interactive subtype,
+        // and handle flow interactive messages.
+        const getInteractiveReplyText = () => {
+          if (originalMessage?.from?.type === 'flow') {
+            return (
+              originalMessage?.message?.header?.text ||
+              originalMessage?.message?.body?.text ||
+              'Flow Interactive Message'
+            );
+          }
+
+          const t = originalMessage?.message?.type || originalMessage?.interactive?.type;
+
+          switch (t) {
+            case 'button':
+              return originalMessage?.message?.body?.text || 'Button Message';
+            case 'list':
+              return (
+                originalMessage?.message?.header?.text ||
+                originalMessage?.message?.body?.text ||
+                'List Message'
+              );
+            case 'product':
+              return originalMessage?.message?.body?.text || 'Product Message';
+            case 'product_list':
+              return originalMessage?.message?.body?.text || 'Product List Message';
+            case 'catalog_message':
+              return originalMessage?.message?.body?.text || 'Catalog Message';
+            case 'address_message':
+              return originalMessage?.message?.body?.text || 'Address Message';
+            case 'button_reply':
+            case 'list_reply': {
+              const interactive = getInteractiveData(originalMessage);
+              return interactive?.body || 'Interactive reply';
+            }
+            default: {
+              const interactive = getInteractiveData(originalMessage);
+              return interactive?.body || originalMessage?.message?.body?.text || 'Interactive Message';
+            }
+          }
+        };
+
+        const text = getInteractiveReplyText();
+        return (
+          <Text style={styles.replyText} numberOfLines={1}>
+            {text}
+          </Text>
+        );
+      }
+      case 'order':
+        return (
+          <Text style={styles.replyText} numberOfLines={1}>
+            Order
+          </Text>
+        );
+      default: {
+        const text = baseText() || 'Message';
+        return (
+          <Text style={styles.replyText} numberOfLines={1}>
+            {text}
+          </Text>
+        );
+      }
+    }
+  };
+
+  // Get message type label (like web app)
+  const getMessageTypeLabel = () => {
+    if (messageType === 'system') return null; // Don't show label for system messages
+    if (isNfmReply) return null; // Don't show label for nfm_reply messages (they have their own UI)
+
+    const typeLabels = {
+      image: 'Image Message',
+      sticker: 'Sticker Message',
+      video: 'Video Message',
+      audio: 'Audio Message',
+      document: 'File Message',
+      file: 'File Message',
+      location: 'Location Message',
+      interactive: 'Interactive Message',
+      template: 'Template Message',
+      order: 'Order Message',
+      contact: 'Contact Message',
+      contacts: 'Contact Message',
+      payment: 'Payment Message',
+      unsupported: 'Unsupported Message',
+      text: 'Text Message',
+    };
+
+    return typeLabels[messageType] || null;
+  };
+
+  // Render nfm_reply message (Node Flow Message reply)
+  const renderNfmReplyMessage = () => {
+    if (!isNfmReply || !nfmReplyObject) {
+      return renderTextMessage();
+    }
+
+    // Render based on payload name
+    if (nfmReplyName === 'flow') {
+      return <WebFormTableMessage message={nfmReplyObject} />;
+    } else {
+      // For ask_address or other nfm_reply types
+      return <AskAddressReplyMessage message={nfmReplyObject} />;
+    }
+  };
+
   // Render message content based on type
   const renderMessageContent = () => {
     if (messageType === 'system') {
       return renderSystemMessage();
+    }
+
+    // Handle nfm_reply messages first
+    if (isNfmReply) {
+      return renderNfmReplyMessage();
     }
 
     switch (messageType) {
@@ -674,13 +973,39 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
     }
   };
 
+  const messageTypeLabel = getMessageTypeLabel();
+  const replyId = message?.replyToWamid || message?.context?.id;
+  const isOriginalOutgoing = originalMessage ? isOutgoingMessage(originalMessage) : false;
+
   return (
-    <View
+    <Animated.View
+      {...panResponder.panHandlers}
       style={[
         styles.container,
         isOutgoing ? styles.outgoingContainer : styles.incomingContainer,
+        // Apply animation transforms for new messages
+        {
+          opacity: opacityAnim,
+          transform: [
+            { scale: scaleAnim },
+            { translateY: translateYAnim },
+            { translateX: translateXAnim },
+          ],
+        },
       ]}
     >
+      {/* Message type label above bubble (like web app) */}
+      {messageTypeLabel && (
+        <Text
+          style={[
+            styles.messageTypeLabel,
+            isOutgoing && styles.messageTypeLabelOutgoing,
+          ]}
+        >
+          {messageTypeLabel}
+        </Text>
+      )}
+
       <Pressable
         onLongPress={handleLongPress}
         delayLongPress={300}
@@ -695,16 +1020,31 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
             messageType === 'sticker' && styles.stickerBubble,
           ]}
         >
-          {/* Reply reference */}
-          {message.context?.id && (
+          {/* Reply reference (rich preview like web) */}
+          {replyId && (
             <TouchableOpacity
               style={styles.replyReference}
-              onPress={() => onReplyPress?.(message.context.id)}
+              onPress={() => onReplyPress?.(replyId)}
+              activeOpacity={0.7}
             >
-              <View style={styles.replyBar} />
-              <Text style={styles.replyText} numberOfLines={1}>
-                Replying to message
-              </Text>
+              <View
+                style={[
+                  styles.replyBar,
+                  isOriginalOutgoing ? styles.replyBarOutgoing : styles.replyBarIncoming,
+                ]}
+              />
+              <View style={styles.replyContent}>
+                <Text
+                  style={[
+                    styles.replyAuthor,
+                    isOutgoing ? styles.replyAuthorOutgoing : styles.replyAuthorIncoming,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {isOriginalOutgoing ? 'You' : 'Contact'}
+                </Text>
+                {renderReplyPreviewContent()}
+              </View>
             </TouchableOpacity>
           )}
 
@@ -733,7 +1073,7 @@ const MessageBubble = ({ message, onImagePress, onReplyPress, onLongPress }) => 
 
       {/* Reactions */}
       {renderReactions()}
-    </View>
+    </Animated.View>
   );
 };
 
@@ -876,13 +1216,34 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
 
+  // Message type label
+  messageTypeLabel: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    marginBottom: 4,
+    marginLeft: 8,
+  },
+  messageTypeLabelOutgoing: {
+    textAlign: 'right',
+    marginLeft: 0,
+    marginRight: 8,
+  },
   // Video styles
   videoContainer: {
     width: 220,
     height: 150,
-    borderRadius: 8,
     overflow: 'hidden',
     position: 'relative',
+  },
+  videoWithCaption: {
+    borderRadius: 4,
+  },
+  videoWithoutCaption: {
+    borderRadius: 8,
+  },
+  videoThumbnail: {
+    width: '100%',
+    height: '100%',
   },
   videoPlaceholder: {
     flex: 1,
@@ -896,6 +1257,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
     zIndex: 1,
+  },
+  playButtonCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingLeft: 4, // Offset play icon for visual center
+  },
+  videoDurationBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    zIndex: 2,
+  },
+  videoDurationText: {
+    fontSize: 11,
+    color: colors.common.white,
+    fontWeight: '500',
   },
 
   // Audio styles
@@ -1234,21 +1619,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 6,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.03)',
   },
   replyBar: {
     width: 3,
-    height: 20,
+    height: '100%',
+    minHeight: 24,
     backgroundColor: chatColors.primary,
     borderRadius: 2,
     marginRight: 8,
   },
+  replyBarIncoming: {
+    backgroundColor: chatColors.primary,
+  },
+  replyBarOutgoing: {
+    backgroundColor: 'rgba(255,255,255,0.8)',
+  },
+  replyContent: {
+    flex: 1,
+  },
+  replyAuthor: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  replyAuthorIncoming: {
+    color: chatColors.primary,
+  },
+  replyAuthorOutgoing: {
+    color: 'rgba(0,0,0,0.8)',
+  },
   replyText: {
     fontSize: 12,
     color: colors.text.secondary,
-    fontStyle: 'italic',
+  },
+  replyMediaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  replyImageThumb: {
+    width: 34,
+    height: 34,
+    borderRadius: 5,
+    backgroundColor: colors.grey[200],
+  },
+  replyVideoThumb: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.grey[600],
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // Pressed state

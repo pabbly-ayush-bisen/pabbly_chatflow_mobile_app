@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   orderTitleOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   orderId: {
     fontSize: 12,
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   orderIdOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.text.secondary,
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
   },
   summaryLabelOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.text.secondary,
   },
   summaryValue: {
     fontSize: 13,
@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   summaryValueOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   totalValue: {
     fontSize: 14,
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
     color: chatColors.primary,
   },
   totalValueOutgoing: {
-    color: colors.common.white,
+    color: chatColors.primary,
   },
   paymentStatus: {
     fontSize: 12,
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   bodyTextOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   footerText: {
     fontSize: 12,
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   footerTextOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.text.secondary,
   },
   viewButton: {
     flexDirection: 'row',

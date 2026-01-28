@@ -83,15 +83,15 @@ const ChatInput = ({
   }, [isIntervened, chatStatus]);
 
   // Determine what to show based on chat state
-  // Logic aligned with web app chat-message-input.jsx lines 500-571
+  // Logic aligned with web app chat-message-input.jsx lines 631-681
   const showStopAiButton = aiAssistantStatus === true;
-  // Show intervene button when: AI not active, within 24-hour window, not intervened, and chat has automation/AI handling it
-  // If chatStatus is undefined or 'open', user can chat directly without intervening
-  const hasAutomation = chatStatus && chatStatus !== 'open' && chatStatus !== 'intervened';
-  const showInterveneButton = !showStopAiButton && isActive && !intervened && hasAutomation;
+  // Show intervene button when: AI not active, within 24-hour window, not intervened
+  // This matches web app behavior: !aiAssistantStatus && isActive && !intervene
+  // When chatStatus is 'open' or any other non-intervened status, show intervene button
+  const showInterveneButton = !showStopAiButton && isActive && !intervened;
   // Show template only when outside 24-hour window and not intervened
   const showSendTemplateOnly = !showStopAiButton && !isActive && !intervened;
-  // Show normal chat input in all other cases (default behavior)
+  // Show normal chat input when intervened (or when AI is stopped and intervened)
   const showChatInput = !showStopAiButton && !showInterveneButton && !showSendTemplateOnly;
 
   const hasText = message.trim().length > 0;
@@ -210,12 +210,103 @@ const ChatInput = ({
   }, []);
 
   // Handle sending template from preview dialog
-  const handleSendTemplateFromPreview = useCallback(({ template, bodyParams, headerParams }) => {
-    onSendTemplate?.({
-      ...template,
+  const handleSendTemplateFromPreview = useCallback((payload) => {
+    // Support both payload structures:
+    // 1. Regular templates: { template, bodyParams, ... }
+    // 2. Carousel/special templates: { templateName, languageCode, row, ... }
+    const {
+      template,
+      row,
+      templateName: directTemplateName,
+      languageCode: directLanguageCode,
+      templateType: directTemplateType,
       bodyParams,
       headerParams,
+      media,
+      location,
+      ltoFields,
+      catalogProductId,
+      copyCodeParam,
+      urlVariables,
+      carouselBodies,
+      carouselFileData,
+      carouselMediaType,
+      isCarousel,
+    } = payload;
+
+    // Get template reference from either template or row property
+    const actualTemplate = template || row;
+    const resolvedType = directTemplateType || actualTemplate?.type;
+
+    // Ensure bodyParams and headerParams are arrays
+    const resolvedBodyParams = Array.isArray(bodyParams) ? bodyParams : Object.values(bodyParams || {});
+    const resolvedHeaderParams = Array.isArray(headerParams) ? headerParams : Object.values(headerParams || {});
+
+    console.log('[ChatInput] Processing template payload:', {
+      hasTemplate: !!template,
+      hasRow: !!row,
+      bodyParamsType: Array.isArray(bodyParams) ? 'array' : typeof bodyParams,
+      bodyParamsLength: resolvedBodyParams.length,
+      bodyParamsValues: resolvedBodyParams,
     });
+
+    // Prepare the template payload for the backend
+    const templatePayload = {
+      templateName: directTemplateName || actualTemplate?.name,
+      languageCode: directLanguageCode || actualTemplate?.language,
+      templateType: resolvedType,
+      bodyParams: resolvedBodyParams,
+      headerParams: resolvedHeaderParams,
+      // Include both template and row for backwards compatibility
+      template: actualTemplate,
+      row: actualTemplate,
+      // Include the full media object for easier access
+      media,
+    };
+
+    // For media templates, also flatten file information for convenience
+    const mediaTypes = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+    if (media && mediaTypes.includes(resolvedType?.toUpperCase())) {
+      templatePayload.fileName = media.fileName;
+      templatePayload.fileUrl = media.fileUrl || media.uri;
+      templatePayload.mediaId = media.mediaId;
+    }
+
+    // Add location fields for location templates
+    if (location) {
+      templatePayload.location = location;
+    }
+
+    // Add LTO fields for limited time offer templates
+    if (ltoFields) {
+      templatePayload.ltoFields = ltoFields;
+    }
+
+    // Add catalog product ID for catalog templates
+    if (catalogProductId) {
+      templatePayload.catalogProductId = catalogProductId;
+    }
+
+    // Add copy code param for authentication templates
+    if (copyCodeParam) {
+      templatePayload.copyCodeParam = copyCodeParam;
+    }
+
+    // Add URL variables for dynamic URL buttons
+    if (urlVariables && urlVariables.length > 0) {
+      templatePayload.urlVariables = urlVariables;
+    }
+
+    // Add carousel-specific fields
+    if (isCarousel) {
+      templatePayload.isCarousel = true;
+      templatePayload.carouselBodies = carouselBodies;
+      templatePayload.carouselFileData = carouselFileData;
+      templatePayload.carouselMediaType = carouselMediaType;
+    }
+
+    console.log('[ChatInput] Sending template payload:', templatePayload);
+    onSendTemplate?.(templatePayload);
     setShowTemplatePreview(false);
     setSelectedTemplate(null);
   }, [onSendTemplate]);
@@ -633,6 +724,18 @@ const ChatInput = ({
           onClose={() => setShowTemplatePicker(false)}
           templates={templates}
           onSelect={handleTemplateSelect}
+        />
+
+        {/* Template Preview Dialog - shows selected template with variable inputs */}
+        <TemplatePreviewDialog
+          visible={showTemplatePreview}
+          onClose={() => {
+            setShowTemplatePreview(false);
+            setSelectedTemplate(null);
+          }}
+          template={selectedTemplate}
+          onSend={handleSendTemplateFromPreview}
+          isSending={isSending}
         />
       </View>
     );

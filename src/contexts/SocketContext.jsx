@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 import { AppState } from 'react-native';
 import {
   initializeSocket,
@@ -16,6 +16,8 @@ import {
   handleContactCreateError,
   handleSendMessageError,
   handleTeamMemberLogout,
+  handleUpdateChatOnContactUpdate,
+  handleUpdateTemplateStatus,
 } from '../services/socketHandlers';
 import { fetchChats } from '../redux/slices/inboxSlice';
 import {
@@ -40,7 +42,8 @@ export const useSocket = () => {
 
 export const SocketProvider = ({ children }) => {
   const dispatch = useDispatch();
-  const { authenticated } = useSelector((state) => state.user);
+  const store = useStore();
+  const { authenticated, settingId, teamMemberStatus } = useSelector((state) => state.user);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [error, setError] = useState(null);
   const [pushToken, setPushToken] = useState(null);
@@ -48,6 +51,7 @@ export const SocketProvider = ({ children }) => {
   const currentChatIdRef = useRef(null); // Track currently open chat
   const notificationListenerRef = useRef(null);
   const responseListenerRef = useRef(null);
+  const previousSettingIdRef = useRef(null); // Track previous settingId for reconnection
 
   const handleConnect = useCallback(() => {
     console.log('Socket connected - fetching chats');
@@ -100,6 +104,18 @@ export const SocketProvider = ({ children }) => {
             newChat.contact,
             newChat._id
           );
+
+          // Update badge count with total unread messages
+          try {
+            const currentState = store.getState();
+            const totalUnread = (currentState.inbox?.chats || []).reduce(
+              (acc, chat) => acc + (chat.unreadCount || 0), 0
+            );
+            // Add 1 for the new unread message (since state might not be updated yet)
+            await setBadgeCount(totalUnread + 1);
+          } catch (badgeError) {
+            console.warn('[SocketContext] Error updating badge count:', badgeError);
+          }
         }
       }
     });
@@ -134,7 +150,19 @@ export const SocketProvider = ({ children }) => {
     subscribeToEvent('teamMemberLogout', (emailsToLogout) => {
       handleTeamMemberLogout(dispatch, emailsToLogout);
     });
-  }, [dispatch]);
+
+    // Chat update on contact update (when contact details change)
+    subscribeToEvent('updateChatOnContactUpdate', async (response) => {
+      console.log('[SocketContext] updateChatOnContactUpdate received');
+      handleUpdateChatOnContactUpdate(dispatch, response);
+    });
+
+    // Template status update (for real-time template approval notifications)
+    subscribeToEvent('updateTemplateStatus', (template) => {
+      console.log('[SocketContext] updateTemplateStatus received');
+      handleUpdateTemplateStatus(dispatch, template);
+    });
+  }, [dispatch, store]);
 
   const removeEventListeners = useCallback(() => {
     unsubscribeFromEvent('newMessage');
@@ -144,6 +172,8 @@ export const SocketProvider = ({ children }) => {
     unsubscribeFromEvent('contactCreateError');
     unsubscribeFromEvent('sendMessageError');
     unsubscribeFromEvent('teamMemberLogout');
+    unsubscribeFromEvent('updateChatOnContactUpdate');
+    unsubscribeFromEvent('updateTemplateStatus');
   }, []);
 
   const connect = useCallback(async () => {
@@ -165,12 +195,36 @@ export const SocketProvider = ({ children }) => {
 
   // Handle app state changes (foreground/background)
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         // App has come to foreground
+        console.log('[SocketContext] App came to foreground');
+
+        // Clear badge count and notifications when app becomes active
+        try {
+          await setBadgeCount(0);
+          await clearAllNotifications();
+        } catch (badgeError) {
+          console.warn('[SocketContext] Error clearing badge:', badgeError);
+        }
+
+        // Reconnect socket if needed
         if (authenticated && !isSocketConnected()) {
-          console.log('App came to foreground, reconnecting socket');
+          console.log('[SocketContext] Reconnecting socket');
           connect();
+        }
+
+        // Re-register push token in case it changed
+        if (authenticated) {
+          try {
+            const token = await registerForPushNotifications();
+            if (token && token !== pushToken) {
+              setPushToken(token);
+              console.log('[SocketContext] Push token updated:', token);
+            }
+          } catch (tokenError) {
+            console.warn('[SocketContext] Error re-registering push token:', tokenError);
+          }
         }
       }
       appState.current = nextAppState;
@@ -179,7 +233,7 @@ export const SocketProvider = ({ children }) => {
     return () => {
       subscription.remove();
     };
-  }, [authenticated, connect]);
+  }, [authenticated, connect, pushToken]);
 
   // Setup push notifications
   useEffect(() => {
@@ -236,6 +290,35 @@ export const SocketProvider = ({ children }) => {
       disconnect();
     };
   }, [authenticated, connect, disconnect]);
+
+  // Reconnect socket when settingId changes (e.g., after team member login)
+  // This ensures the socket uses the new credentials when switching between accounts
+  // Same behavior as web app where socket reconnects with new session after team member login
+  useEffect(() => {
+    if (!authenticated || !settingId) {
+      previousSettingIdRef.current = settingId;
+      return;
+    }
+
+    // Check if settingId has changed (team member login/logout)
+    if (previousSettingIdRef.current && previousSettingIdRef.current !== settingId) {
+      console.log('[SocketContext] settingId changed, reconnecting socket:', {
+        previous: previousSettingIdRef.current,
+        current: settingId,
+        isTeamMember: teamMemberStatus?.loggedIn,
+      });
+
+      // Disconnect and reconnect with new credentials
+      // This ensures the socket sends messages with the correct settingId
+      disconnect();
+      // Small delay to ensure clean disconnection before reconnecting
+      setTimeout(() => {
+        connect();
+      }, 100);
+    }
+
+    previousSettingIdRef.current = settingId;
+  }, [authenticated, settingId, teamMemberStatus?.loggedIn, connect, disconnect]);
 
   // Function to set current open chat (call from ChatDetailsScreen)
   const setCurrentChatId = useCallback((chatId) => {

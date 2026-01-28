@@ -93,12 +93,26 @@ export const getTemplateData = (message) => {
   const templateData = message?.message?.template || message?.message;
 
   if (typeof templateData === 'object' && templateData !== null) {
+    // Get link from multiple possible locations (including optimistic messages)
+    const link = message?.message?.link ||
+      message?.message?.template?.link ||
+      message?.link ||
+      null;
+
+    // Get type from message or template
+    const type = message?.message?.type ||
+      templateData.type ||
+      templateData.templateType ||
+      'text';
+
     return {
       templateName: templateData.templateName || templateData.name || 'Template',
-      type: templateData.type || 'text',
-      bodyParams: message?.message?.bodyParams || [],
-      headerParams: message?.message?.headerParams || [],
-      link: message?.message?.link || null,
+      type: type,
+      bodyParams: message?.message?.bodyParams || templateData.bodyParams || [],
+      headerParams: message?.message?.headerParams || templateData.headerParams || [],
+      link: link,
+      // Include components for rendering template with variables
+      components: templateData.components || message?.message?.template?.components || null,
     };
   }
 
@@ -109,18 +123,52 @@ export const getTemplateData = (message) => {
  * Get interactive message data
  */
 export const getInteractiveData = (message) => {
-  const interactiveType = message?.message?.type || message?.interactive?.type;
-  const body = message?.message?.body?.text || message?.interactive?.body?.text || '';
-  const buttons = message?.message?.action?.buttons || message?.interactive?.action?.buttons || [];
-  const sections = message?.message?.action?.sections || message?.interactive?.action?.sections || [];
+  if (!message) {
+    return {
+      type: null,
+      body: '',
+      buttons: [],
+      sections: [],
+      header: null,
+      footer: '',
+    };
+  }
+
+  // There are two main shapes:
+  // 1) Outgoing interactive messages: message.message.{ type, body, action, header, footer }
+  // 2) Incoming interactive replies: message.interactive.{ type, button_reply | list_reply | body, header, footer }
+  const msgInteractive = message?.message;
+  const waInteractive = message?.interactive;
+
+  // Prefer explicit interactive.type from webhook, then message.message.type
+  const interactiveType = msgInteractive?.type || waInteractive?.type || null;
+
+  let body = '';
+
+  // Handle interactive reply messages from WhatsApp (button_reply, list_reply)
+  if (waInteractive?.type === 'button_reply') {
+    body = waInteractive?.button_reply?.title || '';
+  } else if (waInteractive?.type === 'list_reply') {
+    // Prefer row title, fall back to id
+    body = waInteractive?.list_reply?.title || waInteractive?.list_reply?.id || '';
+  } else {
+    // Regular interactive message body (outgoing)
+    body = msgInteractive?.body?.text || waInteractive?.body?.text || '';
+  }
+
+  const buttons =
+    msgInteractive?.action?.buttons || waInteractive?.action?.buttons || [];
+
+  const sections =
+    msgInteractive?.action?.sections || waInteractive?.action?.sections || [];
 
   return {
     type: interactiveType,
     body,
     buttons,
     sections,
-    header: message?.message?.header || message?.interactive?.header || null,
-    footer: message?.message?.footer?.text || message?.interactive?.footer?.text || '',
+    header: msgInteractive?.header || waInteractive?.header || null,
+    footer: msgInteractive?.footer?.text || waInteractive?.footer?.text || '',
   };
 };
 
@@ -297,8 +345,15 @@ export const isOutgoingMessage = (message) => {
 
 /**
  * Get message status
+ * Prioritizes status field (like web app), falls back to timestamp-based detection
  */
 export const getMessageStatus = (message) => {
+  // Use status field directly if available (matches web app behavior)
+  if (message?.status && ['failed', 'sent', 'delivered', 'read', 'pending'].includes(message.status)) {
+    return message.status;
+  }
+
+  // Fallback to timestamp-based detection for backward compatibility
   if (message?.readAt) return 'read';
   if (message?.deliveredAt) return 'delivered';
   if (message?.sentAt) return 'sent';

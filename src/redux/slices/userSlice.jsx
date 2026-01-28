@@ -81,6 +81,7 @@ export const logout = createAsyncThunk(
 
       // Clear storage like web app does
       await AsyncStorage.removeItem('settingId');
+      await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
       await AsyncStorage.removeItem('shouldCheckSession');
       await AsyncStorage.removeItem('tokenExpiresAt');
       await AsyncStorage.removeItem('notifiedThresholds');
@@ -93,6 +94,7 @@ export const logout = createAsyncThunk(
     } catch (error) {
       // Still clear storage even on error
       await AsyncStorage.removeItem('settingId');
+      await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
       await AsyncStorage.removeItem('shouldCheckSession');
       await AsyncStorage.removeItem('tokenExpiresAt');
       await AsyncStorage.removeItem('notifiedThresholds');
@@ -270,7 +272,9 @@ const userSlice = createSlice({
           state.settingId = userSettingId;
 
           // Store settingId in AsyncStorage (done async, can't await here)
+          // Store under both keys for compatibility with socketService
           AsyncStorage.setItem('settingId', userSettingId);
+          AsyncStorage.setItem('@pabbly_chatflow_settingId', userSettingId);
 
           // Store timezone
           if (action.payload?.data?.timeZone) {
@@ -292,6 +296,7 @@ const userSlice = createSlice({
           // No settingId - clear related state
           state.tokenExpiresAt = null;
           AsyncStorage.removeItem('settingId');
+          AsyncStorage.removeItem('@pabbly_chatflow_settingId');
           AsyncStorage.removeItem('tokenExpiresAt');
         }
 
@@ -331,6 +336,7 @@ const userSlice = createSlice({
         state.settingId = null;
         // Clear storage
         AsyncStorage.removeItem('settingId');
+        AsyncStorage.removeItem('@pabbly_chatflow_settingId');
         AsyncStorage.removeItem('shouldCheckSession');
       });
 
@@ -418,8 +424,10 @@ const userSlice = createSlice({
         const data = action.payload.data || action.payload;
         if (data?._id) {
           state.settingId = data._id;
-          // Also store to AsyncStorage for services that need it (file upload, etc.)
+          // Also store to AsyncStorage for services that need it (file upload, socket, etc.)
+          // Store under both keys for compatibility with socketService
           AsyncStorage.setItem('settingId', data._id);
+          AsyncStorage.setItem('@pabbly_chatflow_settingId', data._id);
         }
         state.error = null;
       })

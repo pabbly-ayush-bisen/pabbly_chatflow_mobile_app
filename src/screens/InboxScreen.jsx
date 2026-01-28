@@ -26,25 +26,47 @@ export default function InboxScreen() {
     hasMoreChats,
     isLoadingMore
   } = useSelector((state) => state.inbox);
+  const { teamMemberStatus } = useSelector((state) => state.user);
   const { connectionStatus } = useSocket();
+
+  const isTeamMemberLoggedIn = !!teamMemberStatus?.loggedIn;
 
   const isLoading = status === 'loading';
   const isRefreshing = status === 'loading' && chats.length > 0;
 
+  // Base chats: when logged in as team member, only show chats assigned to this member
+  const visibleChats = useMemo(() => {
+    if (!isTeamMemberLoggedIn) return chats;
+    const memberName = (teamMemberStatus?.name || '').trim();
+    if (!memberName) return chats;
+    return chats.filter((chat) => {
+      const assignedName = chat?.assignedToMember?.name || '';
+      return assignedName.trim() === memberName;
+    });
+  }, [chats, isTeamMemberLoggedIn, teamMemberStatus?.name]);
+
   // Calculate total unread count
   const totalUnreadCount = useMemo(() => {
-    return chats.reduce((acc, chat) => acc + (chat.unreadCount || 0), 0);
-  }, [chats]);
+    return visibleChats.reduce((acc, chat) => acc + (chat.unreadCount || 0), 0);
+  }, [visibleChats]);
 
   useEffect(() => {
     loadChats();
-  }, [activeFilter]);
+  }, [activeFilter, isTeamMemberLoggedIn]);
+
+  // Team-member mode: always enforce "assigned_to_me" (no team queue screen on mobile)
+  useEffect(() => {
+    if (isTeamMemberLoggedIn && activeFilter !== 'assigned_to_me') {
+      dispatch(setActiveFilter('assigned_to_me'));
+    }
+  }, [dispatch, isTeamMemberLoggedIn, activeFilter]);
 
   const loadChats = useCallback(() => {
     dispatch(resetPagination());
-    const params = activeFilter !== 'all' ? { filter: activeFilter } : {};
+    const effectiveFilter = isTeamMemberLoggedIn ? 'assigned_to_me' : activeFilter;
+    const params = effectiveFilter !== 'all' ? { filter: effectiveFilter } : {};
     dispatch(fetchChats(params));
-  }, [dispatch, activeFilter]);
+  }, [dispatch, activeFilter, isTeamMemberLoggedIn]);
 
   const onRefresh = useCallback(() => {
     loadChats();
@@ -52,10 +74,11 @@ export default function InboxScreen() {
 
   // Handle filter change
   const handleFilterChange = useCallback((filter) => {
+    if (isTeamMemberLoggedIn) return; // locked in team-member mode
     if (filter !== activeFilter) {
       dispatch(setActiveFilter(filter));
     }
-  }, [dispatch, activeFilter]);
+  }, [dispatch, activeFilter, isTeamMemberLoggedIn]);
 
   // Handle load more (pagination)
   const handleLoadMore = useCallback(() => {
@@ -100,7 +123,7 @@ export default function InboxScreen() {
   }, [navigation]);
 
   // Filter chats based on search
-  const filteredChats = chats.filter((chat) => {
+  const filteredChats = visibleChats.filter((chat) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     const contactName = chat.contact?.name?.toLowerCase() || '';
@@ -178,12 +201,14 @@ export default function InboxScreen() {
         connectionStatus={connectionStatus}
       />
 
-      {/* Filter Chips */}
-      <FilterChips
-        activeFilter={activeFilter}
-        onFilterChange={handleFilterChange}
-        unreadCount={totalUnreadCount}
-      />
+      {/* Filter Chips (hidden in team-member mode) */}
+      {!isTeamMemberLoggedIn && (
+        <FilterChips
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterChange}
+          unreadCount={totalUnreadCount}
+        />
+      )}
 
       {error && !chats.length ? (
         renderError()
@@ -217,12 +242,14 @@ export default function InboxScreen() {
       )}
 
       {/* Floating Action Button for new chat - WhatsApp style */}
-      <FAB
-        icon="message-text"
-        style={styles.fab}
-        onPress={handleNewChat}
-        color={colors.common.white}
-      />
+      {!isTeamMemberLoggedIn && (
+        <FAB
+          icon="message-text"
+          style={styles.fab}
+          onPress={handleNewChat}
+          color={colors.common.white}
+        />
+      )}
     </View>
   );
 }

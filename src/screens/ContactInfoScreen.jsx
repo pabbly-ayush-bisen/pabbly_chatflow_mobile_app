@@ -12,13 +12,16 @@ import {
   Platform,
   Linking,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { colors, chatColors, getAvatarColor } from '../theme/colors';
 import { format, formatDistanceToNow } from 'date-fns';
+import { updateContactChat, setChatStatus, updateChatInList } from '../redux/slices/inboxSlice';
+import { updateContact } from '../redux/slices/contactSlice';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -27,6 +30,17 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: 'account-outline' },
   { id: 'orders', label: 'Orders', icon: 'shopping-outline' },
   { id: 'activity', label: 'Activity', icon: 'history' },
+];
+
+// Chat status configuration
+const CHAT_STATUS_OPTIONS = [
+  { value: 'open', label: 'Open', icon: 'message-outline', color: colors.info.main, description: 'Chat is open and active' },
+  { value: 'intervened', label: 'Intervened', icon: 'hand-back-left', color: colors.warning.main, description: 'Manual intervention mode' },
+  { value: 'on_hold', label: 'On Hold', icon: 'pause-circle-outline', color: colors.grey[600], description: 'Chat is temporarily paused' },
+  { value: 'replied', label: 'Replied', icon: 'reply-outline', color: colors.success.main, description: 'Waiting for customer response' },
+  { value: 'pending', label: 'Pending', icon: 'clock-outline', color: colors.warning.dark, description: 'Awaiting action' },
+  { value: 'resolved', label: 'Resolved', icon: 'check-circle-outline', color: colors.success.main, description: 'Issue has been resolved' },
+  { value: 'closed', label: 'Closed', icon: 'close-circle-outline', color: colors.error.main, description: 'Chat is closed' },
 ];
 
 const ContactInfoScreen = ({ route, navigation }) => {
@@ -38,8 +52,17 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
+  const [displayName, setDisplayName] = useState(''); // Local state for real-time UI updates
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Chat status state
+  const [showStatusPicker, setShowStatusPicker] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState(chat?.status || 'open');
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Get chat status from Redux
+  const { updateContactChatStatus } = useSelector((state) => state.inbox);
 
   // Mock orders data - In real app, this would come from API/Redux
   const [orders] = useState([
@@ -88,7 +111,57 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     setEditName(contactName);
+    setDisplayName(contactName);
   }, [contactName]);
+
+  // Sync chat status from props
+  useEffect(() => {
+    if (chat?.status) {
+      setCurrentStatus(chat.status);
+    }
+  }, [chat?.status]);
+
+  // Handle chat status change
+  const handleStatusChange = useCallback(async (newStatus) => {
+    if (newStatus === currentStatus) {
+      setShowStatusPicker(false);
+      return;
+    }
+
+    setIsUpdatingStatus(true);
+    try {
+      const result = await dispatch(updateContactChat({
+        id: chatId,
+        status: newStatus,
+        assignedToMember: chat?.assignedToMember || {},
+        hideNotification: chat?.hideNotification || false,
+      })).unwrap();
+
+      if (result.status === 'success' || result.response?.status === 'success') {
+        setCurrentStatus(newStatus);
+        dispatch(setChatStatus(newStatus));
+        Alert.alert('Success', `Chat status updated to ${getStatusLabel(newStatus)}`);
+      } else {
+        Alert.alert('Error', result.message || 'Failed to update chat status');
+      }
+    } catch (error) {
+      Alert.alert('Error', error?.message || error || 'Failed to update chat status');
+    } finally {
+      setIsUpdatingStatus(false);
+      setShowStatusPicker(false);
+    }
+  }, [chatId, chat, currentStatus, dispatch]);
+
+  // Get status label from value
+  const getStatusLabel = (statusValue) => {
+    const option = CHAT_STATUS_OPTIONS.find(opt => opt.value === statusValue);
+    return option?.label || statusValue;
+  };
+
+  // Get status config
+  const getStatusConfig = (statusValue) => {
+    return CHAT_STATUS_OPTIONS.find(opt => opt.value === statusValue) || CHAT_STATUS_OPTIONS[0];
+  };
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -130,22 +203,52 @@ const ContactInfoScreen = ({ route, navigation }) => {
   };
 
   const handleSaveName = useCallback(async () => {
-    if (!editName.trim() || editName === contactName) {
+    if (!editName.trim() || editName.trim() === displayName) {
+      setIsEditing(false);
+      setEditName(displayName);
+      return;
+    }
+
+    const contactId = contactData._id || contact?._id;
+    if (!contactId) {
+      Alert.alert('Error', 'Contact ID not found. Cannot update name.');
       setIsEditing(false);
       return;
     }
 
     setIsSaving(true);
     try {
-      // TODO: Dispatch update contact action
-      Alert.alert('Success', 'Contact name updated');
-      setIsEditing(false);
+      const result = await dispatch(updateContact({
+        _id: contactId,
+        bodyData: { updateData: { name: editName.trim() } },
+      })).unwrap();
+
+      if (result.status === 'success' || result.data) {
+        const newName = editName.trim();
+        // Update local display name for immediate UI update
+        setDisplayName(newName);
+        // Update the chat in the list with the new contact name
+        if (chatId) {
+          dispatch(updateChatInList({
+            _id: chatId,
+            contact: {
+              ...contactData,
+              name: newName,
+            },
+          }));
+        }
+        Alert.alert('Success', 'Contact name updated successfully');
+        setIsEditing(false);
+      } else {
+        Alert.alert('Error', result.message || 'Failed to update contact name');
+      }
     } catch (error) {
-      Alert.alert('Error', error || 'Failed to update contact name');
+      const errorMessage = typeof error === 'string' ? error : error?.message || 'Failed to update contact name';
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsSaving(false);
     }
-  }, [editName, contactName]);
+  }, [editName, displayName, contactData, contact, chatId, dispatch]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -237,49 +340,6 @@ const ContactInfoScreen = ({ route, navigation }) => {
   // Render Overview Tab
   const renderOverviewTab = () => (
     <View style={styles.tabContent}>
-      {/* Quick Actions */}
-      <View style={styles.quickActionsCard}>
-        <TouchableOpacity
-          style={styles.quickAction}
-          onPress={handleWhatsApp}
-          disabled={!contactPhoneNumber}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: `${chatColors.accent}15` }]}>
-            <Icon name="whatsapp" size={22} color={chatColors.accent} />
-          </View>
-          <Text style={styles.quickActionLabel}>Message</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickAction}
-          onPress={handleCall}
-          disabled={!contactPhoneNumber}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: `${colors.info.main}15` }]}>
-            <Icon name="phone" size={22} color={colors.info.main} />
-          </View>
-          <Text style={styles.quickActionLabel}>Call</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickAction}
-          onPress={handleEmail}
-          disabled={!contactEmail}
-        >
-          <View style={[styles.quickActionIcon, { backgroundColor: `${colors.warning.main}15` }]}>
-            <Icon name="email-outline" size={22} color={colors.warning.main} />
-          </View>
-          <Text style={styles.quickActionLabel}>Email</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.quickAction}>
-          <View style={[styles.quickActionIcon, { backgroundColor: `${colors.secondary.main}15` }]}>
-            <Icon name="dots-horizontal" size={22} color={colors.secondary.main} />
-          </View>
-          <Text style={styles.quickActionLabel}>More</Text>
-        </TouchableOpacity>
-      </View>
-
       {/* Contact Info Card */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
@@ -343,6 +403,51 @@ const ContactInfoScreen = ({ route, navigation }) => {
             </View>
           </View>
         </View>
+      </View>
+
+      {/* Chat Status Section */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Icon name="message-processing-outline" size={20} color={chatColors.primary} />
+          <Text style={styles.sectionTitle}>Chat Status</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.statusSelector}
+          onPress={() => setShowStatusPicker(true)}
+          activeOpacity={0.7}
+          disabled={isUpdatingStatus}
+        >
+          {isUpdatingStatus ? (
+            <View style={styles.statusSelectorContent}>
+              <ActivityIndicator size="small" color={chatColors.primary} />
+              <Text style={styles.statusSelectorText}>Updating...</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.statusSelectorContent}>
+                <View style={[styles.statusIconContainer, { backgroundColor: `${getStatusConfig(currentStatus).color}15` }]}>
+                  <Icon
+                    name={getStatusConfig(currentStatus).icon}
+                    size={20}
+                    color={getStatusConfig(currentStatus).color}
+                  />
+                </View>
+                <View style={styles.statusTextContainer}>
+                  <Text style={styles.statusSelectorLabel}>Current Status</Text>
+                  <Text style={[styles.statusSelectorValue, { color: getStatusConfig(currentStatus).color }]}>
+                    {getStatusConfig(currentStatus).label}
+                  </Text>
+                </View>
+              </View>
+              <Icon name="chevron-right" size={24} color={colors.grey[400]} />
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.statusDescription}>
+          {getStatusConfig(currentStatus).description}
+        </Text>
       </View>
 
       {/* Tags Section */}
@@ -626,7 +731,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
         </TouchableOpacity>
 
         <Animated.View style={[styles.headerTitleContainer, { opacity: headerOpacity }]}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{contactName}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>{displayName}</Text>
         </Animated.View>
 
         <TouchableOpacity style={styles.headerAction}>
@@ -653,8 +758,8 @@ const ContactInfoScreen = ({ route, navigation }) => {
       >
         {/* Profile Hero Section */}
         <View style={styles.profileHero}>
-          <View style={[styles.avatar, { backgroundColor: getAvatarColor(contactName) }]}>
-            <Text style={styles.avatarText}>{getInitials(contactName)}</Text>
+          <View style={[styles.avatar, { backgroundColor: getAvatarColor(displayName) }]}>
+            <Text style={styles.avatarText}>{getInitials(displayName)}</Text>
           </View>
 
           {isEditing ? (
@@ -671,7 +776,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
               <View style={styles.editNameActions}>
                 <TouchableOpacity
                   onPress={() => {
-                    setEditName(contactName);
+                    setEditName(displayName);
                     setIsEditing(false);
                   }}
                   style={styles.editNameCancel}
@@ -697,7 +802,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
               onPress={() => setIsEditing(true)}
               activeOpacity={0.7}
             >
-              <Text style={styles.name}>{contactName}</Text>
+              <Text style={styles.name}>{displayName}</Text>
               <View style={styles.editIcon}>
                 <Icon name="pencil-outline" size={14} color={colors.grey[500]} />
               </View>
@@ -729,6 +834,78 @@ const ContactInfoScreen = ({ route, navigation }) => {
         {/* Bottom padding */}
         <View style={{ height: insets.bottom + 20 }} />
       </Animated.ScrollView>
+
+      {/* Chat Status Picker Modal */}
+      <Modal
+        visible={showStatusPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStatusPicker(false)}
+      >
+        <View style={styles.statusPickerOverlay}>
+          <TouchableOpacity
+            style={styles.statusPickerBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowStatusPicker(false)}
+          />
+          <View style={styles.statusPickerContainer}>
+            <View style={styles.statusPickerHandle} />
+            <Text style={styles.statusPickerTitle}>Change Chat Status</Text>
+            <Text style={styles.statusPickerSubtitle}>
+              Select a status to update the chat
+            </Text>
+
+            <ScrollView
+              style={styles.statusPickerList}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {CHAT_STATUS_OPTIONS.map((option) => {
+                const isSelected = currentStatus === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.statusPickerOption,
+                      isSelected && styles.statusPickerOptionSelected,
+                    ]}
+                    onPress={() => handleStatusChange(option.value)}
+                    activeOpacity={0.7}
+                    disabled={isUpdatingStatus}
+                  >
+                    <View style={[styles.statusPickerOptionIcon, { backgroundColor: `${option.color}15` }]}>
+                      <Icon name={option.icon} size={22} color={option.color} />
+                    </View>
+                    <View style={styles.statusPickerOptionContent}>
+                      <Text style={[
+                        styles.statusPickerOptionLabel,
+                        isSelected && { color: option.color, fontWeight: '600' }
+                      ]}>
+                        {option.label}
+                      </Text>
+                      <Text style={styles.statusPickerOptionDescription}>
+                        {option.description}
+                      </Text>
+                    </View>
+                    {isSelected && (
+                      <Icon name="check-circle" size={22} color={option.color} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.statusPickerCancel}
+              onPress={() => setShowStatusPicker(false)}
+            >
+              <Text style={styles.statusPickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: insets.bottom }} />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1047,6 +1224,141 @@ const styles = StyleSheet.create({
   statusBadgeText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  // Chat Status Selector
+  statusSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.grey[50],
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.grey[200],
+  },
+  statusSelectorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  statusIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusTextContainer: {
+    gap: 2,
+  },
+  statusSelectorLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  statusSelectorValue: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  statusSelectorText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginLeft: 8,
+  },
+  statusDescription: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 10,
+    paddingHorizontal: 4,
+  },
+
+  // Status Picker Modal
+  statusPickerOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  statusPickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  statusPickerContainer: {
+    backgroundColor: colors.common.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    maxHeight: '80%',
+  },
+  statusPickerHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.grey[300],
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  statusPickerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  statusPickerSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  statusPickerList: {
+    maxHeight: 400,
+  },
+  statusPickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: colors.grey[50],
+  },
+  statusPickerOptionSelected: {
+    backgroundColor: `${chatColors.primary}08`,
+    borderWidth: 1,
+    borderColor: `${chatColors.primary}30`,
+  },
+  statusPickerOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  statusPickerOptionContent: {
+    flex: 1,
+  },
+  statusPickerOptionLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  statusPickerOptionDescription: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  statusPickerCancel: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey[200],
+  },
+  statusPickerCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
 
   // Tags

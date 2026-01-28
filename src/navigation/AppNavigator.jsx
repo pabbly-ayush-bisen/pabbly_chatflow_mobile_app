@@ -582,7 +582,7 @@ export default function AppNavigator() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // flex: 1,
     backgroundColor: '#F8FAFC',
   },
   screenContainer: {

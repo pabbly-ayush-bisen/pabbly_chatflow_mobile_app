@@ -200,17 +200,27 @@ export const createContactViaSocket = (contactData) => {
  * @param {string} templateData.chatId - Chat ID
  * @param {string} templateData.templateName - Template name
  * @param {string} templateData.templateId - Template ID
- * @param {string} templateData.language - Template language code
+ * @param {string} templateData.languageCode - Template language code
  * @param {Array} templateData.bodyParams - Body parameter values
  * @param {Array} templateData.headerParams - Header parameter values
+ * @param {string} templateData.templateType - Template type (TEXT, IMAGE, VIDEO, DOCUMENT, LOCATION, LTO, CAROUSEL, CATALOG)
  * @param {string} templateData.filename - Optional file name for media templates
  * @param {string} templateData.link - Optional file URL for media templates
  * @param {string} templateData.replyToWamid - Optional message ID for reply context
+ * @param {Object} templateData.ltoFields - LTO (Limited Time Offer) fields: { unixTimestamp, date, time, timeZone }
+ * @param {Object} templateData.location - Location fields: { latitude, longitude, name, address }
+ * @param {string} templateData.catalogProductId - Catalog product retailer ID
+ * @param {string} templateData.copyCodeParam - Copy code/OTP value for authentication templates
+ * @param {Array} templateData.urlVariables - Dynamic URL button variables
+ * @param {Array} templateData.carouselBodies - Carousel card body params (for carousel templates)
+ * @param {Array} templateData.fileData - Carousel card media files (for carousel templates)
+ * @param {string} templateData.carouselMediaType - Carousel media type: IMAGE or VIDEO
  */
 export const sendTemplateViaSocket = (templateData) => {
   const payload = {
     ...templateData,
     type: 'template',
+    // Ensure bodyParams and headerParams are arrays (web app sends Object.values())
     bodyParams: Array.isArray(templateData.bodyParams)
       ? templateData.bodyParams
       : Object.values(templateData.bodyParams || {}),
@@ -218,6 +228,8 @@ export const sendTemplateViaSocket = (templateData) => {
       ? templateData.headerParams
       : Object.values(templateData.headerParams || {}),
   };
+
+  console.log('[SocketService] Sending template payload:', payload);
   return emitSocketEvent('sendMessage', payload);
 };
 

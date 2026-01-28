@@ -88,6 +88,7 @@ const initialState = {
   rejectedTemplates: 0,
   totalTemplates: 0,
   totalSearchResult: 0,
+  hasMoreTemplates: true,
 };
 
 // Slice
@@ -103,6 +104,26 @@ const templateSlice = createSlice({
       state.templateByIdError = null;
       state.statsError = null;
     },
+    resetTemplates: (state) => {
+      state.templates = [];
+      state.hasMoreTemplates = true;
+    },
+    // Update template status from socket event (for real-time template approval updates)
+    setUpdatedTemplate: (state, action) => {
+      const updatedTemplate = action.payload;
+      if (!updatedTemplate?._id) return;
+
+      state.templates = state.templates.map((template) =>
+        template._id === updatedTemplate._id
+          ? { ...template, ...updatedTemplate }
+          : template
+      );
+
+      // Also update selected template if it matches
+      if (state.selectedTemplate?._id === updatedTemplate._id) {
+        state.selectedTemplate = { ...state.selectedTemplate, ...updatedTemplate };
+      }
+    },
   },
   extraReducers: (builder) => {
     // Fetch All Templates
@@ -114,8 +135,17 @@ const templateSlice = createSlice({
       .addCase(fetchAllTemplates.fulfilled, (state, action) => {
         state.templatesStatus = 'succeeded';
         const data = action.payload.data || action.payload;
-        state.templates = data.templates || [];
+        const newTemplates = data.templates || [];
+        const append = action.meta.arg.append || false;
+        const limit = action.meta.arg.limit || 10;
+
+        if (append) {
+          state.templates = [...state.templates, ...newTemplates];
+        } else {
+          state.templates = newTemplates;
+        }
         state.totalSearchResult = data.totalResults || 0;
+        state.hasMoreTemplates = newTemplates.length === limit;
       })
       .addCase(fetchAllTemplates.rejected, (state, action) => {
         state.templatesStatus = 'failed';
@@ -159,5 +189,5 @@ const templateSlice = createSlice({
   },
 });
 
-export const { setSelectedTemplate, clearTemplateError } = templateSlice.actions;
+export const { setSelectedTemplate, clearTemplateError, setUpdatedTemplate, resetTemplates } = templateSlice.actions;
 export default templateSlice.reducer;

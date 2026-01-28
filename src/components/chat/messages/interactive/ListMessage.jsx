@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   headerTextOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   bodyText: {
     fontSize: 14,
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   bodyTextOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   footerText: {
     fontSize: 12,
@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   footerTextOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.text.secondary,
   },
   listButton: {
     flexDirection: 'row',

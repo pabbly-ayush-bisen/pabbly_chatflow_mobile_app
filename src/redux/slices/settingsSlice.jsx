@@ -39,8 +39,20 @@ export const updateSettings = createAsyncThunk(
 
 export const deleteSettings = createAsyncThunk(
   'settings/deleteSettings',
-  async ({ settingId }, { rejectWithValue }) => {
+  async ({ settingId, key, names }, { rejectWithValue }) => {
     try {
+      // Support key/names deletion (for keywords)
+      if (key && names) {
+        const url = endpoints.settings.deleteSettings;
+        const response = await callApi(url, httpMethods.DELETE, { key, names });
+
+        if (response.status !== 'success' && response.status === 'error') {
+          return rejectWithValue(response.message || 'Failed to delete settings');
+        }
+        return { key, names, ...(response.data || response) };
+      }
+
+      // Original settingId-based deletion
       const url = `${endpoints.settings.deleteSettings}/${settingId}`;
       const response = await callApi(url, httpMethods.DELETE);
 

@@ -1,15 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
-import { Text, Card, ActivityIndicator, Searchbar, FAB, Surface, Chip } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Alert } from 'react-native';
+import { Text, ActivityIndicator, Searchbar, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
-import { getContactList, getContacts } from '../redux/slices/contactSlice';
-import { colors } from '../theme/colors';
+import { useNavigation } from '@react-navigation/native';
+import { getContactList, getContacts, gotoChat } from '../redux/slices/contactSlice';
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { colors, getAvatarColor } from '../theme/colors';
+import { formatDistanceToNow } from 'date-fns';
+import ContactBottomSheet from '../components/contacts/ContactBottomSheet';
+import AddContactBottomSheet from '../components/contacts/AddContactBottomSheet';
 
-export default function ContactsScreen({ navigation }) {
+export default function ContactsScreen() {
+  const navigation = useNavigation();
   const dispatch = useDispatch();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedList, setSelectedList] = useState(null);
+  const [openingChatId, setOpeningChatId] = useState(null);
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [bottomSheetVisible, setBottomSheetVisible] = useState(false);
+  const [addContactVisible, setAddContactVisible] = useState(false);
+  const PAGE_SIZE = 10;
 
   const {
     contactListStatus,
@@ -19,247 +29,453 @@ export default function ContactsScreen({ navigation }) {
     contactsStatus,
     contactsError,
     contacts,
+    totalCount,
   } = useSelector((state) => state.contact);
 
   const isLoadingLists = contactListStatus === 'loading';
   const isLoadingContacts = contactsStatus === 'loading';
   const isRefreshing = isLoadingLists && contactListData.length > 0;
+  const isInitialContactsLoading = isLoadingContacts && contacts.length === 0;
 
   useEffect(() => {
     loadContactLists();
+    loadContacts(true, null);
   }, []);
-
-  useEffect(() => {
-    if (selectedList) {
-      loadContacts(selectedList);
-    } else {
-      loadAllContacts();
-    }
-  }, [selectedList]);
 
   const loadContactLists = () => {
     dispatch(getContactList({ skip: 1, limit: 50 }));
   };
 
-  const loadAllContacts = () => {
-    const queries = 'skip=0&limit=50';
-    dispatch(getContacts(queries));
+  const buildContactsQuery = (skip, limit, listName, search) => {
+    let query = `skip=${skip}&limit=${limit}`;
+    if (listName) {
+      query += `&list=${encodeURIComponent(listName)}`;
+    }
+    if (search && search.trim()) {
+      query += `&search=${encodeURIComponent(search.trim())}`;
+    }
+    return query;
   };
 
-  const loadContacts = (listName) => {
-    const queries = `listname=${encodeURIComponent(listName)}&skip=0&limit=50`;
+  const loadContacts = (reset = false, listName = selectedList, search = searchQuery) => {
+    const skip = reset ? 0 : contacts.length;
+    const queries = buildContactsQuery(skip, PAGE_SIZE, listName, search);
     dispatch(getContacts(queries));
   };
 
   const onRefresh = () => {
     loadContactLists();
-    if (selectedList) {
-      loadContacts(selectedList);
-    } else {
-      loadAllContacts();
-    }
+    loadContacts(true);
   };
 
   const handleAddContact = () => {
-    navigation.navigate('AddContact');
+    setAddContactVisible(true);
+  };
+
+  const handleAddContactClose = () => {
+    setAddContactVisible(false);
+  };
+
+  const handleAddContactSuccess = (newContact) => {
+    // Refresh the contacts list
+    loadContacts(true, selectedList, searchQuery);
+    loadContactLists();
   };
 
   const handleListPress = (listName) => {
-    if (selectedList === listName) {
+    if (listName === null) {
       setSelectedList(null);
+      loadContacts(true, null);
     } else {
       setSelectedList(listName);
+      loadContacts(true, listName);
     }
   };
 
-  const filteredContacts = contacts.filter((contact) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const name = contact.name?.toLowerCase() || '';
-    const phoneNumber = contact.phoneNumber || '';
-    const email = contact.email?.toLowerCase() || '';
+  const getOptInStatus = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'opted_in':
+      case 'active':
+        return { isOptedIn: true, color: colors.success.main };
+      case 'opted_out':
+      case 'inactive':
+        return { isOptedIn: false, color: colors.error.main };
+      default:
+        return { isOptedIn: null, color: colors.grey[400] };
+    }
+  };
 
-    return name.includes(query) ||
-           phoneNumber.includes(query) ||
-           email.includes(query);
-  });
+  const handleOpenChatForContact = async (contact) => {
+    if (!contact?._id) return;
 
-  const renderContactListItem = ({ item }) => (
-    <TouchableOpacity onPress={() => handleListPress(item.listname)}>
-      <Card
-        style={[
-          styles.listCard,
-          selectedList === item.listname && styles.selectedListCard,
-        ]}
+    try {
+      setOpeningChatId(contact._id);
+      const response = await dispatch(gotoChat({ id: contact._id })).unwrap();
+      const data = response?.data || {};
+      const chat = data.chat || data.chatData || data;
+      const chatId = chat?._id || chat?.chatId || chat?.id;
+
+      if (chatId) {
+        navigation.navigate('ChatDetails', { chatId, chat });
+      } else {
+        Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
+      }
+    } catch (error) {
+      console.error('Failed to open chat from contacts:', error);
+      Alert.alert(
+        'Unable to open chat',
+        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'
+      );
+    } finally {
+      setOpeningChatId(null);
+    }
+  };
+
+  const filteredContacts = contacts;
+
+  const handleLoadMoreContacts = () => {
+    if (isLoadingContacts) return;
+    if (contacts.length >= (totalCount || contacts.length)) return;
+    loadContacts(false);
+  };
+
+  // Contact List Filter Chip
+  const renderListChip = ({ item, index }) => {
+    // First item is "All Contacts"
+    if (index === 0) {
+      const isSelected = selectedList === null;
+      return (
+        <TouchableOpacity
+          onPress={() => handleListPress(null)}
+          activeOpacity={0.7}
+          style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+        >
+          <Icon
+            name="account-group"
+            size={16}
+            color={isSelected ? colors.common.white : colors.text.secondary}
+          />
+          <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
+            All
+          </Text>
+          <View style={[styles.filterChipBadge, isSelected && styles.filterChipBadgeSelected]}>
+            <Text style={[styles.filterChipBadgeText, isSelected && styles.filterChipBadgeTextSelected]}>
+              {totalContactsCount || 0}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    // Regular list items
+    const actualItem = item;
+    const listName = actualItem.listName || actualItem.name || actualItem.title || 'Unnamed';
+    const count = actualItem.count ?? actualItem.contactsCount ?? 0;
+    const isSelected = selectedList === (actualItem.listName || listName);
+
+    return (
+      <TouchableOpacity
+        onPress={() => handleListPress(actualItem.listName || listName)}
+        activeOpacity={0.7}
+        style={[styles.filterChip, isSelected && styles.filterChipSelected]}
       >
-        <Card.Content>
-          <View style={styles.listRow}>
-            <View style={styles.listInfo}>
-              <Text variant="titleMedium" style={styles.listName}>
-                {item.listname}
+        <Icon
+          name="folder-outline"
+          size={16}
+          color={isSelected ? colors.common.white : colors.text.secondary}
+        />
+        <Text
+          style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}
+          numberOfLines={1}
+        >
+          {listName}
+        </Text>
+        <View style={[styles.filterChipBadge, isSelected && styles.filterChipBadgeSelected]}>
+          <Text style={[styles.filterChipBadgeText, isSelected && styles.filterChipBadgeTextSelected]}>
+            {count}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Contact Card
+  const renderContactItem = ({ item }) => {
+    const hasName = item.name && item.name.trim().length > 0;
+    const displayName = hasName ? item.name : 'No Name';
+    const mobile = item.mobile || '';
+    const countryCode = item.countryCode || '';
+    const phoneNumber = mobile
+      ? (countryCode && mobile.startsWith(countryCode)
+          ? `${countryCode} ${mobile.slice(countryCode.length)}`
+          : mobile)
+      : '';
+    const initials = hasName
+      ? item.name.slice(0, 2).toUpperCase()
+      : (phoneNumber ? phoneNumber.slice(-2) : 'NA');
+    const avatarColor = getAvatarColor(hasName ? item.name : phoneNumber || 'default');
+    const isOpening = openingChatId === item._id;
+    const optInStatus = getOptInStatus(item.optIn?.status);
+
+    let lastActiveLabel = null;
+    if (item.lastActive) {
+      try {
+        lastActiveLabel = formatDistanceToNow(new Date(item.lastActive), { addSuffix: true });
+      } catch {
+        lastActiveLabel = null;
+      }
+    }
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => {
+          setSelectedContact(item);
+          setBottomSheetVisible(true);
+        }}
+        style={styles.contactCard}
+      >
+        {/* Avatar */}
+        <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
+          <Text style={styles.avatarText}>{initials}</Text>
+          {/* Opt-in status dot */}
+          <View style={[styles.statusDot, { backgroundColor: optInStatus.color }]} />
+        </View>
+
+        {/* Contact Info */}
+        <View style={styles.contactInfo}>
+          <View style={styles.contactHeader}>
+            <Text style={[styles.contactName, !hasName && styles.noNameText]} numberOfLines={1}>
+              {displayName}
+            </Text>
+            {lastActiveLabel && (
+              <Text style={styles.lastActive} numberOfLines={1}>
+                {lastActiveLabel}
               </Text>
-              <Text variant="bodySmall" style={styles.listCount}>
-                {item.count || 0} contacts
-              </Text>
-            </View>
-            {selectedList === item.listname && (
-              <Chip
-                mode="flat"
-                style={styles.selectedChip}
-                textStyle={styles.selectedChipText}
-              >
-                Selected
-              </Chip>
             )}
           </View>
-        </Card.Content>
-      </Card>
-    </TouchableOpacity>
-  );
-
-  const renderContactItem = ({ item }) => (
-    <Card style={styles.contactCard}>
-      <Card.Content>
-        <View style={styles.contactRow}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text variant="titleMedium" style={styles.avatarText}>
-                {(item.name || item.phoneNumber || 'U')[0].toUpperCase()}
+          <View style={styles.contactDetails}>
+            <View style={styles.contactDetailRow}>
+              <Icon name="whatsapp" size={14} color={phoneNumber ? "#25D366" : colors.text.tertiary} />
+              <Text style={[styles.contactDetailText, !phoneNumber && styles.noPhoneText]} numberOfLines={1}>
+                {phoneNumber || 'No phone number'}
               </Text>
             </View>
-          </View>
-
-          <View style={styles.contactInfo}>
-            <Text variant="titleMedium" style={styles.contactName}>
-              {item.name || 'No Name'}
-            </Text>
-            <Text variant="bodyMedium" style={styles.contactPhone}>
-              {item.phoneNumber}
-            </Text>
             {item.email && (
-              <Text variant="bodySmall" style={styles.contactEmail}>
-                {item.email}
-              </Text>
-            )}
-            {item.listname && (
-              <View style={styles.tagContainer}>
-                <Chip mode="outlined" compact style={styles.listTag}>
-                  {item.listname}
-                </Chip>
+              <View style={styles.contactDetailRow}>
+                <Icon name="email-outline" size={14} color={colors.text.tertiary} />
+                <Text style={styles.contactDetailText} numberOfLines={1}>
+                  {item.email}
+                </Text>
               </View>
             )}
           </View>
         </View>
-      </Card.Content>
-    </Card>
-  );
 
+        {/* Action Button */}
+        <TouchableOpacity
+          style={styles.messageButton}
+          onPress={() => handleOpenChatForContact(item)}
+          disabled={isOpening}
+          activeOpacity={0.7}
+        >
+          {isOpening ? (
+            <ActivityIndicator size={18} color={colors.primary.main} />
+          ) : (
+            <Icon name="message-text" size={20} color={colors.primary.main} />
+          )}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  };
+
+  // Empty State
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
-      <Text variant="headlineSmall" style={styles.emptyTitle}>
-        No contacts found
-      </Text>
-      <Text variant="bodyMedium" style={styles.emptyText}>
+      <View style={styles.emptyIconContainer}>
+        <Icon name="account-group-outline" size={64} color={colors.grey[300]} />
+      </View>
+      <Text style={styles.emptyTitle}>No contacts yet</Text>
+      <Text style={styles.emptySubtitle}>
         {selectedList
-          ? `No contacts in "${selectedList}" list`
+          ? `No contacts found in "${selectedList}"`
           : 'Add your first contact to get started'}
       </Text>
+      {!selectedList && (
+        <TouchableOpacity style={styles.emptyButton} onPress={handleAddContact} activeOpacity={0.8}>
+          <Icon name="plus" size={18} color={colors.common.white} />
+          <Text style={styles.emptyButtonText}>Add Contact</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
+  // Error State
   const renderError = () => {
     const error = contactListError || contactsError;
     if (!error) return null;
 
     return (
-      <Surface style={styles.errorContainer}>
-        <Text variant="bodyMedium" style={styles.errorText}>
-          {error}
-        </Text>
-      </Surface>
+      <View style={styles.errorContainer}>
+        <Icon name="alert-circle-outline" size={20} color={colors.error.main} />
+        <Text style={styles.errorText}>{error}</Text>
+      </View>
     );
   };
 
+  // Loading State
   if (isLoadingLists && !isRefreshing && contactListData.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text variant="bodyLarge" style={styles.loadingText}>
-            Loading contacts...
-          </Text>
+          <Text style={styles.loadingText}>Loading contacts...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text variant="headlineMedium" style={styles.headerTitle}>
-          Contacts
-        </Text>
-        <Text variant="bodyMedium" style={styles.headerSubtitle}>
-          {totalContactsCount} total contacts
-        </Text>
+  // Prepare list data with "All" as first item
+  const listDataWithAll = [{ _id: 'all', isAllItem: true }, ...contactListData];
 
+  // Bottom Sheet Handlers
+  const handleCloseBottomSheet = () => {
+    setBottomSheetVisible(false);
+    setSelectedContact(null);
+  };
+
+  const handleOpenChatFromSheet = async (contact) => {
+    if (!contact?._id) return;
+
+    try {
+      setOpeningChatId(contact._id);
+      const response = await dispatch(gotoChat({ id: contact._id })).unwrap();
+      const data = response?.data || {};
+      const chat = data.chat || data.chatData || data;
+      const chatId = chat?._id || chat?.chatId || chat?.id;
+
+      if (chatId) {
+        // Close sheet first, then navigate
+        setBottomSheetVisible(false);
+        setSelectedContact(null);
+        navigation.navigate('ChatDetails', { chatId, chat });
+      } else {
+        Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
+      }
+    } catch (error) {
+      console.error('Failed to open chat from bottom sheet:', error);
+      Alert.alert(
+        'Unable to open chat',
+        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'
+      );
+    } finally {
+      setOpeningChatId(null);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Search Header */}
+      <View style={styles.header}>
         <Searchbar
-          placeholder="Search contacts"
-          onChangeText={setSearchQuery}
+          placeholder="Search by name, phone or email..."
+          onChangeText={(text) => {
+            setSearchQuery(text);
+            loadContacts(true, selectedList, text);
+          }}
           value={searchQuery}
           style={styles.searchbar}
           inputStyle={styles.searchInput}
+          iconColor={colors.text.tertiary}
+          placeholderTextColor={colors.text.tertiary}
         />
       </View>
 
       {renderError()}
 
+      {/* Filter Chips */}
       {contactListData.length > 0 && (
-        <View style={styles.listsSection}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>
-            Contact Lists
-          </Text>
+        <View style={styles.filtersContainer}>
           <FlatList
-            data={contactListData}
-            renderItem={renderContactListItem}
-            keyExtractor={(item) => item._id || item.listname}
+            data={listDataWithAll}
+            renderItem={renderListChip}
+            keyExtractor={(item, index) => item._id || `list-${index}`}
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalList}
+            contentContainerStyle={styles.filtersList}
           />
         </View>
       )}
 
-      <View style={styles.contactsSection}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {selectedList ? `Contacts in "${selectedList}"` : 'All Contacts'}
+      {/* Section Header */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {selectedList ? selectedList : 'All Contacts'}
         </Text>
-
-        {isLoadingContacts ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary.main} />
-          </View>
-        ) : (
-          <FlatList
-            data={filteredContacts}
-            renderItem={renderContactItem}
-            keyExtractor={(item) => item._id}
-            contentContainerStyle={styles.contactsList}
-            refreshControl={
-              <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
-            }
-            ListEmptyComponent={renderEmptyState}
-          />
-        )}
+        <Text style={styles.sectionCount}>
+          {filteredContacts.length} {filteredContacts.length === 1 ? 'contact' : 'contacts'}
+        </Text>
       </View>
 
+      {/* Contacts List */}
+      {isInitialContactsLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary.main} />
+        </View>
+      ) : (
+        <FlatList
+          data={filteredContacts}
+          renderItem={renderContactItem}
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.contactsList}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary.main]}
+              tintColor={colors.primary.main}
+            />
+          }
+          ListEmptyComponent={renderEmptyState}
+          onEndReached={handleLoadMoreContacts}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            isLoadingContacts && contacts.length > 0 ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={colors.primary.main} />
+                <Text style={styles.footerLoaderText}>Loading more...</Text>
+              </View>
+            ) : null
+          }
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+        />
+      )}
+
+      {/* FAB */}
       <FAB
         icon="plus"
         style={styles.fab}
         onPress={handleAddContact}
-        label="Add Contact"
+        color={colors.common.white}
       />
-    </SafeAreaView>
+
+      {/* Contact Bottom Sheet */}
+      <ContactBottomSheet
+        visible={bottomSheetVisible}
+        onClose={handleCloseBottomSheet}
+        contact={selectedContact}
+        onOpenChat={handleOpenChatFromSheet}
+        isOpeningChat={openingChatId === selectedContact?._id}
+      />
+
+      {/* Add Contact Bottom Sheet */}
+      <AddContactBottomSheet
+        visible={addContactVisible}
+        onClose={handleAddContactClose}
+        onSuccess={handleAddContactSuccess}
+        navigation={navigation}
+      />
+    </View>
   );
 }
 
@@ -268,170 +484,282 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background.default,
   },
+
+  // Loading
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingBottom: 50,
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: 12,
+    fontSize: 14,
     color: colors.text.secondary,
   },
+
+  // Header
   header: {
-    padding: 16,
-    backgroundColor: colors.background.paper,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  headerTitle: {
-    color: colors.text.primary,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    color: colors.text.secondary,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    backgroundColor: colors.background.default,
   },
   searchbar: {
-    backgroundColor: colors.background.neutral,
+    backgroundColor: colors.grey[100],
+    borderRadius: 12,
     elevation: 0,
+    shadowOpacity: 0,
+    height: 48,
   },
   searchInput: {
-    fontSize: 14,
+    fontSize: 15,
+    minHeight: 48,
   },
-  listsSection: {
-    backgroundColor: colors.background.paper,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+
+  // Filter Chips
+  filtersContainer: {
+    backgroundColor: colors.background.default,
+    paddingBottom: 8,
   },
-  sectionTitle: {
-    color: colors.text.primary,
+  filtersList: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: colors.grey[100],
+    marginRight: 8,
+    gap: 6,
+  },
+  filterChipSelected: {
+    backgroundColor: colors.primary.main,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.text.secondary,
+    maxWidth: 100,
+  },
+  filterChipTextSelected: {
+    color: colors.common.white,
+  },
+  filterChipBadge: {
+    backgroundColor: colors.grey[200],
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  filterChipBadgeSelected: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  filterChipBadgeText: {
+    fontSize: 11,
     fontWeight: '600',
-    marginBottom: 12,
-    paddingHorizontal: 16,
+    color: colors.text.secondary,
   },
-  horizontalList: {
-    paddingHorizontal: 16,
+  filterChipBadgeTextSelected: {
+    color: colors.common.white,
   },
-  listCard: {
-    backgroundColor: colors.background.neutral,
-    borderRadius: 12,
-    marginRight: 12,
-    minWidth: 150,
-  },
-  selectedListCard: {
-    backgroundColor: colors.primary.lighter,
-    borderWidth: 2,
-    borderColor: colors.primary.main,
-  },
-  listRow: {
+
+  // Section Header
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.background.default,
   },
-  listInfo: {
-    flex: 1,
-  },
-  listName: {
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
     color: colors.text.primary,
-    fontWeight: '600',
-    marginBottom: 4,
   },
-  listCount: {
-    color: colors.text.secondary,
+  sectionCount: {
+    fontSize: 13,
+    color: colors.text.tertiary,
   },
-  selectedChip: {
-    backgroundColor: colors.primary.main,
-  },
-  selectedChipText: {
-    color: colors.common.white,
-  },
-  contactsSection: {
-    flex: 1,
-    paddingTop: 16,
-  },
+
+  // Contacts List
   contactsList: {
     paddingHorizontal: 16,
-    paddingBottom: 80,
+    paddingBottom: 100,
   },
+  separator: {
+    height: 1,
+    backgroundColor: colors.grey[100],
+    marginLeft: 68,
+  },
+
+  // Contact Card
   contactCard: {
-    backgroundColor: colors.background.paper,
-    borderRadius: 12,
-    marginBottom: 12,
-    elevation: 1,
-  },
-  contactRow: {
     flexDirection: 'row',
-  },
-  avatarContainer: {
-    marginRight: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+    backgroundColor: colors.background.default,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primary.light,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
   },
   avatarText: {
-    color: colors.common.white,
+    fontSize: 18,
     fontWeight: '600',
+    color: colors.common.white,
+  },
+  statusDot: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.background.default,
   },
   contactInfo: {
     flex: 1,
+    marginRight: 8,
+  },
+  contactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   contactName: {
-    color: colors.text.primary,
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
+    color: colors.text.primary,
+    flex: 1,
+    marginRight: 8,
   },
-  contactPhone: {
+  noNameText: {
+    fontStyle: 'italic',
+    color: colors.text.tertiary,
+  },
+  lastActive: {
+    fontSize: 12,
+    color: colors.text.tertiary,
+  },
+  contactDetails: {
+    gap: 2,
+  },
+  contactDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  contactDetailText: {
+    fontSize: 13,
     color: colors.text.secondary,
-    marginBottom: 2,
+    flex: 1,
   },
-  contactEmail: {
-    color: colors.text.secondary,
-    marginBottom: 4,
+  noPhoneText: {
+    fontStyle: 'italic',
+    color: colors.text.tertiary,
   },
-  tagContainer: {
-    marginTop: 4,
+  messageButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary.lighter,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  listTag: {
-    alignSelf: 'flex-start',
-  },
+
+  // Empty State
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingTop: 48,
+    paddingHorizontal: 40,
+    paddingTop: 60,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.grey[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
   },
   emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
     color: colors.text.primary,
-    fontWeight: '600',
     marginBottom: 8,
-    textAlign: 'center',
   },
-  emptyText: {
+  emptySubtitle: {
+    fontSize: 14,
     color: colors.text.secondary,
     textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
   },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.main,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    gap: 8,
+  },
+  emptyButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.common.white,
+  },
+
+  // Error
   errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.error.lighter,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
     borderRadius: 8,
-    padding: 16,
-    margin: 16,
+    gap: 8,
   },
   errorText: {
-    color: colors.error.main,
+    flex: 1,
+    fontSize: 13,
+    color: colors.error.dark,
   },
+
+  // Footer Loader
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  footerLoaderText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
+
+  // FAB
   fab: {
     position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 0,
+    right: 16,
+    bottom: 16,
     backgroundColor: colors.primary.main,
+    borderRadius: 28,
   },
 });

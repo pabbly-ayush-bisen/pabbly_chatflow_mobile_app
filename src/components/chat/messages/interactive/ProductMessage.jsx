@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   productNameOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   productPrice: {
     fontSize: 14,
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   productPriceOutgoing: {
-    color: 'rgba(255,255,255,0.9)',
+    color: chatColors.primary,
   },
   productDescription: {
     fontSize: 13,
@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   productDescriptionOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.text.secondary,
   },
   bodyText: {
     fontSize: 14,
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   bodyTextOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   footerText: {
     fontSize: 12,
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   footerTextOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.text.secondary,
   },
   viewButton: {
     flexDirection: 'row',

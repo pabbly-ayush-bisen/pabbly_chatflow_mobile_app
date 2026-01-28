@@ -3,7 +3,7 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, Badge } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, chatColors, getAvatarColor } from '../../theme/colors';
-import { getMessagePreview, getMessageStatus } from '../../utils/messageHelpers';
+import { getMessageStatus } from '../../utils/messageHelpers';
 
 const ChatListItem = ({ chat, onPress, isSelected }) => {
   const contact = chat?.contact || {};
@@ -43,10 +43,61 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
     return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
   };
 
-  // Get message preview using helper
-  const messagePreview = lastMessage ? getMessagePreview(lastMessage) : { icon: null, text: 'No messages yet' };
+  // Get message preview - show actual message text like web app
+  const getDisplayMessage = () => {
+    if (!lastMessage) return { icon: null, text: 'No messages yet' };
 
-  // Get message status icon
+    // For text messages, show the actual message body (like web app)
+    if (lastMessage.type === 'text') {
+      const messageText = 
+        lastMessage?.message?.body?.text ||
+        lastMessage?.message?.body ||
+        lastMessage?.text ||
+        lastMessage?.body ||
+        '';
+      return { icon: null, text: messageText || 'Message' };
+    }
+
+    // For non-text messages, show type label like web app
+    switch (lastMessage.type) {
+      case 'system':
+        return { icon: null, text: 'System Message' };
+      case 'reaction':
+        return { icon: null, text: 'Reaction Message' };
+      case 'image':
+        return { icon: null, text: 'Image Message' };
+      case 'sticker':
+        return { icon: null, text: 'Sticker Message' };
+      case 'video':
+        return { icon: null, text: 'Video Message' };
+      case 'audio':
+        return { icon: null, text: 'Audio Message' };
+      case 'document':
+      case 'file':
+        return { icon: null, text: 'File Message' };
+      case 'location':
+        return { icon: null, text: 'Location Message' };
+      case 'interactive':
+        return { icon: null, text: 'Interactive Message' };
+      case 'template':
+        return { icon: null, text: 'Template Message' };
+      case 'order':
+        return { icon: null, text: 'Order Message' };
+      case 'contacts':
+      case 'contact':
+        return { icon: null, text: 'Contact Message' };
+      case 'fallback':
+        return { icon: null, text: 'Fallback Message' };
+      case 'unsupported':
+        return { icon: null, text: 'Unsupported Message' };
+      default:
+        return { icon: null, text: 'Message' };
+    }
+  };
+
+  const messagePreview = getDisplayMessage();
+
+  // Get message status icon - use status field directly like web app
   const getStatusIcon = () => {
     if (!lastMessage) return null;
 
@@ -54,17 +105,18 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
     const isOutgoing = lastMessage.sentBy === 'user' || lastMessage.direction === 'outgoing';
     if (!isOutgoing) return null;
 
-    const status = getMessageStatus(lastMessage);
+    // Use status field directly (like web app) instead of deriving from timestamps
+    const status = lastMessage.status || getMessageStatus(lastMessage);
 
     switch (status) {
       case 'failed':
-        return { icon: 'alert-circle', color: colors.error.main };
+        return { icon: 'alert-circle', color: '#FF5630' }; // Match web app red
       case 'sent':
         return { icon: 'check', color: chatColors.tickGrey };
       case 'delivered':
         return { icon: 'check-all', color: chatColors.tickGrey };
       case 'read':
-        return { icon: 'check-all', color: chatColors.tickBlue };
+        return { icon: 'check-all', color: '#007BFF' }; // Match web app blue
       default:
         return { icon: 'clock-outline', color: chatColors.tickGrey };
     }

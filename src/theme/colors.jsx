@@ -24,14 +24,22 @@ export const chatColors = {
   avatarColors: [
     '#128C7E', '#25D366', '#00BCD4', '#4CAF50', '#FF9800',
     '#E91E63', '#9C27B0', '#3F51B5', '#009688', '#FF5722',
+    '#FFC107', '#8BC34A', '#03A9F4', '#FF4081', '#673AB7',
+    '#0099CC', '#FF7043',
   ],
 };
 
 // Helper function to get avatar color based on name
 export const getAvatarColor = (name) => {
   if (!name) return chatColors.avatarColors[0];
-  const charCode = name.charCodeAt(0);
-  const index = charCode % chatColors.avatarColors.length;
+
+  // Use all characters to generate a stable hash
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  const index = Math.abs(hash) % chatColors.avatarColors.length;
   return chatColors.avatarColors[index];
 };
 

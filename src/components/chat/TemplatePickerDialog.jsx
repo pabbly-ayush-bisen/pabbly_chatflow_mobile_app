@@ -39,6 +39,19 @@ const CATEGORY_COLORS = {
   default: { bg: colors.grey[100], text: colors.grey[600], icon: colors.grey[500] },
 };
 
+// Template type configuration with icons and colors
+const TEMPLATE_TYPE_CONFIG = {
+  TEXT: { icon: 'text', color: '#9E9E9E', bg: '#F5F5F5', label: 'Text' },
+  IMAGE: { icon: 'image', color: '#2196F3', bg: '#E3F2FD', label: 'Image' },
+  VIDEO: { icon: 'video', color: '#9C27B0', bg: '#F3E5F5', label: 'Video' },
+  DOCUMENT: { icon: 'file-document', color: '#FF9800', bg: '#FFF3E0', label: 'Document' },
+  AUDIO: { icon: 'music', color: '#3F51B5', bg: '#E8EAF6', label: 'Audio' },
+  LOCATION: { icon: 'map-marker', color: '#F44336', bg: '#FFEBEE', label: 'Location' },
+  CAROUSEL: { icon: 'view-carousel', color: '#2196F3', bg: '#E3F2FD', label: 'Carousel' },
+  LTO: { icon: 'clock-outline', color: '#FF9800', bg: '#FFF3E0', label: 'Limited Offer' },
+  CATALOG: { icon: 'shopping', color: '#4CAF50', bg: '#E8F5E9', label: 'Catalog' },
+};
+
 const TemplatePickerDialog = ({
   visible,
   onClose,
@@ -111,8 +124,8 @@ const TemplatePickerDialog = ({
       });
     }
 
-    // Only show approved templates
-    return filtered.filter((t) => t.status === 'APPROVED');
+    // Only show Meta-approved templates (case-insensitive check)
+    return filtered.filter((t) => t.status?.toUpperCase() === 'APPROVED');
   }, [templates, searchQuery, activeCategory, getTemplateBodyText]);
 
   // Get template header info
@@ -167,6 +180,12 @@ const TemplatePickerDialog = ({
     return CATEGORY_COLORS[category] || CATEGORY_COLORS.default;
   }, []);
 
+  // Get template type config
+  const getTemplateTypeConfig = useCallback((type) => {
+    const typeUpper = (type || 'TEXT').toUpperCase();
+    return TEMPLATE_TYPE_CONFIG[typeUpper] || TEMPLATE_TYPE_CONFIG.TEXT;
+  }, []);
+
   // Render category chip
   const renderCategoryChip = useCallback((category) => {
     const isActive = activeCategory === category.id;
@@ -201,11 +220,10 @@ const TemplatePickerDialog = ({
 
   // Render template card
   const renderTemplateCard = useCallback(({ item }) => {
-    const header = getTemplateHeader(item);
     const bodyText = getTemplateBodyText(item);
     const buttons = getTemplateButtons(item);
     const hasVars = hasVariables(item);
-    const categoryStyle = getCategoryStyle(item.category);
+    const templateTypeConfig = getTemplateTypeConfig(item.type);
 
     return (
       <Animated.View
@@ -220,105 +238,59 @@ const TemplatePickerDialog = ({
         <TouchableOpacity
           style={styles.templateCard}
           onPress={() => handleSelect(item)}
-          activeOpacity={0.8}
+          activeOpacity={0.9}
         >
-          {/* Card Header */}
-          <View style={styles.cardHeader}>
-            <View style={styles.cardTitleSection}>
-              <View style={[styles.templateIcon, { backgroundColor: categoryStyle.bg }]}>
-                <Icon
-                  name="file-document-outline"
-                  size={18}
-                  color={categoryStyle.icon}
-                />
-              </View>
-              <View style={styles.titleContainer}>
-                <Text style={styles.templateName} numberOfLines={1}>
-                  {item.name?.replace(/_/g, ' ')}
-                </Text>
-                <View style={styles.metaRow}>
-                  <View style={[styles.categoryTag, { backgroundColor: categoryStyle.bg }]}>
-                    <Text style={[styles.categoryTagText, { color: categoryStyle.text }]}>
-                      {item.category}
-                    </Text>
-                  </View>
-                  <Text style={styles.languageTag}>
-                    {(item.language || 'en').toUpperCase()}
-                  </Text>
-                  {hasVars && (
-                    <View style={styles.variableIndicator}>
-                      <Icon name="code-braces" size={12} color={chatColors.primary} />
-                    </View>
-                  )}
-                </View>
-              </View>
+          {/* Card Content */}
+          <View style={styles.cardContent}>
+            {/* Title and Badges Row */}
+            <View style={styles.cardTopRow}>
+              <Text style={styles.templateName} numberOfLines={1}>
+                {item.name?.replace(/_/g, ' ')}
+              </Text>
+              <Icon name="chevron-right" size={20} color={colors.grey[300]} />
             </View>
-            <Icon name="chevron-right" size={22} color={colors.grey[400]} />
-          </View>
 
-          {/* Template Preview */}
-          <View style={styles.previewContainer}>
-            {/* Header Preview */}
-            {header && (
-              <View style={styles.previewSection}>
-                {header.type === 'TEXT' ? (
-                  <Text style={styles.previewHeaderText} numberOfLines={1}>
-                    {header.text}
-                  </Text>
-                ) : (
-                  <View style={styles.mediaIndicator}>
-                    <Icon
-                      name={
-                        header.type === 'IMAGE' ? 'image-outline' :
-                        header.type === 'VIDEO' ? 'video-outline' :
-                        header.type === 'DOCUMENT' ? 'file-document-outline' :
-                        'attachment'
-                      }
-                      size={14}
-                      color={colors.grey[500]}
-                    />
-                    <Text style={styles.mediaText}>
-                      {header.type.charAt(0) + header.type.slice(1).toLowerCase()}
-                    </Text>
-                  </View>
-                )}
+            {/* Badges Row */}
+            <View style={styles.metaRow}>
+              <View style={[styles.typeTag, { backgroundColor: templateTypeConfig.bg }]}>
+                <Icon name={templateTypeConfig.icon} size={9} color={templateTypeConfig.color} />
+                <Text style={[styles.typeTagText, { color: templateTypeConfig.color }]}>
+                  {templateTypeConfig.label}
+                </Text>
               </View>
-            )}
+              <View style={styles.divider} />
+              <Text style={styles.categoryText}>
+                {item.category}
+              </Text>
+              {hasVars && (
+                <>
+                  <View style={styles.divider} />
+                  <Icon name="code-braces" size={11} color={colors.grey[500]} />
+                </>
+              )}
+            </View>
 
             {/* Body Preview */}
-            <Text style={styles.previewBody} numberOfLines={2}>
-              {bodyText || 'No message content'}
-            </Text>
+            {bodyText && (
+              <Text style={styles.previewBody} numberOfLines={2}>
+                {bodyText}
+              </Text>
+            )}
 
-            {/* Buttons Preview */}
+            {/* Button Count Indicator */}
             {buttons.length > 0 && (
-              <View style={styles.buttonsPreview}>
-                {buttons.slice(0, 3).map((button, idx) => (
-                  <View key={idx} style={styles.buttonChip}>
-                    <Icon
-                      name={
-                        button.type === 'URL' ? 'link-variant' :
-                        button.type === 'PHONE_NUMBER' ? 'phone' :
-                        'reply'
-                      }
-                      size={11}
-                      color={chatColors.primary}
-                    />
-                    <Text style={styles.buttonChipText} numberOfLines={1}>
-                      {button.text}
-                    </Text>
-                  </View>
-                ))}
-                {buttons.length > 3 && (
-                  <Text style={styles.moreButtons}>+{buttons.length - 3}</Text>
-                )}
+              <View style={styles.buttonCountIndicator}>
+                <Icon name="gesture-tap-button" size={12} color={colors.grey[500]} />
+                <Text style={styles.buttonCountText}>
+                  {buttons.length} button{buttons.length !== 1 ? 's' : ''}
+                </Text>
               </View>
             )}
           </View>
         </TouchableOpacity>
       </Animated.View>
     );
-  }, [handleSelect, getTemplateHeader, getTemplateBodyText, getTemplateButtons, hasVariables, getCategoryStyle]);
+  }, [handleSelect, getTemplateBodyText, getTemplateButtons, hasVariables, getTemplateTypeConfig]);
 
   // Render empty state
   const renderEmptyState = useCallback(() => (
@@ -490,10 +462,10 @@ const styles = StyleSheet.create({
   },
   bottomSheet: {
     backgroundColor: colors.common.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.85,
-    minHeight: 400,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: SCREEN_HEIGHT * 0.9,
+    minHeight: SCREEN_HEIGHT * 0.7,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -522,9 +494,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
+    paddingTop: 4,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
   },
   headerContent: {
     flexDirection: 'row',
@@ -564,18 +535,18 @@ const styles = StyleSheet.create({
   },
   searchSection: {
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 12,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.grey[100],
+    backgroundColor: colors.grey[50],
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 48,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    height: 46,
+    borderWidth: 1.5,
+    borderColor: colors.grey[200],
   },
   searchContainerFocused: {
     borderColor: chatColors.primary,
@@ -597,7 +568,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   categorySection: {
-    paddingBottom: 12,
+    paddingBottom: 8,
   },
   categoryList: {
     paddingHorizontal: 20,
@@ -606,14 +577,17 @@ const styles = StyleSheet.create({
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: colors.grey[100],
+    backgroundColor: colors.grey[50],
+    borderWidth: 1,
+    borderColor: colors.grey[200],
     marginRight: 8,
   },
   categoryChipActive: {
     backgroundColor: chatColors.primary,
+    borderColor: chatColors.primary,
   },
   categoryChipIcon: {
     marginRight: 6,
@@ -621,20 +595,21 @@ const styles = StyleSheet.create({
   categoryChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.grey[600],
+    color: colors.grey[700],
   },
   categoryChipTextActive: {
     color: colors.common.white,
   },
   resultsHeader: {
     paddingHorizontal: 20,
-    paddingTop: 4,
+    paddingTop: 8,
     paddingBottom: 12,
   },
   resultsCount: {
-    fontSize: 13,
-    color: colors.text.secondary,
-    fontWeight: '500',
+    fontSize: 12,
+    color: colors.grey[600],
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   listContent: {
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
@@ -642,150 +617,89 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     paddingHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   templateCard: {
     backgroundColor: colors.common.white,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.grey[200],
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
       },
       android: {
-        elevation: 2,
+        elevation: 1,
       },
     }),
   },
-  cardHeader: {
+  cardContent: {
+    padding: 16,
+  },
+  cardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  cardTitleSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 8,
-  },
-  templateIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  titleContainer: {
-    flex: 1,
+    marginBottom: 8,
   },
   templateName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: colors.text.primary,
-    marginBottom: 4,
     textTransform: 'capitalize',
+    flex: 1,
+    marginRight: 8,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  categoryTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  categoryTagText: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  languageTag: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.grey[500],
-    backgroundColor: colors.grey[100],
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  variableIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: `${chatColors.primary}15`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  previewContainer: {
-    backgroundColor: colors.grey[50],
-    borderRadius: 10,
-    padding: 12,
-  },
-  previewSection: {
     marginBottom: 8,
+    flexWrap: 'wrap',
   },
-  previewHeaderText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.text.primary,
-  },
-  mediaIndicator: {
+  typeTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.grey[100],
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 6,
-    alignSelf: 'flex-start',
+    gap: 3,
   },
-  mediaText: {
+  typeTagText: {
     fontSize: 11,
-    color: colors.grey[600],
-    marginLeft: 6,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  divider: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.grey[300],
+    marginHorizontal: 4,
+  },
+  categoryText: {
+    fontSize: 11,
     fontWeight: '500',
+    color: colors.grey[600],
   },
   previewBody: {
     fontSize: 13,
-    color: colors.text.secondary,
-    lineHeight: 18,
+    color: colors.grey[600],
+    lineHeight: 19,
+    marginTop: 4,
   },
-  buttonsPreview: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    gap: 6,
-  },
-  buttonChip: {
+  buttonCountIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.common.white,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: `${chatColors.primary}40`,
+    marginTop: 8,
     gap: 4,
   },
-  buttonChipText: {
-    fontSize: 11,
-    color: chatColors.primary,
-    fontWeight: '500',
-    maxWidth: 80,
-  },
-  moreButtons: {
+  buttonCountText: {
     fontSize: 11,
     color: colors.grey[500],
     fontWeight: '500',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
   },
   emptyState: {
     flex: 1,

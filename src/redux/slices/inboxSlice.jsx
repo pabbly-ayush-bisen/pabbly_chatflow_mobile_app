@@ -1,6 +1,103 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
 
+// ----------------------------------------------------------------------------
+// Chat list normalization
+// Some APIs don't return `lastMessage` on the chat list. The web app relies on
+// `lastMessage`, so we normalize here to keep UI consistent.
+// ----------------------------------------------------------------------------
+const normalizeLastMessage = (chat) => {
+  if (!chat || typeof chat !== 'object') return null;
+
+  // Common shapes
+  const direct =
+    chat.lastMessage ||
+    chat.last_message ||
+    chat.latestMessage ||
+    chat.latest_message ||
+    null;
+
+  if (direct && typeof direct === 'object') return direct;
+
+  // Sometimes API returns messages array in list (rare)
+  const msgs = Array.isArray(chat.messages) ? chat.messages : null;
+  if (msgs && msgs.length > 0) return msgs[msgs.length - 1];
+
+  // Build a synthetic lastMessage from flat fields if present
+  const type =
+    chat.lastMessageType ||
+    chat.last_message_type ||
+    chat.lastMessage?.type ||
+    chat.last_message?.type ||
+    null;
+
+  const text =
+    chat.lastMessageText ||
+    chat.last_message_text ||
+    chat.lastMessageBody ||
+    chat.last_message_body ||
+    chat.lastMessage?.message?.body ||
+    chat.last_message?.message?.body ||
+    null;
+
+  const lastAt =
+    chat.lastMessageAt ||
+    chat.last_message_at ||
+    chat.lastMessageTime ||
+    chat.last_message_time ||
+    chat.updatedAt ||
+    chat.createdAt ||
+    null;
+
+  const status =
+    chat.lastMessageStatus ||
+    chat.last_message_status ||
+    null;
+
+  const sentBy =
+    chat.lastMessageSentBy ||
+    chat.last_message_sent_by ||
+    null;
+
+  const direction =
+    chat.lastMessageDirection ||
+    chat.last_message_direction ||
+    null;
+
+  if (!type && !text) return null;
+
+  return {
+    type: type || 'text',
+    status: status || undefined,
+    sentBy: sentBy || undefined,
+    direction: direction || undefined,
+    createdAt: lastAt || undefined,
+    timestamp: lastAt || undefined,
+    message: {
+      body: text || '',
+    },
+  };
+};
+
+const normalizeChatForList = (chat) => {
+  if (!chat || typeof chat !== 'object') return chat;
+  const lastMessage = normalizeLastMessage(chat);
+  return {
+    ...chat,
+    lastMessage: lastMessage || null,
+    // Keep a consistent "last message time" for sorting & display
+    lastMessageTime:
+      lastMessage?.timestamp ||
+      lastMessage?.createdAt ||
+      chat.lastMessageAt ||
+      chat.last_message_at ||
+      chat.lastMessageTime ||
+      chat.updatedAt ||
+      chat.createdAt ||
+      null,
+  };
+};
+
 // Async thunks
 export const fetchChats = createAsyncThunk(
   'inbox/fetchChats',
@@ -19,11 +116,23 @@ export const fetchChats = createAsyncThunk(
 
 export const fetchConversation = createAsyncThunk(
   'inbox/fetchConversation',
-  async (_id, { rejectWithValue }) => {
+  async (arg, { rejectWithValue }) => {
     try {
       const url = endpoints.inbox.getConversation;
-      // Fetch only the last 10 messages initially for faster loading
-      const response = await callApi(url, httpMethods.GET, { _id, limit: 10, skip: 0 });
+      const chatId = typeof arg === 'object' ? (arg.chatId || arg._id || arg.id) : arg;
+      const fetchAll = typeof arg === 'object' && arg.all === true;
+
+      // If all: true, fetch all messages without limit/skip
+      const params = { _id: chatId };
+      if (fetchAll) {
+        params.all = true;
+      } else {
+        // Fallback to pagination if not fetching all
+        params.limit = typeof arg === 'object' && arg.limit ? arg.limit : 50;
+        params.skip = typeof arg === 'object' && arg.skip ? arg.skip : 0;
+      }
+
+      const response = await callApi(url, httpMethods.GET, params);
       if (response.status === 'error') {
         return rejectWithValue(response.message || 'Failed to fetch conversation');
       }
@@ -37,7 +146,7 @@ export const fetchConversation = createAsyncThunk(
 // Fetch more messages (pagination - load older messages)
 export const fetchMoreMessages = createAsyncThunk(
   'inbox/fetchMoreMessages',
-  async ({ chatId, skip, limit = 10 }, { rejectWithValue }) => {
+  async ({ chatId, skip, limit = 50 }, { rejectWithValue }) => {
     try {
       const url = endpoints.inbox.getConversation;
       const response = await callApi(url, httpMethods.GET, { _id: chatId, limit, skip });
@@ -191,6 +300,26 @@ export const fetchQuickReplies = createAsyncThunk(
   }
 );
 
+// Fetch chats by contact IDs (for updateChatOnContactUpdate socket event)
+export const fetchChatsByContacts = createAsyncThunk(
+  'inbox/fetchChatsByContacts',
+  async (contactIds, { rejectWithValue }) => {
+    try {
+      const response = await callApi(
+        `${endpoints.inbox.root}/by-contacts`,
+        httpMethods.POST,
+        { contactIds }
+      );
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to fetch chats by contacts');
+      }
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 // Fetch more chats (pagination)
 export const fetchMoreChats = createAsyncThunk(
   'inbox/fetchMoreChats',
@@ -334,6 +463,8 @@ export const toggleChatNotifications = createAsyncThunk(
 const initialState = {
   chats: [],
   currentConversation: null,
+  // In-memory cache to avoid re-fetching already loaded messages on reopen
+  conversationCache: {}, // { [chatId]: { conversation, messagesSkip, hasMoreMessages, cachedAt } }
   status: 'idle',
   conversationStatus: 'idle',
   // Message pagination state
@@ -396,28 +527,47 @@ const inboxSlice = createSlice({
   name: 'inbox',
   initialState,
   reducers: {
+    setCurrentConversationFromCache: (state, action) => {
+      const chatId = action.payload;
+      const cached = state.conversationCache?.[chatId];
+      if (cached?.conversation) {
+        state.currentConversation = cached.conversation;
+        state.messagesSkip = cached.messagesSkip ?? (cached.conversation.messages?.length || 0);
+        state.hasMoreMessages = cached.hasMoreMessages ?? true;
+      }
+    },
     setChats: (state, action) => {
-      state.chats = action.payload;
+      state.chats = (action.payload || []).map(normalizeChatForList);
     },
     setSelectedChatId: (state, action) => {
       state.selectedChatId = action.payload;
     },
     appendChat: (state, action) => {
-      state.chats.unshift(action.payload);
+      state.chats.unshift(normalizeChatForList(action.payload));
     },
     updateChatInList: (state, action) => {
-      const index = state.chats.findIndex(chat => chat._id === action.payload._id);
+      const incoming = normalizeChatForList(action.payload);
+      const index = state.chats.findIndex(chat => chat._id === incoming?._id);
       if (index !== -1) {
         // Update existing chat
-        state.chats[index] = { ...state.chats[index], ...action.payload };
+        state.chats[index] = { ...state.chats[index], ...incoming };
         // Move to top if not a system message update
-        if (action.payload.lastMessage?.type !== 'system') {
+        if (incoming.lastMessage?.type !== 'system') {
           const [chat] = state.chats.splice(index, 1);
           state.chats.unshift(chat);
         }
       } else {
         // New chat, add to top
-        state.chats.unshift(action.payload);
+        state.chats.unshift(incoming);
+      }
+      // Also update currentConversation if it matches
+      if (state.currentConversation && state.currentConversation._id === incoming?._id) {
+        if (incoming.contact) {
+          state.currentConversation.contact = {
+            ...state.currentConversation.contact,
+            ...incoming.contact,
+          };
+        }
       }
     },
     removeChatFromList: (state, action) => {
@@ -450,9 +600,59 @@ const inboxSlice = createSlice({
         if (!state.currentConversation.messages) {
           state.currentConversation.messages = [];
         }
+
+        // Check if this is a response to an optimistic message (match by tempId)
+        if (message.tempId) {
+          const optimisticIndex = state.currentConversation.messages.findIndex(
+            m => m.tempId === message.tempId && m.isOptimistic
+          );
+          if (optimisticIndex !== -1) {
+            // Replace optimistic message with real message from server
+            state.currentConversation.messages[optimisticIndex] = {
+              ...message,
+              isOptimistic: false,
+            };
+            return;
+          }
+        }
+
+        // For outgoing messages, check if we have an optimistic message that matches
+        // Match by: same chatId, same content, same type, within 30 seconds, and marked as optimistic
+        if (message.sentBy === 'user') {
+          const messageText = message.message?.body || message.message?.body?.text || '';
+          const messageType = message.type || 'text';
+          const messageTime = new Date(message.timestamp || message.createdAt).getTime();
+
+          const optimisticIndex = state.currentConversation.messages.findIndex(m => {
+            if (!m.isOptimistic) return false;
+
+            const optText = m.message?.body || m.message?.body?.text || '';
+            const optType = m.type || 'text';
+            const optTime = new Date(m.timestamp || m.createdAt).getTime();
+
+            // Match if same type, similar content, and within 30 seconds
+            const timeDiff = Math.abs(messageTime - optTime);
+            const textMatch = messageType === 'text' ? messageText === optText : true; // For media, don't check text
+            const typeMatch = messageType === optType;
+
+            return typeMatch && textMatch && timeDiff < 30000;
+          });
+
+          if (optimisticIndex !== -1) {
+            // Replace optimistic message with real message from server
+            console.log('[inboxSlice] Replacing optimistic message with real message');
+            state.currentConversation.messages[optimisticIndex] = {
+              ...message,
+              isOptimistic: false,
+            };
+            return;
+          }
+        }
+
         // Check if message already exists (by wamid or _id)
         const messageExists = state.currentConversation.messages.some(
-          m => (message.wamid && m.wamid === message.wamid) || (message._id && m._id === message._id)
+          m => (message.wamid && m.wamid === message.wamid) ||
+               (message._id && !m.isOptimistic && m._id === message._id)
         );
         if (!messageExists) {
           // Add new message to the end of the array
@@ -462,15 +662,26 @@ const inboxSlice = createSlice({
     },
     // Update message status in current conversation
     updateMessageInCurrentConversation: (state, action) => {
-      const { chatId, messageWaId, updates } = action.payload;
+      const { chatId, messageWaId, tempId, updates } = action.payload;
       if (state.currentConversation && state.currentConversation._id === chatId) {
-        const messageIndex = state.currentConversation.messages?.findIndex(
+        // First try to find by wamid
+        let messageIndex = state.currentConversation.messages?.findIndex(
           m => m.wamid === messageWaId
         );
+
+        // If not found by wamid and tempId is provided, try to find by tempId
+        if ((messageIndex === -1 || messageIndex === undefined) && tempId) {
+          messageIndex = state.currentConversation.messages?.findIndex(
+            m => m.tempId === tempId
+          );
+        }
+
         if (messageIndex !== -1 && messageIndex !== undefined) {
           state.currentConversation.messages[messageIndex] = {
             ...state.currentConversation.messages[messageIndex],
             ...updates,
+            // If wamid is provided in updates or we're updating by wamid, mark as no longer optimistic
+            ...(updates.wamid || messageWaId ? { isOptimistic: false, wamid: updates.wamid || messageWaId } : {}),
           };
         }
       }
@@ -560,6 +771,102 @@ const inboxSlice = createSlice({
         }
       }
     },
+    // Update message reaction from socket (when someone reacts to a message)
+    updateMessageReactionInConversation: (state, action) => {
+      const { chatId, messageWaId, reaction, sentBy } = action.payload;
+      if (state.currentConversation && state.currentConversation._id === chatId) {
+        const messageIndex = state.currentConversation.messages?.findIndex(
+          m => m.wamid === messageWaId || m._id === messageWaId
+        );
+        if (messageIndex !== -1 && messageIndex !== undefined) {
+          // Initialize reactions array if not present
+          if (!state.currentConversation.messages[messageIndex].reactions) {
+            state.currentConversation.messages[messageIndex].reactions = [];
+          }
+          // Check if this user already reacted
+          const existingReactionIndex = state.currentConversation.messages[messageIndex].reactions.findIndex(
+            r => r.sentBy === sentBy || r.from === sentBy
+          );
+          if (reaction.emoji === '') {
+            // Remove reaction if emoji is empty (unreact)
+            if (existingReactionIndex !== -1) {
+              state.currentConversation.messages[messageIndex].reactions.splice(existingReactionIndex, 1);
+            }
+          } else if (existingReactionIndex !== -1) {
+            // Update existing reaction
+            state.currentConversation.messages[messageIndex].reactions[existingReactionIndex] = {
+              ...reaction,
+              sentBy,
+            };
+          } else {
+            // Add new reaction
+            state.currentConversation.messages[messageIndex].reactions.push({
+              ...reaction,
+              sentBy,
+            });
+          }
+        }
+      }
+    },
+    // Add optimistic message (immediately show message with pending status)
+    addOptimisticMessage: (state, action) => {
+      const { chatId, message } = action.payload;
+      if (state.currentConversation && state.currentConversation._id === chatId) {
+        if (!state.currentConversation.messages) {
+          state.currentConversation.messages = [];
+        }
+        // Add message with pending status
+        state.currentConversation.messages.push({
+          ...message,
+          status: 'pending',
+          isOptimistic: true,
+        });
+      }
+      // Also update the chat list with the new message as lastMessage
+      const chatIndex = state.chats.findIndex(c => c._id === chatId);
+      if (chatIndex !== -1) {
+        state.chats[chatIndex].lastMessage = {
+          ...message,
+          status: 'pending',
+        };
+        state.chats[chatIndex].lastMessageTime = message.timestamp || message.createdAt;
+        // Move chat to top
+        const [chat] = state.chats.splice(chatIndex, 1);
+        state.chats.unshift(chat);
+      }
+    },
+    // Update optimistic message with server response (match by tempId)
+    updateOptimisticMessage: (state, action) => {
+      const { chatId, tempId, serverMessage } = action.payload;
+      if (state.currentConversation && state.currentConversation._id === chatId) {
+        const messageIndex = state.currentConversation.messages?.findIndex(
+          m => m.tempId === tempId
+        );
+        if (messageIndex !== -1 && messageIndex !== undefined) {
+          // Replace optimistic message with server message
+          state.currentConversation.messages[messageIndex] = {
+            ...serverMessage,
+            isOptimistic: false,
+          };
+        }
+      }
+    },
+    // Mark optimistic message as failed
+    markOptimisticMessageFailed: (state, action) => {
+      const { chatId, tempId, error } = action.payload;
+      if (state.currentConversation && state.currentConversation._id === chatId) {
+        const messageIndex = state.currentConversation.messages?.findIndex(
+          m => m.tempId === tempId
+        );
+        if (messageIndex !== -1 && messageIndex !== undefined) {
+          state.currentConversation.messages[messageIndex] = {
+            ...state.currentConversation.messages[messageIndex],
+            status: 'failed',
+            error,
+          };
+        }
+      }
+    },
     // Reset message pagination when opening a new conversation
     resetMessagePagination: (state) => {
       state.messagesSkip = 0;
@@ -579,13 +886,10 @@ const inboxSlice = createSlice({
         state.status = 'succeeded';
         const data = action.payload.data || action.payload;
         // Sort chats by latest activity (lastMessage timestamp or updatedAt)
-        const chats = data.chats || [];
+        const chats = (data.chats || []).map(normalizeChatForList);
         state.chats = chats.sort((a, b) => {
-          // Get timestamp from lastMessage first, then fall back to updatedAt
-          const aLastMsg = a.lastMessage?.timestamp || a.lastMessage?.createdAt;
-          const bLastMsg = b.lastMessage?.timestamp || b.lastMessage?.createdAt;
-          const aTime = new Date(aLastMsg || a.updatedAt || a.createdAt || 0).getTime();
-          const bTime = new Date(bLastMsg || b.updatedAt || b.createdAt || 0).getTime();
+          const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
+          const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
           return bTime - aTime; // Descending order (newest first)
         });
         state.hasMoreChats = data.hasMoreChats || false;
@@ -600,21 +904,55 @@ const inboxSlice = createSlice({
       .addCase(fetchConversation.pending, (state) => {
         state.conversationStatus = 'loading';
         state.conversationError = null;
-        // Reset message pagination on new conversation
-        state.messagesSkip = 0;
-        state.hasMoreMessages = true;
+        // Keep pagination if we already have cached messages; otherwise reset
+        // (component will prefer cache and avoid calling fetch if present)
+        state.isLoadingMoreMessages = false;
         state.isLoadingMoreMessages = false;
         state.loadMoreMessagesError = null;
       })
       .addCase(fetchConversation.fulfilled, (state, action) => {
         state.conversationStatus = 'succeeded';
         const data = action.payload.data || action.payload;
-        state.currentConversation = data;
-        // Set initial skip based on loaded messages count
-        const messagesCount = data.messages?.length || 0;
-        state.messagesSkip = messagesCount;
-        // If we got less than 10 messages, there are no more to load
-        state.hasMoreMessages = messagesCount >= 10;
+        const arg = action.meta?.arg;
+        const chatId = typeof arg === 'object' ? (arg.chatId || arg._id || arg.id) : arg;
+        const fetchAll = typeof arg === 'object' && arg.all === true;
+
+        const newMsgs = data.messages || [];
+
+        // Sort messages by timestamp
+        const sortedMsgs = [...newMsgs].sort((a, b) => {
+          const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
+          const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
+          return aT - bT;
+        });
+
+        const conversation = {
+          ...data,
+          _id: data._id || chatId,
+          messages: sortedMsgs,
+        };
+
+        state.currentConversation = conversation;
+
+        // When fetching all, no more messages to load
+        if (fetchAll) {
+          state.hasMoreMessages = false;
+          state.messagesSkip = sortedMsgs.length;
+        } else {
+          const limit = typeof arg === 'object' && arg.limit ? arg.limit : 50;
+          state.messagesSkip = sortedMsgs.length;
+          state.hasMoreMessages = newMsgs.length >= limit;
+        }
+
+        // Update cache
+        if (chatId) {
+          state.conversationCache[chatId] = {
+            conversation,
+            messagesSkip: state.messagesSkip,
+            hasMoreMessages: state.hasMoreMessages,
+            cachedAt: Date.now(),
+          };
+        }
       })
       .addCase(fetchConversation.rejected, (state, action) => {
         state.conversationStatus = 'failed';
@@ -632,6 +970,7 @@ const inboxSlice = createSlice({
         const { response, skip } = action.payload;
         const data = response.data || response;
         const olderMessages = data.messages || [];
+        const limit = action.meta?.arg?.limit || 50;
 
         if (state.currentConversation) {
           // Prepend older messages to the beginning (they are older)
@@ -649,7 +988,18 @@ const inboxSlice = createSlice({
 
         // Update pagination state
         state.messagesSkip = skip + olderMessages.length;
-        state.hasMoreMessages = olderMessages.length >= 10;
+        state.hasMoreMessages = olderMessages.length >= limit;
+
+        // Update cache
+        const chatId = state.currentConversation?._id;
+        if (chatId) {
+          state.conversationCache[chatId] = {
+            conversation: state.currentConversation,
+            messagesSkip: state.messagesSkip,
+            hasMoreMessages: state.hasMoreMessages,
+            cachedAt: Date.now(),
+          };
+        }
       })
       .addCase(fetchMoreMessages.rejected, (state, action) => {
         state.isLoadingMoreMessages = false;
@@ -820,7 +1170,7 @@ const inboxSlice = createSlice({
       .addCase(fetchMoreChats.fulfilled, (state, action) => {
         state.isLoadingMore = false;
         const data = action.payload.data || action.payload;
-        const newChats = data.chats || [];
+        const newChats = (data.chats || []).map(normalizeChatForList);
         // Append new chats, avoiding duplicates
         const existingIds = new Set(state.chats.map(c => c._id));
         const uniqueNewChats = newChats.filter(c => !existingIds.has(c._id));
@@ -970,11 +1320,18 @@ export const {
   setActiveFilter,
   setPaginationCursor,
   resetPagination,
+  resetMessagePagination,
   setNotes,
   addNoteToList,
   removeNoteFromList,
   setTeamMembers,
   updateMessageReaction,
+  setCurrentConversationFromCache,
+  // Reaction and optimistic message exports
+  updateMessageReactionInConversation,
+  addOptimisticMessage,
+  updateOptimisticMessage,
+  markOptimisticMessageFailed,
 } = inboxSlice.actions;
 
 export default inboxSlice.reducer;

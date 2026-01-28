@@ -30,7 +30,7 @@ const InteractiveMessage = ({ message, isOutgoing, onImagePress }) => {
   const interactiveData = getInteractiveData(message);
   const { type, header, body, footer } = interactiveData;
 
-  // Check for media header type
+  // Check for media header type (outgoing interactive with media)
   const headerType = message?.message?.header?.type;
   const hasMediaHeader = ['image', 'video', 'audio', 'document'].includes(headerType);
 
@@ -46,6 +46,28 @@ const InteractiveMessage = ({ message, isOutgoing, onImagePress }) => {
 
   // Route to appropriate component based on type
   const renderInteractiveContent = () => {
+    // Incoming interactive replies (from end user)
+    if (type === 'button_reply' || type === 'list_reply') {
+      return (
+        <View style={styles.replyContainer}>
+          <Icon
+            name="gesture-tap-button"
+            size={16}
+            color={colors.grey[600]}
+          />
+          <Text
+            style={[
+              styles.replyText,
+              isOutgoing && styles.replyTextOutgoing,
+            ]}
+            numberOfLines={2}
+          >
+            {body || 'Interactive reply'}
+          </Text>
+        </View>
+      );
+    }
+
     // Media button messages (image/video/audio/document header with buttons)
     if (hasMediaHeader) {
       return (
@@ -126,7 +148,7 @@ const InteractiveMessage = ({ message, isOutgoing, onImagePress }) => {
             <Icon
               name="gesture-tap-button"
               size={16}
-              color={isOutgoing ? 'rgba(255,255,255,0.7)' : colors.grey[500]}
+              color={colors.grey[500]}
             />
             <Text style={[styles.fallbackText, isOutgoing && styles.fallbackTextOutgoing]}>
               {typeof body === 'string' ? body : 'Interactive message'}
@@ -153,6 +175,19 @@ const styles = StyleSheet.create({
     minWidth: 200,
     maxWidth: 280,
   },
+  replyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  replyText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text.primary,
+  },
+  replyTextOutgoing: {
+    color: colors.text.primary,
+  },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -174,7 +209,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   fallbackTextOutgoing: {
-    color: colors.common.white,
+    color: colors.text.primary,
   },
   fallbackFooter: {
     fontSize: 12,
@@ -182,7 +217,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   fallbackFooterOutgoing: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.text.secondary,
   },
 });
 
