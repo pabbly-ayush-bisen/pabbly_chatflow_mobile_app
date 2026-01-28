@@ -15,16 +15,22 @@ export default function SettingsScreen({ navigation }) {
           icon: 'check-circle-outline',
           screen: 'OptInManagement',
         },
+        {
+          title: 'Inbox Settings',
+          description: 'Read receipts, messages & working hours',
+          icon: 'cog-outline',
+          screen: 'InboxSettings',
+        },
       ],
     },
     {
       section: 'Management',
       items: [
         {
-          title: 'User Attributes',
-          description: 'View custom user attributes',
-          icon: 'account-details',
-          screen: 'UserAttributes',
+          title: 'Contact Custom Field',
+          description: 'View custom contact fields',
+          icon: 'form-textbox',
+          screen: 'ContactCustomField',
         },
         {
           title: 'Tags',

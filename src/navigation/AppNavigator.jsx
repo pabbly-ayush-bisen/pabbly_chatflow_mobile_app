@@ -27,7 +27,8 @@ import GetHelpScreen from '../screens/GetHelpScreen';
 
 // Settings screens
 import OptInManagementScreen from '../screens/settings/OptInManagementScreen';
-import UserAttributesScreen from '../screens/settings/UserAttributesScreen';
+import InboxSettingsScreen from '../screens/settings/InboxSettingsScreen';
+import ContactCustomFieldScreen from '../screens/settings/ContactCustomFieldScreen';
 import TagsScreen from '../screens/settings/TagsScreen';
 import QuickRepliesScreen from '../screens/settings/QuickRepliesScreen';
 import TeamMemberScreen from '../screens/settings/TeamMemberScreen';
@@ -358,9 +359,14 @@ function MoreStackNavigator() {
         options={({ navigation }) => getChildScreenOptions(navigation, 'Opt-in Management')}
       />
       <MoreStack.Screen
-        name="UserAttributes"
-        component={UserAttributesScreen}
-        options={({ navigation }) => getChildScreenOptions(navigation, 'User Attributes')}
+        name="InboxSettings"
+        component={InboxSettingsScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'Inbox Settings')}
+      />
+      <MoreStack.Screen
+        name="ContactCustomField"
+        component={ContactCustomFieldScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'Contact Custom Field')}
       />
       <MoreStack.Screen
         name="Tags"
