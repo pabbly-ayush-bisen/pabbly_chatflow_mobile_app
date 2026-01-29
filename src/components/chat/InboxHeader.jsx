@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated, TextInput, StatusBar } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated, TextInput, StatusBar, Platform } from 'react-native';
 import { Text, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -203,6 +203,13 @@ const styles = StyleSheet.create({
     height: 40,
     color: colors.common.white,
     fontSize: 16,
+    fontWeight: '400',
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+      ios: {},
+    }),
   },
   clearButton: {
     padding: 4,

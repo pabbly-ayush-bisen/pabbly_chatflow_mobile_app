@@ -25,28 +25,45 @@ export const signIn = createAsyncThunk(
       }
 
       // Debug: Log the full response structure to identify correct paths
-      console.log('[signIn] Full API response:', JSON.stringify(response, null, 2));
-      console.log('[signIn] Response keys:', Object.keys(response));
-      console.log('[signIn] response._raw:', response._raw);
-      console.log('[signIn] response._raw keys:', response._raw ? Object.keys(response._raw) : 'no _raw');
+      // Log:('[signIn] Full API response:', JSON.stringify(response, null, 2));
+      // Log:('[signIn] Response keys:', Object.keys(response));
+      // Log:('[signIn] response._raw:', response._raw);
+      // Log:('[signIn] response._raw keys:', response._raw ? Object.keys(response._raw) : 'no _raw');
 
       // The callApi wrapper puts the raw API response in _raw
       // Token and user can be at: response.data, response._raw, or nested in response._raw.data
       const rawResponse = response._raw || {};
-      const nestedData = response.data || rawResponse.data || {};
+      const nestedData = rawResponse.data || response.data || {};
 
-      // Determine correct token and user paths (check all possible locations)
-      const token = response.data?.token || rawResponse.token || nestedData.token;
-      const user = response.data?.user || rawResponse.user || nestedData.user;
-      const settingId = user?.settingId || rawResponse.settingId || nestedData.settingId;
-      const tokenExpiresAt = response.data?.tokenExpiresAt || rawResponse.tokenExpiresAt || nestedData.tokenExpiresAt;
+      // Determine correct token path
+      // The signin API returns token directly as response.data (a JWT string, not an object)
+      // Check if response.data is a string (JWT token) or an object containing token
+      let token;
+      if (typeof response.data === 'string' && response.data.startsWith('eyJ')) {
+        // Token is directly in response.data (JWT format)
+        token = response.data;
+      } else if (typeof nestedData === 'string' && nestedData.startsWith('eyJ')) {
+        // Token is in rawResponse.data
+        token = nestedData;
+      } else {
+        // Token is nested in an object
+        token = response.data?.token || rawResponse.token || nestedData?.token;
+      }
 
-      console.log('[signIn] Extracted values:', {
-        hasToken: !!token,
-        hasUser: !!user,
-        settingId,
-        tokenExpiresAt
-      });
+      // User comes from verify-session, not signin
+      // But check if it's included in signin response
+      const user = response.data?.user || rawResponse.user || (typeof nestedData === 'object' ? nestedData?.user : null);
+      const settingId = user?.settingId || rawResponse.settingId || (typeof nestedData === 'object' ? nestedData?.settingId : null);
+      const tokenExpiresAt = response.data?.tokenExpiresAt || rawResponse.tokenExpiresAt || (typeof nestedData === 'object' ? nestedData?.tokenExpiresAt : null);
+
+      // Log:('[signIn] Extracted values:', {
+      //   hasToken: !!token,
+      //   tokenLength: token?.length,
+      //   tokenPreview: token ? `${token.substring(0, 20)}...` : null,
+      //   hasUser: !!user,
+      //   settingId,
+      //   tokenExpiresAt
+      // });
 
       // Use SessionManager to create persistent session
       await sessionManager.createSession({
@@ -56,7 +73,7 @@ export const signIn = createAsyncThunk(
         tokenExpiresAt,
       });
 
-      console.log('[signIn] Session created successfully via SessionManager');
+      // Log:('[signIn] Session created successfully via SessionManager');
 
       return response;
     } catch (error) {
@@ -108,12 +125,12 @@ export const logout = createAsyncThunk(
       // Clear cached data (chats, messages, etc.)
       try {
         await cacheManager.clearAllCache();
-        console.log('[logout] Cache cleared successfully');
+        // Log:('[logout] Cache cleared successfully');
       } catch (cacheError) {
-        console.warn('[logout] Failed to clear cache:', cacheError.message);
+        // Warn:('[logout] Failed to clear cache:', cacheError.message);
       }
 
-      console.log('[logout] Session destroyed successfully');
+      // Log:('[logout] Session destroyed successfully');
       return response;
     } catch (error) {
       // Still destroy session even on API error
@@ -123,7 +140,7 @@ export const logout = createAsyncThunk(
       try {
         await cacheManager.clearAllCache();
       } catch (cacheError) {
-        console.warn('[logout] Failed to clear cache on error:', cacheError.message);
+        // Warn:('[logout] Failed to clear cache on error:', cacheError.message);
       }
 
       return rejectWithValue(error.response?.data || error.message);
@@ -289,6 +306,18 @@ const userSlice = createSlice({
       .addCase(checkSession.fulfilled, (state, action) => {
         state.checkSessionStatus = 'succeeded';
         state.user = action.payload?.data?.user;
+
+        // Store user in AsyncStorage for session persistence
+        const userData = action.payload?.data?.user;
+        if (userData) {
+          sessionManager.updateSession({
+            user: userData,
+            settingId: userData.settingId,
+            tokenExpiresAt: action.payload?.data?.tokenExpiresAt,
+            timezone: action.payload?.data?.timeZone,
+          });
+          // Log:('[checkSession] User stored via SessionManager');
+        }
 
         // Set settingId and other data if user has a settingId
         const userSettingId = action.payload?.data?.user?.settingId;

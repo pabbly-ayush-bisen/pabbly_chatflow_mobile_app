@@ -50,7 +50,7 @@ class DatabaseManager {
 
   async _doInitialize() {
     try {
-      console.log('[DatabaseManager] Initializing database...');
+      // Log:('[DatabaseManager] Initializing database...');
 
       // Open database connection
       this.db = await SQLite.openDatabaseAsync(DATABASE_NAME);
@@ -69,9 +69,9 @@ class DatabaseManager {
       await this._createIndexes();
 
       this.isInitialized = true;
-      console.log('[DatabaseManager] Database initialized successfully');
+      // Log:('[DatabaseManager] Database initialized successfully');
     } catch (error) {
-      console.error('[DatabaseManager] Initialization error:', error);
+      // Error:('[DatabaseManager] Initialization error:', error);
       this.initPromise = null;
       throw error;
     }
@@ -93,7 +93,7 @@ class DatabaseManager {
       const currentVersion = result ? parseInt(result.value, 10) : 0;
 
       if (currentVersion < SCHEMA_VERSION) {
-        console.log(`[DatabaseManager] Migrating from version ${currentVersion} to ${SCHEMA_VERSION}`);
+        // Log:(`[DatabaseManager] Migrating from version ${currentVersion} to ${SCHEMA_VERSION}`);
         await this._runMigrations(currentVersion, SCHEMA_VERSION);
 
         // Update schema version
@@ -103,7 +103,7 @@ class DatabaseManager {
         );
       }
     } catch (error) {
-      console.error('[DatabaseManager] Migration check error:', error);
+      // Error:('[DatabaseManager] Migration check error:', error);
       // If error, try to create fresh tables
     }
   }
@@ -114,7 +114,7 @@ class DatabaseManager {
   async _runMigrations(fromVersion, toVersion) {
     // For version 1, we just create fresh tables
     if (fromVersion === 0 && toVersion >= 1) {
-      console.log('[DatabaseManager] Creating initial schema...');
+      // Log:('[DatabaseManager] Creating initial schema...');
       // Tables will be created in _createTables
     }
 
@@ -131,10 +131,10 @@ class DatabaseManager {
     try {
       for (const [tableName, sql] of Object.entries(CREATE_TABLES_SQL)) {
         await this.db.execAsync(sql);
-        console.log(`[DatabaseManager] Created/verified table: ${tableName}`);
+        // Log:(`[DatabaseManager] Created/verified table: ${tableName}`);
       }
     } catch (error) {
-      console.error('[DatabaseManager] Error creating tables:', error);
+      // Error:('[DatabaseManager] Error creating tables:', error);
       throw error;
     }
   }
@@ -147,9 +147,9 @@ class DatabaseManager {
       for (const sql of CREATE_INDEXES_SQL) {
         await this.db.execAsync(sql);
       }
-      console.log('[DatabaseManager] Indexes created successfully');
+      // Log:('[DatabaseManager] Indexes created successfully');
     } catch (error) {
-      console.error('[DatabaseManager] Error creating indexes:', error);
+      // Error:('[DatabaseManager] Error creating indexes:', error);
       // Non-fatal, continue without indexes
     }
   }
@@ -282,7 +282,7 @@ class DatabaseManager {
     await this.delete(Tables.CACHE_METADATA, 'setting_id = ?', [settingId]);
     await this.delete(Tables.SYNC_QUEUE, 'setting_id = ?', [settingId]);
 
-    console.log(`[DatabaseManager] Cleared all data for setting: ${settingId}`);
+    // Log:(`[DatabaseManager] Cleared all data for setting: ${settingId}`);
   }
 
   /**
@@ -301,7 +301,7 @@ class DatabaseManager {
     // Keep schema version in metadata
     await this.delete(Tables.CACHE_METADATA, `key != ?`, [CacheKeys.SCHEMA_VERSION]);
 
-    console.log('[DatabaseManager] All data cleared');
+    // Log:('[DatabaseManager] All data cleared');
   }
 
   /**
@@ -329,7 +329,7 @@ class DatabaseManager {
       this.db = null;
       this.isInitialized = false;
       this.initPromise = null;
-      console.log('[DatabaseManager] Database connection closed');
+      // Log:('[DatabaseManager] Database connection closed');
     }
   }
 }

@@ -37,7 +37,7 @@ export function useCacheInitialization() {
           setError(null);
         }
       } catch (err) {
-        console.error('[useCacheInitialization] Error:', err);
+        // Error logged:('[useCacheInitialization] Error:', err);
         if (mounted) {
           setError(err);
         }
@@ -94,7 +94,7 @@ export function useCachedChats(options = {}) {
       setIsStale(result.isStale);
       setError(null);
     } catch (err) {
-      console.error('[useCachedChats] Error loading chats:', err);
+      // Error logged:('[useCachedChats] Error loading chats:', err);
       setError(err);
     } finally {
       setIsLoading(false);
@@ -114,7 +114,7 @@ export function useCachedChats(options = {}) {
       setFromCache(true);
       setIsStale(false);
     } catch (err) {
-      console.error('[useCachedChats] Error updating cache:', err);
+      // Error logged:('[useCachedChats] Error updating cache:', err);
     }
   }, []);
 
@@ -181,7 +181,7 @@ export function useCachedMessages(chatId, options = {}) {
       setError(null);
       offsetRef.current = result.messages.length;
     } catch (err) {
-      console.error('[useCachedMessages] Error loading messages:', err);
+      // Error logged:('[useCachedMessages] Error loading messages:', err);
       setError(err);
     } finally {
       setIsLoading(false);
@@ -206,7 +206,7 @@ export function useCachedMessages(chatId, options = {}) {
 
       setHasMore(result.hasMore);
     } catch (err) {
-      console.error('[useCachedMessages] Error loading more:', err);
+      // Error logged:('[useCachedMessages] Error loading more:', err);
     } finally {
       setIsLoadingMore(false);
     }
@@ -217,7 +217,7 @@ export function useCachedMessages(chatId, options = {}) {
       await cacheManager.addMessage(message, chatId);
       setMessages((prev) => [...prev, message]);
     } catch (err) {
-      console.error('[useCachedMessages] Error adding message:', err);
+      // Error logged:('[useCachedMessages] Error adding message:', err);
     }
   }, [chatId]);
 
@@ -227,7 +227,7 @@ export function useCachedMessages(chatId, options = {}) {
       setMessages(newMessages);
       setFromCache(true);
     } catch (err) {
-      console.error('[useCachedMessages] Error updating cache:', err);
+      // Error logged:('[useCachedMessages] Error updating cache:', err);
     }
   }, [chatId]);
 
@@ -284,7 +284,7 @@ export function useOptimisticMessage(chatId) {
 
       return tempId;
     } catch (err) {
-      console.error('[useOptimisticMessage] Error adding optimistic:', err);
+      // Error logged:('[useOptimisticMessage] Error adding optimistic:', err);
       throw err;
     }
   }, [chatId]);
@@ -294,7 +294,7 @@ export function useOptimisticMessage(chatId) {
       await cacheManager.updateOptimisticMessage(tempId, serverMessage);
       setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId));
     } catch (err) {
-      console.error('[useOptimisticMessage] Error confirming message:', err);
+      // Error logged:('[useOptimisticMessage] Error confirming message:', err);
     }
   }, []);
 
@@ -307,7 +307,7 @@ export function useOptimisticMessage(chatId) {
         )
       );
     } catch (err) {
-      console.error('[useOptimisticMessage] Error marking failed:', err);
+      // Error logged:('[useOptimisticMessage] Error marking failed:', err);
     }
   }, []);
 
@@ -333,7 +333,7 @@ export function useCacheStats() {
       const cacheStats = await cacheManager.getCacheStats();
       setStats(cacheStats);
     } catch (err) {
-      console.error('[useCacheStats] Error:', err);
+      // Error logged:('[useCacheStats] Error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -358,7 +358,7 @@ export function useCacheManagement() {
       setIsClearing(true);
       await cacheManager.clearCurrentSettingCache();
     } catch (err) {
-      console.error('[useCacheManagement] Error clearing cache:', err);
+      // Error logged:('[useCacheManagement] Error clearing cache:', err);
       throw err;
     } finally {
       setIsClearing(false);
@@ -370,7 +370,7 @@ export function useCacheManagement() {
       setIsClearing(true);
       await cacheManager.clearAllCache();
     } catch (err) {
-      console.error('[useCacheManagement] Error clearing all cache:', err);
+      // Error logged:('[useCacheManagement] Error clearing all cache:', err);
       throw err;
     } finally {
       setIsClearing(false);
@@ -381,7 +381,7 @@ export function useCacheManagement() {
     try {
       await cacheManager.invalidateChatCache();
     } catch (err) {
-      console.error('[useCacheManagement] Error invalidating:', err);
+      // Error logged:('[useCacheManagement] Error invalidating:', err);
     }
   }, []);
 

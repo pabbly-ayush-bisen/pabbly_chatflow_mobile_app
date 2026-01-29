@@ -49,17 +49,8 @@ class SessionManager {
       this.cachedSession = session;
       this.isInitialized = true;
 
-      if (session) {
-        console.log('[SessionManager] Session restored:', {
-          hasToken: !!session.token,
-          hasUser: !!session.user,
-          loginTime: session.loginTime ? new Date(session.loginTime).toISOString() : null,
-        });
-      }
-
       return session;
     } catch (error) {
-      console.error('[SessionManager] Initialization error:', error);
       return null;
     }
   }
@@ -77,30 +68,14 @@ class SessionManager {
     try {
       const now = Date.now();
 
-      // Debug: Log what we're trying to store
-      console.log('[SessionManager.createSession] Input values:', {
-        hasToken: !!token,
-        tokenLength: token?.length,
-        hasUser: !!user,
-        userName: user?.name || user?.email,
-        settingId,
-        tokenExpiresAt
-      });
-
       // Store token
       if (token) {
         await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, token);
-        console.log('[SessionManager.createSession] Token stored successfully');
-      } else {
-        console.warn('[SessionManager.createSession] WARNING: No token provided!');
       }
 
       // Store user data
       if (user) {
         await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-        console.log('[SessionManager.createSession] User stored successfully');
-      } else {
-        console.warn('[SessionManager.createSession] WARNING: No user provided!');
       }
 
       // Store settingId (both keys for compatibility)
@@ -137,18 +112,7 @@ class SessionManager {
         tokenExpiresAt,
         ...sessionMeta,
       };
-
-      console.log('[SessionManager] Session created successfully');
-
-      // Verify session was stored correctly by reading it back
-      const verifyToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-      const verifyUser = await AsyncStorage.getItem(STORAGE_KEYS.USER);
-      console.log('[SessionManager.createSession] Verification:', {
-        tokenStored: !!verifyToken,
-        userStored: !!verifyUser,
-      });
     } catch (error) {
-      console.error('[SessionManager] Error creating session:', error);
       throw error;
     }
   }
@@ -194,10 +158,8 @@ class SessionManager {
         sessionMeta.lastActiveTime = Date.now();
         await AsyncStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(sessionMeta));
       }
-
-      console.log('[SessionManager] Session updated');
     } catch (error) {
-      console.error('[SessionManager] Error updating session:', error);
+      // Error updating session
     }
   }
 
@@ -215,18 +177,8 @@ class SessionManager {
         AsyncStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRES_AT),
       ]);
 
-      // Debug: Log what was read from storage
-      console.log('[SessionManager.getStoredSession] Read from AsyncStorage:', {
-        hasToken: !!token,
-        tokenLength: token?.length,
-        hasUserStr: !!userStr,
-        hasSettingId: !!settingId,
-        hasSessionMeta: !!sessionMetaStr,
-      });
-
       // No token = no session
       if (!token) {
-        console.log('[SessionManager.getStoredSession] No token found - returning null');
         return null;
       }
 
@@ -241,7 +193,6 @@ class SessionManager {
         ...sessionMeta,
       };
     } catch (error) {
-      console.error('[SessionManager] Error getting stored session:', error);
       return null;
     }
   }
@@ -276,7 +227,7 @@ class SessionManager {
       if (tokenExpiresAt) {
         const expiryTime = parseInt(tokenExpiresAt, 10) * 1000; // Convert to ms
         if (Date.now() > expiryTime) {
-          console.log('[SessionManager] Token expired locally');
+          // Token expired locally
           // Don't invalidate - let server decide
           // Server might have extended the session
         }
@@ -284,7 +235,6 @@ class SessionManager {
 
       return true;
     } catch (error) {
-      console.error('[SessionManager] Error checking session validity:', error);
       return false;
     }
   }
@@ -343,8 +293,6 @@ class SessionManager {
    */
   async destroySession() {
     try {
-      console.log('[SessionManager] Destroying session...');
-
       // Clear all session-related storage
       await Promise.all([
         AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
@@ -361,10 +309,7 @@ class SessionManager {
 
       // Clear cache
       this.cachedSession = null;
-
-      console.log('[SessionManager] Session destroyed successfully');
     } catch (error) {
-      console.error('[SessionManager] Error destroying session:', error);
       // Still clear cache even on error
       this.cachedSession = null;
     }
@@ -376,8 +321,6 @@ class SessionManager {
    * @param {string} reason - Reason for expiration
    */
   async handleSessionExpired(reason = 'unknown') {
-    console.log('[SessionManager] Session expired:', reason);
-
     // Mark session as invalid but don't clear storage yet
     // Let the app decide what to do (show dialog, redirect to login, etc.)
     const sessionMeta = await this.getSessionMeta();

@@ -110,7 +110,7 @@ export const fetchChats = createAsyncThunk(
       let pageCount = 0;
       const maxPages = 50; // Safety limit to prevent infinite loops
 
-      console.log('[fetchChats] Starting fetch with params:', JSON.stringify(params));
+      // Log:('[fetchChats] Starting fetch with params:', JSON.stringify(params));
 
       // If all: true, we need to paginate through ALL pages
       if (fetchAll === true) {
@@ -128,18 +128,18 @@ export const fetchChats = createAsyncThunk(
             requestParams.lastChatUpdatedAt = lastChatUpdatedAt;
           }
 
-          console.log(`[fetchChats] Page ${pageCount} - Request params:`, JSON.stringify(requestParams));
+          // Log:(`[fetchChats] Page ${pageCount} - Request params:`, JSON.stringify(requestParams));
 
           const response = await callApi(endpoints.inbox.getChats, httpMethods.GET, requestParams);
 
           if (response.status === 'error') {
-            console.error('[fetchChats] API Error:', response.message);
+            // Error:('[fetchChats] API Error:', response.message);
             return rejectWithValue(response.message || 'Failed to fetch chats');
           }
 
           // Extract chats from response
           const rawChats = response.data?.chats || response.chats || response._raw?.chats || [];
-          console.log(`[fetchChats] Page ${pageCount} - Received ${rawChats.length} chats`);
+          // Log:(`[fetchChats] Page ${pageCount} - Received ${rawChats.length} chats`);
 
           if (rawChats.length === 0) {
             hasMore = false;
@@ -158,7 +158,7 @@ export const fetchChats = createAsyncThunk(
             lastChatUpdatedAt = lastChat.updatedAt || lastChat.lastMessageAt || lastChat.createdAt;
           }
 
-          console.log(`[fetchChats] Page ${pageCount} - hasMoreChats: ${hasMore}, nextCursor: ${lastChatUpdatedAt}`);
+          // Log:(`[fetchChats] Page ${pageCount} - hasMoreChats: ${hasMore}, nextCursor: ${lastChatUpdatedAt}`);
         }
 
         // Deduplicate chats by _id to prevent duplicate key errors in FlatList
@@ -170,7 +170,7 @@ export const fetchChats = createAsyncThunk(
         });
         const uniqueChats = Array.from(uniqueChatsMap.values());
 
-        console.log(`[fetchChats] Completed! Total chats fetched: ${allChats.length}, unique: ${uniqueChats.length} across ${pageCount} pages`);
+        // Log:(`[fetchChats] Completed! Total chats fetched: ${allChats.length}, unique: ${uniqueChats.length} across ${pageCount} pages`);
 
         // Return all chats in the expected format
         return {
@@ -193,11 +193,11 @@ export const fetchChats = createAsyncThunk(
       }
 
       const rawChats = response.data?.chats || response.chats || response._raw?.chats || [];
-      console.log('[fetchChats] Single page fetch - Received:', rawChats.length, 'chats');
+      // Log:('[fetchChats] Single page fetch - Received:', rawChats.length, 'chats');
 
       return response;
     } catch (error) {
-      console.error('[fetchChats] Exception:', error.message);
+      // Error:('[fetchChats] Exception:', error.message);
       return rejectWithValue(error.message);
     }
   }
@@ -730,7 +730,7 @@ const inboxSlice = createSlice({
 
           if (optimisticIndex !== -1) {
             // Replace optimistic message with real message from server
-            console.log('[inboxSlice] Replacing optimistic message with real message');
+            // Log:('[inboxSlice] Replacing optimistic message with real message');
             state.currentConversation.messages[optimisticIndex] = {
               ...message,
               isOptimistic: false,

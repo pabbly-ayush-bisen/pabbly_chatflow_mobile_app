@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Platform, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { getLastNotificationResponse } from '../services/notificationService';
@@ -40,6 +40,7 @@ import MyAccountScreen from '../screens/settings/MyAccountScreen';
 
 // Auth screens
 import LoginScreen from '../screens/auth/LoginScreen';
+import InitialLoadingScreen from '../screens/InitialLoadingScreen';
 
 // Components
 import AppHeader from '../components/AppHeader';
@@ -66,22 +67,23 @@ function CustomDrawerContent(props) {
 
   // Web-only features with correct sequence
   // Some features are hidden for team members
+  // Each feature has a URL that opens chatflow.pabbly.com
   const webOnlyFeatures = [
-    { title: 'Team Queue', description: 'Manage team chat queues', icon: 'account-multiple-outline', showForTeamMember: true },
-    { title: 'Explore Template', description: 'Browse template gallery', icon: 'file-search-outline', showForTeamMember: true },
-    { title: 'Broadcast', description: 'Send bulk messages to contacts', icon: 'bullhorn-outline', showForTeamMember: true },
-    { title: 'Flow', description: 'Create automated workflows', icon: 'sitemap-outline', showForTeamMember: true },
-    { title: 'Catalog', description: 'Manage product catalogs', icon: 'shopping-outline', showForTeamMember: true },
-    { title: 'Activity Log', description: 'View system activity', icon: 'history', showForTeamMember: false },
-    { title: 'WhatsApp Payment API', description: 'Payment integration settings', icon: 'credit-card-outline', showForTeamMember: true },
-    { title: 'Webhook', description: 'Configure webhooks', icon: 'webhook', showForTeamMember: false },
+    { title: 'Team Queue', description: 'Manage team chat queues', icon: 'account-multiple-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
+    { title: 'Explore Template', description: 'Browse template gallery', icon: 'file-search-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
+    { title: 'Broadcast', description: 'Send bulk messages to contacts', icon: 'bullhorn-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
+    { title: 'Flow', description: 'Create automated workflows', icon: 'sitemap-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
+    { title: 'Catalog', description: 'Manage product catalogs', icon: 'shopping-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
+    { title: 'Activity Log', description: 'View system activity', icon: 'history', showForTeamMember: false, url: 'https://chatflow.pabbly.com' },
+    { title: 'WhatsApp Payments', description: 'Payment integration settings', icon: 'credit-card-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
+    { title: 'Webhook and API', description: 'Configure webhooks', icon: 'webhook', showForTeamMember: false, url: 'https://chatflow.pabbly.com' },
   ].filter(feature => isTeamMemberLoggedIn ? feature.showForTeamMember : true);
 
   const handleLogout = async () => {
     try {
       await dispatch(logout()).unwrap();
     } catch (error) {
-      console.error('Logout error:', error);
+      // Error:('Logout error:', error);
     }
   };
 
@@ -189,7 +191,12 @@ function CustomDrawerContent(props) {
           {showWebFeatures && (
             <View style={styles.webFeaturesExpanded}>
               {webOnlyFeatures.map((feature, index) => (
-                <View key={index} style={styles.webFeatureRow}>
+                <TouchableOpacity
+                  key={index}
+                  style={styles.webFeatureRow}
+                  onPress={() => Linking.openURL(feature.url)}
+                  activeOpacity={0.7}
+                >
                   <View style={styles.webFeatureIconSmall}>
                     <Icon name={feature.icon} size={18} color={colors.grey[400]} />
                   </View>
@@ -200,12 +207,16 @@ function CustomDrawerContent(props) {
                   <View style={styles.webBadge}>
                     <Text style={styles.webBadgeText}>Web</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
-              <View style={styles.webNoteInline}>
+              <TouchableOpacity
+                style={styles.webNoteInline}
+                onPress={() => Linking.openURL('https://chatflow.pabbly.com')}
+                activeOpacity={0.7}
+              >
                 <Icon name="information-outline" size={14} color={colors.info.main} />
-                <Text style={styles.webNoteText}>Visit app.pabbly.com for full access</Text>
-              </View>
+                <Text style={styles.webNoteText}>Visit chatflow.pabbly.com for full access</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -336,10 +347,10 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
               style={styles.tabItem}
               activeOpacity={0.7}
             >
-              <View style={[
-                styles.tabIconWrapper,
-                isFocused && { backgroundColor: config.bgColor }
-              ]}>
+              <View style={styles.tabIconWrapper}>
+                {isFocused && (
+                  <View style={[styles.tabIconBackground, { backgroundColor: config.bgColor }]} />
+                )}
                 <Icon
                   name={isFocused ? config.icon : config.iconOutline}
                   size={26}
@@ -601,24 +612,68 @@ function DrawerNavigator() {
   );
 }
 
-// Navigation reference for use outside components
-export const navigationRef = React.createRef();
+// Import navigation utilities from separate file to avoid circular dependencies
+import { navigationRef, navigate } from './navigationUtils';
 
-// Navigate to a screen from outside a component
-export const navigate = (name, params) => {
-  if (navigationRef.current) {
-    navigationRef.current.navigate(name, params);
-  }
-};
+// Re-export for backward compatibility
+export { navigationRef, navigate };
+
+// Minimum time to show loading screen after login (in milliseconds)
+const MINIMUM_LOADING_TIME = 3000;
 
 // Main App Navigator - ChatDetailsScreen is at root level to hide tabs
 export default function AppNavigator() {
   // Use 'authenticated' instead of 'isAuthenticated' to match web app
   const authenticated = useSelector((state) => state?.user?.authenticated ?? false);
+  const checkSessionStatus = useSelector((state) => state?.user?.checkSessionStatus ?? 'idle');
+  const settingId = useSelector((state) => state?.user?.settingId);
+
+  // Track if we should show loading screen after login
+  const [showLoadingScreen, setShowLoadingScreen] = React.useState(false);
+  // Track if session check failed (meaning user needs to login manually)
+  const [sessionCheckFailed, setSessionCheckFailed] = React.useState(false);
+
+  // Track when session check fails - this means user will see login screen
+  React.useEffect(() => {
+    if (checkSessionStatus === 'failed') {
+      // Log:('[AppNavigator] Session check failed - user will need to login');
+      setSessionCheckFailed(true);
+    }
+  }, [checkSessionStatus]);
+
+  // Detect fresh login: when user becomes authenticated AFTER session check failed
+  // This means user was on login screen and just logged in (not session restore)
+  React.useEffect(() => {
+    if (sessionCheckFailed && authenticated) {
+      // User was on login screen and now authenticated = fresh login
+      // Log:('[AppNavigator] Fresh login detected - showing loading screen for 3 seconds');
+      setShowLoadingScreen(true);
+      setSessionCheckFailed(false); // Reset so it doesn't trigger again
+
+      // Hide loading screen after 3 seconds
+      const timer = setTimeout(() => {
+        // Log:('[AppNavigator] 3 seconds elapsed - hiding loading screen');
+        setShowLoadingScreen(false);
+      }, MINIMUM_LOADING_TIME);
+
+      return () => clearTimeout(timer);
+    }
+  }, [authenticated, sessionCheckFailed]);
+
+  // Reset on logout
+  React.useEffect(() => {
+    if (!authenticated) {
+      setShowLoadingScreen(false);
+      setSessionCheckFailed(false);
+    }
+  }, [authenticated]);
+
+  // Determine if we should show the loading screen
+  const isInitialLoading = authenticated && showLoadingScreen;
 
   React.useEffect(() => {
-    console.log('AppNavigator - authenticated:', authenticated);
-  }, [authenticated]);
+    // Log:('[AppNavigator] State - authenticated:', authenticated, 'checkSessionStatus:', checkSessionStatus, 'sessionCheckFailed:', sessionCheckFailed, 'showLoadingScreen:', showLoadingScreen);
+  }, [authenticated, checkSessionStatus, sessionCheckFailed, showLoadingScreen]);
 
   // Check if app was opened from a notification
   useEffect(() => {
@@ -629,7 +684,7 @@ export default function AppNavigator() {
         const response = await getLastNotificationResponse();
         if (response?.notification?.request?.content?.data?.chatId) {
           const chatId = response.notification.request.content.data.chatId;
-          console.log('[AppNavigator] App opened from notification, navigating to chat:', chatId);
+          // Log:('[AppNavigator] App opened from notification, navigating to chat:', chatId);
 
           // Small delay to ensure navigation is ready
           setTimeout(() => {
@@ -637,7 +692,7 @@ export default function AppNavigator() {
           }, 500);
         }
       } catch (error) {
-        console.log('[AppNavigator] Error checking initial notification:', error);
+        // Log:('[AppNavigator] Error checking initial notification:', error);
       }
     };
 
@@ -665,6 +720,8 @@ export default function AppNavigator() {
       >
         {!authenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
+        ) : isInitialLoading ? (
+          <Stack.Screen name="InitialLoading" component={InitialLoadingScreen} />
         ) : (
           <>
             <Stack.Screen name="DrawerNav" component={DrawerNavigator} />
@@ -705,40 +762,56 @@ const styles = StyleSheet.create({
   // Modern Colorful Tab Bar
   tabBarWrapper: {
     position: 'absolute',
-    bottom: -30,
+    bottom: Platform.OS === 'android' ? 0 : -30,
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+        borderTopWidth: 0.5,
+        borderTopColor: '#D1D5DB',
+      },
+    }),
   },
   tabBarContainer: {
     flexDirection: 'row',
-    paddingTop: 8,
-    paddingHorizontal: 15,
+    paddingTop: Platform.OS === 'android' ? 6 : 8,
+    paddingHorizontal: 12,
+    paddingBottom: Platform.OS === 'android' ? 6 : 0,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: Platform.OS === 'android' ? 8 : 10,
   },
   tabIconWrapper: {
-    width: 56,
-    height: 36,
-    borderRadius: 16,
+    width: Platform.OS === 'android' ? 52 : 56,
+    height: Platform.OS === 'android' ? 32 : 36,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
     marginBottom: 2,
+    position: 'relative',
+  },
+  tabIconBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 14,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: Platform.OS === 'android' ? 11 : 10,
     fontWeight: '500',
     color: '#9CA3AF',
     marginTop: 2,

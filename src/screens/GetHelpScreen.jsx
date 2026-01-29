@@ -9,6 +9,7 @@ import {
   Dimensions,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -19,10 +20,14 @@ const CARD_GAP = 12;
 const HORIZONTAL_PADDING = 16;
 const VIDEO_CARD_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
 
+// Tab bar height constant for bottom spacing
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 90 : 70;
+
 export default function GetHelpScreen() {
   const appVersion = '1.0.0';
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const insets = useSafeAreaInsets();
 
   // Video tutorials with actual thumbnails
   const videoTutorials = [
@@ -76,30 +81,38 @@ export default function GetHelpScreen() {
     },
   ];
 
-  // Compact quick actions
+  // Quick actions with descriptions
   const quickActions = [
     {
       title: 'Documentation',
+      description: 'Browse guides & tutorials',
       icon: 'book-open-page-variant-outline',
       color: '#2196F3',
+      bgColor: '#E3F2FD',
       onPress: () => handleOpenWebsite('https://www.pabbly.com/connect/docs/chatflow/'),
     },
     {
       title: 'Community',
-      icon: 'account-group-outline',
+      description: 'Join discussions & forums',
+      icon: 'forum-outline',
       color: '#9C27B0',
+      bgColor: '#F3E5F5',
       onPress: () => handleOpenWebsite('https://forum.pabbly.com'),
     },
     {
       title: 'YouTube',
+      description: 'Watch video tutorials',
       icon: 'youtube',
       color: '#FF0000',
+      bgColor: '#FFEBEE',
       onPress: () => handleOpenWebsite('https://youtube.com/@pabbly'),
     },
     {
       title: 'Support',
+      description: 'Contact our team',
       icon: 'headset',
       color: '#4CAF50',
+      bgColor: '#E8F5E9',
       onPress: () => handleEmailSupport(),
     },
   ];
@@ -192,7 +205,10 @@ export default function GetHelpScreen() {
   return (
     <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 24 }
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Compact Hero Section */}
@@ -226,19 +242,22 @@ export default function GetHelpScreen() {
           </View>
         </View>
 
-        {/* Compact Quick Actions */}
+        {/* Quick Actions - 2x2 Grid */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActionsRow}>
+          <View style={styles.quickActionsGrid}>
             {quickActions.map((action, index) => (
               <TouchableOpacity
                 key={index}
-                style={styles.quickActionChip}
+                style={styles.quickActionCard}
                 onPress={action.onPress}
                 activeOpacity={0.7}
               >
-                <Icon name={action.icon} size={18} color={action.color} />
-                <Text style={styles.quickActionText}>{action.title}</Text>
+                <View style={[styles.quickActionIconBox, { backgroundColor: action.bgColor }]}>
+                  <Icon name={action.icon} size={22} color={action.color} />
+                </View>
+                <Text style={styles.quickActionTitle}>{action.title}</Text>
+                <Text style={styles.quickActionDesc}>{action.description}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -268,16 +287,17 @@ export default function GetHelpScreen() {
 
         {/* App Info Footer */}
         <View style={styles.appInfoSection}>
-          <ChatflowLogo width={90} showText={true} showIcon={true} />
+          <View style={styles.appInfoDivider} />
           <View style={styles.appInfoRow}>
-            <Text style={styles.appInfoText}>Version {appVersion}</Text>
-            <Text style={styles.appInfoDot}>•</Text>
+            <ChatflowLogo width={80} showText={true} showIcon={true} />
+            <View style={styles.appInfoDot} />
+            <Text style={styles.appInfoText}>v{appVersion}</Text>
+            <View style={styles.appInfoDot} />
             <Text style={styles.appInfoText}>{Platform.OS === 'ios' ? 'iOS' : 'Android'}</Text>
+            <View style={styles.appInfoDot} />
+            <Text style={styles.appInfoText}>Made with care by Pabbly</Text>
           </View>
-          <Text style={styles.appCopyright}>Made with care by Pabbly</Text>
         </View>
-
-        <View style={styles.bottomSpacing} />
       </ScrollView>
 
       <Snackbar
@@ -297,7 +317,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.default,
   },
   scrollContent: {
-    paddingBottom: 24,
+    // paddingBottom is set dynamically in component to account for tab bar
   },
 
   // Compact Hero Section
@@ -421,27 +441,39 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // Compact Quick Actions
-  quickActionsRow: {
+  // Quick Actions - 2x2 Grid
+  quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: CARD_GAP,
   },
-  quickActionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  quickActionCard: {
+    width: VIDEO_CARD_WIDTH,
     backgroundColor: colors.common.white,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: colors.grey[100],
-    gap: 8,
+    alignItems: 'flex-start',
   },
-  quickActionText: {
-    fontSize: 13,
+  quickActionIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  quickActionTitle: {
+    fontSize: 14,
     fontWeight: '600',
     color: colors.text.primary,
+    marginBottom: 2,
+  },
+  quickActionDesc: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+    lineHeight: 14,
   },
 
   // Contact Card - Compact
@@ -492,34 +524,32 @@ const styles = StyleSheet.create({
     color: colors.primary.main,
   },
 
-  // App Info
+  // App Info Footer
   appInfoSection: {
-    alignItems: 'center',
     paddingHorizontal: HORIZONTAL_PADDING,
-    paddingTop: 8,
+    marginTop: 12,
+  },
+  appInfoDivider: {
+    height: 1,
+    backgroundColor: colors.grey[200],
+    marginBottom: 20,
   },
   appInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
   appInfoText: {
     fontSize: 11,
     color: colors.text.tertiary,
+    fontWeight: '500',
   },
   appInfoDot: {
-    fontSize: 11,
-    color: colors.text.tertiary,
-  },
-  appCopyright: {
-    fontSize: 10,
-    color: colors.text.tertiary,
-    marginTop: 4,
-  },
-
-  // Bottom Spacing
-  bottomSpacing: {
-    height: 20,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.grey[300],
   },
 });

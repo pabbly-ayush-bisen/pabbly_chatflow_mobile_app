@@ -74,7 +74,7 @@ export default function TagsScreen() {
       const loadedCount = reset ? newTags.length : localTags.length + newTags.length;
       setHasMoreTags(loadedCount < total);
     } catch (error) {
-      console.log('Error loading tags:', error);
+      // Log:('Error loading tags:', error);
       showSnackbar('Failed to load tags');
     }
   }, [dispatch, page, localTags.length]);

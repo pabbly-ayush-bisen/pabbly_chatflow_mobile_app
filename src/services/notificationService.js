@@ -31,7 +31,6 @@ export const registerForPushNotifications = async () => {
 
   // Check if running on a physical device
   if (!Device.isDevice) {
-    console.log('Push notifications require a physical device');
     return null;
   }
 
@@ -46,7 +45,6 @@ export const registerForPushNotifications = async () => {
   }
 
   if (finalStatus !== 'granted') {
-    console.log('Failed to get push notification permission');
     return null;
   }
 
@@ -56,7 +54,6 @@ export const registerForPushNotifications = async () => {
       projectId: 'b49e424a-9ca4-4577-a11a-0b5161d62953', // EAS project ID from app.json
     });
     token = tokenData.data;
-    console.log('Push token:', token);
 
     // Store token locally
     await AsyncStorage.setItem('@pabbly_chatflow_pushToken', token);
@@ -64,7 +61,7 @@ export const registerForPushNotifications = async () => {
     // Send token to your backend server
     await sendTokenToServer(token);
   } catch (error) {
-    console.error('Error getting push token:', error);
+    // Error getting push token
   }
 
   // Configure Android channel
@@ -105,7 +102,6 @@ const sendTokenToServer = async (token) => {
     const settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
 
     if (!authToken || !settingId) {
-      console.log('Cannot send push token: not authenticated');
       return;
     }
 
@@ -124,13 +120,8 @@ const sendTokenToServer = async (token) => {
       }),
     });
 
-    if (response.ok) {
-      console.log('Push token sent to server successfully');
-    } else {
-      console.log('Failed to send push token to server');
-    }
   } catch (error) {
-    console.error('Error sending push token to server:', error);
+    // Error sending push token to server
   }
 };
 
@@ -151,7 +142,6 @@ export const getNotificationPreferences = async () => {
       vibrationEnabled: true,
     };
   } catch (error) {
-    console.error('Error getting notification preferences:', error);
     return {
       notificationsEnabled: true,
       soundEnabled: true,
@@ -198,7 +188,6 @@ export const playNotificationSound = async () => {
       }
     });
   } catch (error) {
-    console.log('Error playing notification sound:', error);
     // Fallback: try using system default
     try {
       const { sound } = await Audio.Sound.createAsync(
@@ -213,7 +202,7 @@ export const playNotificationSound = async () => {
         }
       });
     } catch (fallbackError) {
-      console.log('Fallback sound also failed:', fallbackError);
+      // Fallback sound also failed
     }
   }
 };
@@ -251,7 +240,7 @@ export const triggerNotificationFeedback = async () => {
       vibrateNotification();
     }
   } catch (error) {
-    console.error('Error triggering notification feedback:', error);
+    // Error triggering notification feedback
   }
 };
 
@@ -266,7 +255,6 @@ export const showMessageNotification = async (message, contact, chatId) => {
     // Check if notifications are enabled
     const prefs = await getNotificationPreferences();
     if (!prefs.notificationsEnabled) {
-      console.log('Notifications disabled by user preference');
       return;
     }
 
@@ -334,7 +322,7 @@ export const showMessageNotification = async (message, contact, chatId) => {
       trigger: null, // Show immediately
     });
   } catch (error) {
-    console.error('Error showing notification:', error);
+    // Error showing notification
   }
 };
 
@@ -346,7 +334,7 @@ export const setBadgeCount = async (count) => {
   try {
     await Notifications.setBadgeCountAsync(count);
   } catch (error) {
-    console.error('Error setting badge count:', error);
+    // Error setting badge count
   }
 };
 
@@ -358,7 +346,7 @@ export const clearAllNotifications = async () => {
     await Notifications.dismissAllNotificationsAsync();
     await Notifications.setBadgeCountAsync(0);
   } catch (error) {
-    console.error('Error clearing notifications:', error);
+    // Error clearing notifications
   }
 };
 

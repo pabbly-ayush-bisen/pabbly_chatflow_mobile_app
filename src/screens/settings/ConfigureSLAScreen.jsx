@@ -33,7 +33,7 @@ export default function ConfigureSLAScreen() {
       setHours(slaData.hours !== undefined && slaData.hours !== null ? String(slaData.hours) : '--');
       setMins(slaData.mins !== undefined && slaData.mins !== null ? String(slaData.mins) : '--');
     } catch (error) {
-      console.log('Error loading SLA config:', error);
+      // Log:('Error loading SLA config:', error);
       showSnackbar('Failed to load SLA configuration');
     } finally {
       setIsLoading(false);

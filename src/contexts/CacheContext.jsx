@@ -43,16 +43,16 @@ export function CacheProvider({ children }) {
       setIsInitializing(true);
       setError(null);
 
-      console.log('[CacheProvider] Initializing cache...');
+      // Log:('[CacheProvider] Initializing cache...');
 
       const result = await dispatch(initializeCache(settingId)).unwrap();
 
       setStats(result.stats);
       setIsInitialized(true);
 
-      console.log('[CacheProvider] Cache initialized:', result);
+      // Log:('[CacheProvider] Cache initialized:', result);
     } catch (err) {
-      console.error('[CacheProvider] Initialization error:', err);
+      // Error:('[CacheProvider] Initialization error:', err);
       setError(err);
     } finally {
       setIsInitializing(false);
@@ -64,7 +64,7 @@ export function CacheProvider({ children }) {
    */
   useEffect(() => {
     if (isInitialized && settingId) {
-      console.log('[CacheProvider] Setting ID changed:', settingId);
+      // Log:('[CacheProvider] Setting ID changed:', settingId);
       cacheManager.setSettingId(settingId);
     }
   }, [isInitialized, settingId]);
@@ -85,7 +85,7 @@ export function CacheProvider({ children }) {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active' && isInitialized) {
         // App came to foreground - could trigger sync here
-        console.log('[CacheProvider] App active, cache ready');
+        // Log:('[CacheProvider] App active, cache ready');
       }
     });
 
@@ -103,7 +103,7 @@ export function CacheProvider({ children }) {
       setStats(newStats);
       return newStats;
     } catch (err) {
-      console.error('[CacheProvider] Error refreshing stats:', err);
+      // Error:('[CacheProvider] Error refreshing stats:', err);
       return null;
     }
   }, []);
@@ -115,9 +115,9 @@ export function CacheProvider({ children }) {
     try {
       await cacheManager.clearCurrentSettingCache();
       await refreshStats();
-      console.log('[CacheProvider] Cache cleared');
+      // Log:('[CacheProvider] Cache cleared');
     } catch (err) {
-      console.error('[CacheProvider] Error clearing cache:', err);
+      // Error:('[CacheProvider] Error clearing cache:', err);
       throw err;
     }
   }, [refreshStats]);
@@ -130,9 +130,9 @@ export function CacheProvider({ children }) {
       await cacheManager.clearAllCache();
       setIsInitialized(false);
       setStats(null);
-      console.log('[CacheProvider] All cache cleared');
+      // Log:('[CacheProvider] All cache cleared');
     } catch (err) {
-      console.error('[CacheProvider] Error clearing all cache:', err);
+      // Error:('[CacheProvider] Error clearing all cache:', err);
       throw err;
     }
   }, []);
@@ -143,9 +143,9 @@ export function CacheProvider({ children }) {
   const invalidateChats = useCallback(async () => {
     try {
       await cacheManager.invalidateChatCache();
-      console.log('[CacheProvider] Chat cache invalidated');
+      // Log:('[CacheProvider] Chat cache invalidated');
     } catch (err) {
-      console.error('[CacheProvider] Error invalidating chats:', err);
+      // Error:('[CacheProvider] Error invalidating chats:', err);
     }
   }, []);
 

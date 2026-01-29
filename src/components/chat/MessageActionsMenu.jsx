@@ -61,7 +61,7 @@ const MessageActionsMenu = ({
           message: text,
         });
       } catch (error) {
-        console.error('Error sharing:', error);
+        // Error:('Error sharing:', error);
       }
     }
     onForward?.(message);

@@ -59,7 +59,7 @@ export default function TimeZoneScreen() {
       const data = result.data || result;
       setTimezone(data.timeZone || '');
     } catch (error) {
-      console.log('Error loading timezone:', error);
+      // Log:('Error loading timezone:', error);
       showSnackbar('Failed to load timezone');
     } finally {
       setIsLoading(false);

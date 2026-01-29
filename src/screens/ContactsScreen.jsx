@@ -122,7 +122,7 @@ export default function ContactsScreen() {
         Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
       }
     } catch (error) {
-      console.error('Failed to open chat from contacts:', error);
+      // Error:('Failed to open chat from contacts:', error);
       Alert.alert(
         'Unable to open chat',
         typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'
@@ -384,7 +384,7 @@ export default function ContactsScreen() {
         Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
       }
     } catch (error) {
-      console.error('Failed to open chat from bottom sheet:', error);
+      // Error:('Failed to open chat from bottom sheet:', error);
       Alert.alert(
         'Unable to open chat',
         typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'

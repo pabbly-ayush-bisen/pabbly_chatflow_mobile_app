@@ -154,7 +154,7 @@ class ChatModel {
     // Update last fetch time
     await this.updateCacheMetadata(CacheKeys.LAST_CHATS_FETCH, settingId);
 
-    console.log(`[ChatModel] Saved ${chats.length} chats to cache`);
+    // Log:(`[ChatModel] Saved ${chats.length} chats to cache`);
   }
 
   /**
@@ -342,7 +342,7 @@ class ChatModel {
    */
   static async clearChats(settingId) {
     await databaseManager.delete(Tables.CHATS, 'setting_id = ?', [settingId]);
-    console.log(`[ChatModel] Cleared all chats for setting: ${settingId}`);
+    // Log:(`[ChatModel] Cleared all chats for setting: ${settingId}`);
   }
 }
 

@@ -36,7 +36,7 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
           );
         }
       } catch (error) {
-        console.error('Permission request failed:', error);
+        // Error:('Permission request failed:', error);
         setHasPermission(false);
       }
     };
@@ -110,7 +110,7 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } catch (error) {
-      console.error('Failed to start recording:', error);
+      // Error:('Failed to start recording:', error);
       Alert.alert('Error', 'Failed to start recording. Please try again.');
     }
   }, [hasPermission]);
@@ -151,7 +151,7 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
       setRecording(null);
       setRecordingDuration(0);
     } catch (error) {
-      console.error('Failed to stop recording:', error);
+      // Error:('Failed to stop recording:', error);
       Alert.alert('Error', 'Failed to process recording. Please try again.');
     }
   }, [recording, recordingDuration, onSend]);
@@ -185,7 +185,7 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
       setRecordingDuration(0);
       onCancel?.();
     } catch (error) {
-      console.error('Failed to cancel recording:', error);
+      // Error:('Failed to cancel recording:', error);
       setRecording(null);
       setRecordingDuration(0);
       onCancel?.();

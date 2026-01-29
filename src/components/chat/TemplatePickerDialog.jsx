@@ -558,6 +558,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text.primary,
     paddingVertical: 0,
+    fontWeight: '400',
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+      ios: {},
+    }),
   },
   clearButton: {
     width: 20,

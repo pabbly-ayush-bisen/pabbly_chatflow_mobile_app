@@ -346,7 +346,7 @@ export default function DashboardScreen() {
         }
       } catch (e) {
         // If storage read fails, don't block UI; fallback selection happens via current folder list
-        console.log('[DashboardScreen] Failed to load selectedFolderId:', e);
+        // Log:('[DashboardScreen] Failed to load selectedFolderId:', e);
       }
     };
 
@@ -381,7 +381,7 @@ export default function DashboardScreen() {
           }
         }
       } catch (e) {
-        console.log('[DashboardScreen] Could not sync folder with settingId:', e);
+        // Log:('[DashboardScreen] Could not sync folder with settingId:', e);
       }
     };
 
@@ -437,7 +437,7 @@ export default function DashboardScreen() {
         navigation.navigate('InboxTab', { screen: 'InboxMain' });
       }
     } catch (error) {
-      console.error('Failed to access inbox:', error);
+      // Error:('Failed to access inbox:', error);
     } finally {
       setAccessingId(null);
     }
@@ -457,7 +457,7 @@ export default function DashboardScreen() {
     try {
       await dispatch(syncWhatsAppBusinessInfo(numberId)).unwrap();
     } catch (error) {
-      console.error('Failed to sync WhatsApp info:', error);
+      // Error:('Failed to sync WhatsApp info:', error);
     } finally {
       setSyncingId(null);
     }
@@ -495,7 +495,7 @@ export default function DashboardScreen() {
         // Stay on dashboard - don't redirect to inbox
       }
     } catch (error) {
-      console.error('Failed to access shared account:', error);
+      // Error:('Failed to access shared account:', error);
     } finally {
       setAccessingSharedId(null);
     }
@@ -519,7 +519,7 @@ export default function DashboardScreen() {
             await AsyncStorage.setItem('selectedFolderId', accessResult.data._id);
           }
         } catch (accessError) {
-          console.log('Could not get folder info for admin:', accessError);
+          // Log:('Could not get folder info for admin:', accessError);
           // Clear folder selection to start fresh if we can't get folder info
           await AsyncStorage.removeItem('selectedFolderId');
         }
@@ -540,7 +540,7 @@ export default function DashboardScreen() {
       // Reload team member widgets (admin-only data)
       loadTeamMemberWidgets({ force: true });
     } catch (error) {
-      console.error('Failed to logout from team member:', error);
+      // Error:('Failed to logout from team member:', error);
     } finally {
       setExitingTeamMember(false);
     }

@@ -26,7 +26,7 @@ export const cacheMiddleware = (store) => (next) => async (action) => {
     try {
       await handleCacheUpdate(action, store.getState());
     } catch (error) {
-      console.error('[CacheMiddleware] Error updating cache:', error);
+      // Error:('[CacheMiddleware] Error updating cache:', error);
     }
   }
 
@@ -72,7 +72,7 @@ async function handleChatsUpdate(payload) {
   const chats = payload?.data?.chats || payload?.chats || payload?._raw?.chats || [];
   if (chats.length > 0) {
     await cacheManager.saveChats(chats);
-    console.log(`[CacheMiddleware] Cached ${chats.length} chats`);
+    // Log:(`[CacheMiddleware] Cached ${chats.length} chats`);
   }
 }
 
@@ -86,7 +86,7 @@ async function handleConversationUpdate(action) {
 
   if (chatId && data?.messages) {
     await cacheManager.saveMessages(data.messages, chatId);
-    console.log(`[CacheMiddleware] Cached ${data.messages.length} messages for chat: ${chatId}`);
+    // Log:(`[CacheMiddleware] Cached ${data.messages.length} messages for chat: ${chatId}`);
   }
 }
 
@@ -99,7 +99,7 @@ async function handleMoreMessagesUpdate(action) {
 
   if (chatId && data?.messages) {
     await cacheManager.saveMessages(data.messages, chatId);
-    console.log(`[CacheMiddleware] Cached ${data.messages.length} more messages for chat: ${chatId}`);
+    // Log:(`[CacheMiddleware] Cached ${data.messages.length} more messages for chat: ${chatId}`);
   }
 }
 
@@ -112,7 +112,7 @@ async function handleChatUpdate(payload) {
 
   if (id && chatData) {
     await cacheManager.updateChat({ _id: id, ...chatData });
-    console.log(`[CacheMiddleware] Updated chat in cache: ${id}`);
+    // Log:(`[CacheMiddleware] Updated chat in cache: ${id}`);
   }
 }
 
@@ -125,7 +125,7 @@ async function handleChatDelete(payload) {
   if (id) {
     // Note: We would need to add a deleteChat method to cacheManager
     // For now, the chat will be removed on next sync
-    console.log(`[CacheMiddleware] Chat deleted: ${id}`);
+    // Log:(`[CacheMiddleware] Chat deleted: ${id}`);
   }
 }
 

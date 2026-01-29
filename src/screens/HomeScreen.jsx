@@ -77,7 +77,7 @@ export default function HomeScreen() {
               mode="contained"
               style={styles.actionButton}
               icon="message-plus"
-              onPress={() => console.log('New Chat')}
+              onPress={() => { /* Log:('New Chat') */ }}
             >
               New Chat
             </Button>
@@ -85,7 +85,7 @@ export default function HomeScreen() {
               mode="contained"
               style={styles.actionButton}
               icon="plus"
-              onPress={() => console.log('Create Flow')}
+              onPress={() => { /* Log:('Create Flow') */ }}
             >
               Create Flow
             </Button>

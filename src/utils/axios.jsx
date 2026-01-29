@@ -37,7 +37,7 @@ axiosInstance.interceptors.request.use(
         }
       }
     } catch (error) {
-      console.error('Error in request interceptor:', error);
+      // Error:('Error in request interceptor:', error);
     }
     return config;
   },
@@ -62,14 +62,14 @@ axiosInstance.interceptors.response.use(
       const isSessionInvalid = sessionInvalidKeywords.some((keyword) => errorMessage.includes(keyword));
 
       if (isSessionInvalid) {
-        console.log('[Axios] Session invalidated by server:', error.response?.data?.message);
+        // Log:('[Axios] Session invalidated by server:', error.response?.data?.message);
         // Clear storage only for genuine session invalidation
         await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
         await AsyncStorage.removeItem(APP_CONFIG.userKey);
         await AsyncStorage.removeItem('settingId');
         await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
       } else {
-        console.log('[Axios] 401 error but not session related:', error.response?.data?.message);
+        // Log:('[Axios] 401 error but not session related:', error.response?.data?.message);
       }
     }
     // Note: 400 errors are NOT session related - don't clear storage
@@ -86,7 +86,7 @@ axiosInstance.interceptors.response.use(
  */
 export async function callApi(url, method, data = {}, customHeaders = {}) {
   if (!url) {
-    console.error(`[API] URL is undefined or null: ${url}`);
+    // Error:(`[API] URL is undefined or null: ${url}`);
     return {
       status: 'error',
       data: null,
@@ -115,21 +115,21 @@ export async function callApi(url, method, data = {}, customHeaders = {}) {
     };
 
     // Debug logging
-    console.log('[API Request]', {
-      fullUrl: `${API_URL}/${url}`,
-      method: normalizedMethod,
-      data: normalizedMethod !== 'GET' ? data : undefined,
-      params: normalizedMethod === 'GET' ? data : undefined,
-    });
+    // Log:('[API Request]', {
+    //   fullUrl: `${API_URL}/${url}`,
+    //   method: normalizedMethod,
+    //   data: normalizedMethod !== 'GET' ? data : undefined,
+    //   params: normalizedMethod === 'GET' ? data : undefined,
+    // });
 
     const response = await axiosInstance(config);
 
     // Debug logging
-    console.log('[API Response]', {
-      url,
-      status: response.status,
-      data: response.data,
-    });
+    // Log:('[API Response]', {
+    //   url,
+    //   status: response.status,
+    //   data: response.data,
+    // });
 
     // Return in frontend-compatible format
     // Frontend expects: { status: 'success', data: {...}, statusCode }
@@ -156,15 +156,15 @@ export async function callApi(url, method, data = {}, customHeaders = {}) {
     };
   } catch (error) {
     // Enhanced error logging
-    console.error('[API Error]', {
-      url: `${API_URL}/${url}`,
-      method,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
-      code: error.code,
-    });
+    // Error:('[API Error]', {
+    //   url: `${API_URL}/${url}`,
+    //   method,
+    //   status: error.response?.status,
+    //   statusText: error.response?.statusText,
+    //   data: error.response?.data,
+    //   message: error.message,
+    //   code: error.code,
+    // });
 
     // Handle specific error cases like frontend
     const statusCode = error.response?.status || 500;
@@ -197,7 +197,7 @@ export async function callFormDataApi(url, method, formData) {
     });
     return { data: response.data, success: true };
   } catch (error) {
-    console.error('FormData API Error:', error);
+    // Error:('FormData API Error:', error);
     return {
       data: error.response?.data || null,
       success: false,

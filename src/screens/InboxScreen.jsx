@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { fetchChats, resetUnreadCount, setActiveFilter, resetPagination } from '../redux/slices/inboxSlice';
+import { getAssistants, getFlows } from '../redux/slices/assistantSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
 import { colors, chatColors } from '../theme/colors';
@@ -47,6 +48,12 @@ export default function InboxScreen() {
   useEffect(() => {
     loadChats();
   }, [activeFilter]);
+
+  // Load assistants and flows for sender name display in chat messages
+  useEffect(() => {
+    dispatch(getAssistants({ page: 1, limit: 50, fetchAll: true }));
+    dispatch(getFlows());
+  }, [dispatch]);
 
   const loadChats = useCallback(() => {
     dispatch(resetPagination());

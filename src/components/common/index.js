@@ -6,6 +6,7 @@ export { default as QualityBadge, QUALITY_COLORS } from './QualityBadge';
 export { default as ProgressBar } from './ProgressBar';
 export { default as SectionHeader } from './SectionHeader';
 export { default as EmptyState } from './EmptyState';
+export { default as CustomDialog } from './CustomDialog';
 
 // Skeleton loading components
 export { default as Skeleton } from './Skeleton';

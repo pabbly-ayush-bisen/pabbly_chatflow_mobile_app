@@ -141,7 +141,7 @@ export default function AddContactScreen({ navigation }) {
             navigation.goBack();
           }
         } catch (gotoError) {
-          console.error('Failed to open chat from contact:', gotoError);
+          // Error:('Failed to open chat from contact:', gotoError);
           Alert.alert(
             'Contact Saved',
             'The contact was saved, but we could not open the chat. Please try from the Inbox.'

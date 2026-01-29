@@ -172,7 +172,7 @@ const EditQuickReplyModal = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload image:', uploadError);
+          // Error:('Failed to upload image:', uploadError);
           Alert.alert('Upload Failed', 'Failed to upload image to server. Please try again.');
           handleClearFile();
         } finally {
@@ -181,7 +181,7 @@ const EditQuickReplyModal = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick image. Please try again.');
-      console.error('Image picker error:', error);
+      // Error:('Image picker error:', error);
     }
   }, []);
 
@@ -246,7 +246,7 @@ const EditQuickReplyModal = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload video:', uploadError);
+          // Error:('Failed to upload video:', uploadError);
           Alert.alert('Upload Failed', 'Failed to upload video to server. Please try again.');
           handleClearFile();
         } finally {
@@ -255,7 +255,7 @@ const EditQuickReplyModal = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick video. Please try again.');
-      console.error('Video picker error:', error);
+      // Error:('Video picker error:', error);
     }
   }, []);
 
@@ -312,7 +312,7 @@ const EditQuickReplyModal = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload audio:', uploadError);
+          // Error:('Failed to upload audio:', uploadError);
           Alert.alert('Upload Failed', 'Failed to upload audio to server. Please try again.');
           handleClearFile();
         } finally {
@@ -321,7 +321,7 @@ const EditQuickReplyModal = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick audio. Please try again.');
-      console.error('Audio picker error:', error);
+      // Error:('Audio picker error:', error);
     }
   }, []);
 
@@ -384,7 +384,7 @@ const EditQuickReplyModal = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload document:', uploadError);
+          // Error:('Failed to upload document:', uploadError);
           Alert.alert('Upload Failed', 'Failed to upload document to server. Please try again.');
           handleClearFile();
         } finally {
@@ -393,7 +393,7 @@ const EditQuickReplyModal = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick document. Please try again.');
-      console.error('Document picker error:', error);
+      // Error:('Document picker error:', error);
     }
   }, []);
 
@@ -1063,6 +1063,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     fontSize: 15,
     color: colors.text.primary,
+    fontWeight: '400',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
 
   // Type Selector Button
@@ -1133,6 +1138,11 @@ const styles = StyleSheet.create({
     borderColor: colors.grey[300],
     borderRadius: 12,
     color: colors.text.primary,
+    fontWeight: '400',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
 
   // URL Input
@@ -1153,12 +1163,22 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: colors.text.primary,
+    fontWeight: '400',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   fileNameInput: {
     flex: 1,
     fontSize: 15,
     color: colors.text.primary,
     paddingVertical: 14,
+    fontWeight: '400',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
 
   // Divider

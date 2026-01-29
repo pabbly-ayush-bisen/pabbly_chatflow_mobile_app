@@ -81,9 +81,9 @@ export default function ChatsScreenCached() {
 
       setLoadingState('done');
 
-      console.log(`[ChatsScreenCached] Loaded ${loadedChats.length} chats, fromCache: ${result.fromCache}, stale: ${result.isStale}`);
+      // Log:(`[ChatsScreenCached] Loaded ${loadedChats.length} chats, fromCache: ${result.fromCache}, stale: ${result.isStale}`);
     } catch (error) {
-      console.error('[ChatsScreenCached] Error loading chats:', error);
+      // Error:('[ChatsScreenCached] Error loading chats:', error);
       setLoadingState('done');
     }
   }, [dispatch, activeFilter]);

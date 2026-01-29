@@ -111,7 +111,7 @@ export default function ChatRulesScreen() {
       // Show all team members (both active and inactive)
       setTeamMembers(teamItems);
     } catch (error) {
-      console.log('Error loading chat rules:', error);
+      // Log:('Error loading chat rules:', error);
       showSnackbar('Failed to load chat rules');
     } finally {
       setIsLoading(false);

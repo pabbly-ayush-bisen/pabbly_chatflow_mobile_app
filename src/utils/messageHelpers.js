@@ -361,6 +361,13 @@ export const getMessageStatus = (message) => {
   return 'pending';
 };
 
+// List of supported message types
+const SUPPORTED_TYPES = [
+  'text', 'image', 'video', 'audio', 'document', 'file',
+  'sticker', 'location', 'contact', 'contacts', 'template',
+  'interactive', 'order', 'reaction', 'system'
+];
+
 /**
  * Get message preview for chat list
  * Returns { icon, text } for display
@@ -378,6 +385,16 @@ export const getMessagePreview = (message) => {
     if (caption) return caption;
     return fallback;
   };
+
+  // Check for unsupported types FIRST (like web app)
+  if (
+    messageType === 'unsupported' ||
+    messageType === 'unknown' ||
+    messageType === 'fallback' ||
+    !SUPPORTED_TYPES.includes(messageType)
+  ) {
+    return { icon: 'alert-circle', text: 'Unsupported message' };
+  }
 
   switch (messageType) {
     case 'image':
@@ -417,8 +434,7 @@ export const getMessagePreview = (message) => {
       return { icon: 'information', text: getText('System message') };
     case 'reaction':
       return { icon: 'emoticon', text: 'Reaction' };
-    case 'unsupported':
-      return { icon: 'alert-circle', text: 'Unsupported message' };
+    case 'text':
     default:
       return { icon: null, text: getText('Message') };
   }
@@ -537,6 +553,119 @@ export const getTimeLeftDisplay = (hoursLeft) => {
   return 'Within 24-hour window';
 };
 
+/**
+ * Get sender info from message for display in message bubble
+ * Returns { type, name, icon } for rendering sender badge
+ * Matches web app implementation (chat-message-list.jsx initiatedBy function)
+ * @param {Object} message - Message object
+ * @param {Object} options - Optional lookup data { assistants: [], flows: [] }
+ * @returns {{ type: string, name: string, icon: string } | null}
+ */
+export const getSenderInfo = (message, options = {}) => {
+  if (!message) return null;
+
+  const { assistants = [], flows = [] } = options;
+  const fromType = message?.from?.type;
+  const fromName = message?.from?.name;
+  const fromId = message?.from?.id;
+
+  // Don't show sender info for incoming messages (from contact)
+  // Only show for outgoing messages that have from.type
+  if (!fromType) return null;
+
+  // System messages don't need sender badge (they're displayed differently)
+  if (fromType === 'system') return null;
+
+  switch (fromType) {
+    case 'teamMember':
+      return {
+        type: 'teamMember',
+        name: fromName || fromId || 'Team Member',
+        icon: 'account-circle-outline',
+      };
+    case 'aiAssistant': {
+      // Look up assistant name from assistants data if available (like web app)
+      let assistantName = fromName;
+      if (!assistantName && fromId && assistants.length > 0) {
+        const matchedAssistant = assistants.find(
+          (assistant) => assistant._id === fromId || assistant.id === fromId
+        );
+        assistantName = matchedAssistant?.name;
+      }
+      return {
+        type: 'aiAssistant',
+        name: assistantName || 'AI Assistant',
+        icon: 'robot-outline',
+      };
+    }
+    case 'flow': {
+      // Look up flow name from flows data if available (like web app)
+      let flowName = fromName;
+      if (!flowName && fromId && flows.length > 0) {
+        const matchedFlow = flows.find(
+          (flow) => flow._id === fromId || flow.id === fromId
+        );
+        flowName = matchedFlow?.name;
+      }
+      return {
+        type: 'flow',
+        name: flowName || 'Flow',
+        icon: 'source-branch',
+      };
+    }
+    case 'broadcast':
+    case 'apiBroadcast':
+    case 'testApiBroadcast':
+    case 'testBroadcast': {
+      // Format broadcast name (remove [resend-X] patterns)
+      let broadcastName = fromName || 'Broadcast';
+      const resendPattern = /\[resend-\d+\]/gi;
+      if (resendPattern.test(broadcastName)) {
+        broadcastName = broadcastName.replace(resendPattern, '').trim();
+      }
+      return {
+        type: 'broadcast',
+        name: broadcastName,
+        icon: 'access-point',
+      };
+    }
+    case 'offHour':
+      return {
+        type: 'automation',
+        name: fromName || 'Off Hour',
+        icon: 'clock-outline',
+      };
+    case 'welcome':
+      return {
+        type: 'automation',
+        name: fromName || 'Welcome Message',
+        icon: 'hand-wave-outline',
+      };
+    case 'optin':
+      return {
+        type: 'automation',
+        name: fromName || 'Opt-in',
+        icon: 'check-circle-outline',
+      };
+    case 'optout':
+      return {
+        type: 'automation',
+        name: fromName || 'Opt-out',
+        icon: 'close-circle-outline',
+      };
+    default:
+      // For any other type, show the name or id if available
+      if (fromName || fromId) {
+        return {
+          type: fromType,
+          name: fromName || fromId,
+          icon: 'account-outline',
+        };
+      }
+      return null;
+  }
+};
+
 export default {
   getMessageText,
   getMessageCaption,
@@ -562,4 +691,5 @@ export default {
   MessageStatus,
   formatWhatsAppMessage,
   getTimeLeftDisplay,
+  getSenderInfo,
 };

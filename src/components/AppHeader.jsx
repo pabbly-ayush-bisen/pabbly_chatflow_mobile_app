@@ -38,7 +38,7 @@ const AppHeader = ({ showProfile = true, title, subtitle }) => {
         setVibrationEnabled(parsed.vibration ?? true);
       }
     } catch (error) {
-      console.log('Error loading notification prefs:', error);
+      // Log:('Error loading notification prefs:', error);
     }
   };
 
@@ -46,7 +46,7 @@ const AppHeader = ({ showProfile = true, title, subtitle }) => {
     try {
       await AsyncStorage.setItem(NOTIFICATION_PREFS_KEY, JSON.stringify(prefs));
     } catch (error) {
-      console.log('Error saving notification prefs:', error);
+      // Log:('Error saving notification prefs:', error);
     }
   };
 

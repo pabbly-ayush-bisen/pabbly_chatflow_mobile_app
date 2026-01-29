@@ -1236,7 +1236,7 @@ const styles = StyleSheet.create({
   },
   editNameInput: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '400',
     color: colors.text.primary,
     borderBottomWidth: 2,
     borderBottomColor: chatColors.primary,
@@ -1244,6 +1244,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     minWidth: 150,
     textAlign: 'center',
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+      ios: {},
+    }),
   },
   editNameActions: {
     flexDirection: 'row',

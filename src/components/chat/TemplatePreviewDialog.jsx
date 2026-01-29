@@ -359,18 +359,18 @@ const TemplatePreviewDialog = ({
         });
         setCarouselBodyVariables(initialCarouselBodyVars);
 
-        console.log('[TemplatePreviewDialog] Initialized carousel template:', {
-          templateName: template.name,
-          cardsCount: cards.length,
-          carouselBodyVars: initialCarouselBodyVars,
-        });
+        // Log:('[TemplatePreviewDialog] Initialized carousel template:', {
+        //   templateName: template.name,
+        //   cardsCount: cards.length,
+        //   carouselBodyVars: initialCarouselBodyVars,
+        // });
       } else {
-        console.log('[TemplatePreviewDialog] Initialized variables for template:', {
-          templateName: template.name,
-          bodyVars: extractedBodyVars,
-          headerVars: extractedHeaderVars,
-          bodyText: bodyComp?.text,
-        });
+        // Log:('[TemplatePreviewDialog] Initialized variables for template:', {
+        //   templateName: template.name,
+        //   bodyVars: extractedBodyVars,
+        //   headerVars: extractedHeaderVars,
+        //   bodyText: bodyComp?.text,
+        // });
       }
     }
   }, [template]);
@@ -501,12 +501,12 @@ const TemplatePreviewDialog = ({
         carouselBodies,
       };
 
-      console.log('[TemplatePreviewDialog] Sending carousel template:', {
-        templateName: template?.name,
-        cardsCount: carouselCards.length,
-        carouselBodies,
-        carouselFileDataCount: carouselFileData.length,
-      });
+      // Log:('[TemplatePreviewDialog] Sending carousel template:', {
+      //   templateName: template?.name,
+      //   cardsCount: carouselCards.length,
+      //   carouselBodies,
+      //   carouselFileDataCount: carouselFileData.length,
+      // });
 
       onSend?.(sendPayload);
       return;
@@ -600,29 +600,29 @@ const TemplatePreviewDialog = ({
       }),
     };
 
-    console.log('[TemplatePreviewDialog] Sending template:', {
-      templateName: template?.name,
-      templateType: template?.type,
-      isLtoTemplate,
-      isLocationTemplate,
-      isCatalogTemplate,
-      hasCopyCodeButton,
-      requiresMediaUpload,
-      hasMedia: !!uploadedMedia,
-      mediaDetails: uploadedMedia ? {
-        uri: uploadedMedia.uri,
-        fileUrl: uploadedMedia.fileUrl,
-        mediaId: uploadedMedia.mediaId,
-        fileName: uploadedMedia.fileName,
-        type: uploadedMedia.type,
-      } : null,
-      bodyVars,
-      bodyVariables,
-      bodyParams,
-      bodyParamsCount: bodyParams.length,
-      headerParams,
-      headerParamsCount: headerParams.length,
-    });
+    // Log:('[TemplatePreviewDialog] Sending template:', {
+    //   templateName: template?.name,
+    //   templateType: template?.type,
+    //   isLtoTemplate,
+    //   isLocationTemplate,
+    //   isCatalogTemplate,
+    //   hasCopyCodeButton,
+    //   requiresMediaUpload,
+    //   hasMedia: !!uploadedMedia,
+    //   mediaDetails: uploadedMedia ? {
+    //     uri: uploadedMedia.uri,
+    //     fileUrl: uploadedMedia.fileUrl,
+    //     mediaId: uploadedMedia.mediaId,
+    //     fileName: uploadedMedia.fileName,
+    //     type: uploadedMedia.type,
+    //   } : null,
+    //   bodyVars,
+    //   bodyVariables,
+    //   bodyParams,
+    //   bodyParamsCount: bodyParams.length,
+    //   headerParams,
+    //   headerParamsCount: headerParams.length,
+    // });
 
     onSend?.(sendPayload);
   }, [template, bodyVars, headerVars, bodyVariables, headerVariables, allVariablesFilled, hasVariables, uploadedMedia, requiresMediaUpload, isUploadingMedia, onSend, isCarouselTemplate, allCarouselVariablesFilled, carouselFilledProgress, isAnyCarouselMediaUploading, allCarouselMediaUploaded, carouselCardVariables, carouselBodyVariables, carouselCards, carouselMedia, carouselHeaderFormat, isLtoTemplate, ltoFields, getLtoUnixTimestamp, isLocationTemplate, locationFields, isLocationValid, isCatalogTemplate, catalogProductId, hasCopyCodeButton, copyCodeValue, urlButtonsWithVariables, urlVariables]);
@@ -810,7 +810,7 @@ const TemplatePreviewDialog = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload image:', uploadError);
+          // Error:('Failed to upload image:', uploadError);
           Alert.alert('Upload Failed', 'Failed to upload image to server. You can still send with local file.');
         } finally {
           setIsUploadingMedia(false);
@@ -818,7 +818,7 @@ const TemplatePreviewDialog = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick image. Please try again.');
-      console.error('Image picker error:', error);
+      // Error:('Image picker error:', error);
     }
   }, []);
 
@@ -876,7 +876,7 @@ const TemplatePreviewDialog = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload video:', uploadError);
+          // Error:('Failed to upload video:', uploadError);
           Alert.alert('Upload Failed', 'Failed to upload video to server. You can still send with local file.');
         } finally {
           setIsUploadingMedia(false);
@@ -884,7 +884,7 @@ const TemplatePreviewDialog = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick video. Please try again.');
-      console.error('Video picker error:', error);
+      // Error:('Video picker error:', error);
     }
   }, []);
 
@@ -932,7 +932,7 @@ const TemplatePreviewDialog = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload document:', uploadError);
+          // Error:('Failed to upload document:', uploadError);
           Alert.alert('Upload Failed', 'Failed to upload document to server. You can still send with local file.');
         } finally {
           setIsUploadingMedia(false);
@@ -940,7 +940,7 @@ const TemplatePreviewDialog = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick document. Please try again.');
-      console.error('Document picker error:', error);
+      // Error:('Document picker error:', error);
     }
   }, []);
 
@@ -1035,7 +1035,7 @@ const TemplatePreviewDialog = ({
             },
           }));
         } catch (uploadError) {
-          console.error(`Failed to upload carousel card ${cardIndex + 1} media:`, uploadError);
+          // Error:(`Failed to upload carousel card ${cardIndex + 1} media:`, uploadError);
           Alert.alert('Upload Failed', `Failed to upload media for card ${cardIndex + 1}. You can still send with local file.`);
         } finally {
           setIsUploadingCarouselMedia(prev => ({ ...prev, [cardIndex]: false }));
@@ -1043,7 +1043,7 @@ const TemplatePreviewDialog = ({
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick media. Please try again.');
-      console.error('Carousel media picker error:', error);
+      // Error:('Carousel media picker error:', error);
     }
   }, [carouselHeaderFormat]);
 
@@ -1227,7 +1227,7 @@ const TemplatePreviewDialog = ({
                                     source={{ uri: uploadedMedia.uri }}
                                     style={styles.uploadedImage}
                                     resizeMode="cover"
-                                    onError={(e) => console.log('[TemplatePreview] Image load error:', e.nativeEvent.error)}
+                                    onError={(e) => { /* Log:('[TemplatePreview] Image load error:', e.nativeEvent.error) */ }}
                                   />
                                   {isUploadingMedia && (
                                     <View style={styles.uploadingOverlay}>
@@ -1263,7 +1263,7 @@ const TemplatePreviewDialog = ({
                                     source={{ uri: uploadedMedia.uri }}
                                     style={styles.uploadedVideo}
                                     resizeMode="cover"
-                                    onError={(e) => console.log('[TemplatePreview] Video thumbnail load error:', e.nativeEvent.error)}
+                                    onError={(e) => { /* Log:('[TemplatePreview] Video thumbnail load error:', e.nativeEvent.error) */ }}
                                   />
                                   <View style={styles.videoPlayButton}>
                                     <Icon name="play" size={24} color={colors.common.white} />

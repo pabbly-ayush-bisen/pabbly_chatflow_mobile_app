@@ -79,7 +79,7 @@ const AudioPlayerPreview = ({ audioUrl }) => {
       setIsPlaying(true);
       setIsLoading(false);
     } catch (error) {
-      console.error('Error playing audio:', error);
+      // Error:('Error playing audio:', error);
       setIsLoading(false);
     }
   };
@@ -216,7 +216,7 @@ export default function QuickRepliesScreen() {
         pageRef.current = currentPage + 1;
       }
     } catch (error) {
-      console.log('Error loading quick replies:', error);
+      // Log:('Error loading quick replies:', error);
       showSnackbar('Failed to load quick replies');
     } finally {
       isLoadingRef.current = false;
@@ -386,7 +386,7 @@ export default function QuickRepliesScreen() {
   const openFileUrl = (url) => {
     if (url) {
       Linking.openURL(url).catch(err => {
-        console.error('Failed to open URL:', err);
+        // Error:('Failed to open URL:', err);
         showSnackbar('Failed to open file');
       });
     }

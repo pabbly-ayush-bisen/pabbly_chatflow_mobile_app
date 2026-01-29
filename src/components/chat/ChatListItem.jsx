@@ -1,9 +1,16 @@
 import React, { memo } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Text, Badge } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, chatColors, getAvatarColor } from '../../theme/colors';
 import { getMessageStatus } from '../../utils/messageHelpers';
+
+// List of supported message types for inbox preview
+const SUPPORTED_MESSAGE_TYPES = [
+  'text', 'image', 'sticker', 'video', 'audio', 'document', 'file',
+  'location', 'interactive', 'template', 'order', 'contacts', 'contact',
+  'reaction', 'system'
+];
 
 const ChatListItem = ({ chat, onPress, isSelected }) => {
   const contact = chat?.contact || {};
@@ -47,9 +54,22 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
   const getDisplayMessage = () => {
     if (!lastMessage) return { icon: null, text: 'No messages yet' };
 
+    const messageType = lastMessage.type;
+
+    // Check for unsupported message types FIRST (like web app)
+    // Any type not in supported list OR explicit unsupported types
+    if (
+      messageType === 'unsupported' ||
+      messageType === 'unknown' ||
+      messageType === 'fallback' ||
+      (messageType && !SUPPORTED_MESSAGE_TYPES.includes(messageType))
+    ) {
+      return { icon: null, text: 'Unsupported Message' };
+    }
+
     // For text messages, show the actual message body (like web app)
-    if (lastMessage.type === 'text') {
-      const messageText = 
+    if (messageType === 'text') {
+      const messageText =
         lastMessage?.message?.body?.text ||
         lastMessage?.message?.body ||
         lastMessage?.text ||
@@ -59,7 +79,7 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
     }
 
     // For non-text messages, show type label like web app
-    switch (lastMessage.type) {
+    switch (messageType) {
       case 'system':
         return { icon: null, text: 'System Message' };
       case 'reaction':
@@ -86,12 +106,9 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
       case 'contacts':
       case 'contact':
         return { icon: null, text: 'Contact Message' };
-      case 'fallback':
-        return { icon: null, text: 'Fallback Message' };
-      case 'unsupported':
-        return { icon: null, text: 'Unsupported Message' };
       default:
-        return { icon: null, text: 'Message' };
+        // Fallback - should not reach here if SUPPORTED_MESSAGE_TYPES is comprehensive
+        return { icon: null, text: 'Unsupported Message' };
     }
   };
 
@@ -216,6 +233,10 @@ const styles = StyleSheet.create({
     color: colors.common.white,
     fontSize: 20,
     fontWeight: '600',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   content: {
     flex: 1,
@@ -236,13 +257,23 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     flex: 1,
     marginRight: 8,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   unreadName: {
     fontWeight: '600',
   },
   timestamp: {
     fontSize: 12,
+    fontWeight: '400',
     color: colors.text.secondary,
+    flexShrink: 0,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   unreadTimestamp: {
     color: chatColors.unreadBadge,
@@ -267,8 +298,13 @@ const styles = StyleSheet.create({
   },
   messagePreview: {
     fontSize: 14,
+    fontWeight: '400',
     color: colors.text.secondary,
     flex: 1,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   unreadPreview: {
     color: colors.text.primary,

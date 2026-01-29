@@ -32,7 +32,7 @@ export const fetchChatsWithCache = createAsyncThunk(
       const cacheResult = await cacheManager.getChats({ filter });
 
       if (cacheResult.chats.length > 0 && !forceRefresh) {
-        console.log(`[fetchChatsWithCache] Cache hit: ${cacheResult.chats.length} chats, stale: ${cacheResult.isStale}`);
+        // Log:(`[fetchChatsWithCache] Cache hit: ${cacheResult.chats.length} chats, stale: ${cacheResult.isStale}`);
 
         // Return cached data immediately
         const cachedResponse = {
@@ -45,10 +45,10 @@ export const fetchChatsWithCache = createAsyncThunk(
 
         // If cache is stale, trigger background refresh
         if (cacheResult.isStale) {
-          console.log('[fetchChatsWithCache] Cache is stale, refreshing in background...');
+          // Log:('[fetchChatsWithCache] Cache is stale, refreshing in background...');
           // Don't await this - let it run in background
           refreshChatsInBackground(params, dispatch).catch((err) => {
-            console.error('[fetchChatsWithCache] Background refresh failed:', err);
+            // Error:('[fetchChatsWithCache] Background refresh failed:', err);
           });
         }
 
@@ -56,10 +56,10 @@ export const fetchChatsWithCache = createAsyncThunk(
       }
 
       // Step 2: Cache miss or force refresh - fetch from server
-      console.log('[fetchChatsWithCache] Cache miss, fetching from server...');
+      // Log:('[fetchChatsWithCache] Cache miss, fetching from server...');
       return await fetchChatsFromServer(params);
     } catch (error) {
-      console.error('[fetchChatsWithCache] Error:', error);
+      // Error:('[fetchChatsWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -172,9 +172,9 @@ async function refreshChatsInBackground(params, dispatch) {
       },
     });
 
-    console.log('[refreshChatsInBackground] Background refresh completed');
+    // Log:('[refreshChatsInBackground] Background refresh completed');
   } catch (error) {
-    console.error('[refreshChatsInBackground] Error:', error);
+    // Error:('[refreshChatsInBackground] Error:', error);
     // Don't throw - this is a background operation
   }
 }
@@ -198,7 +198,7 @@ export const fetchConversationWithCache = createAsyncThunk(
         const cacheResult = await cacheManager.getMessages(chatId, { limit: 50 });
 
         if (cacheResult.messages.length > 0) {
-          console.log(`[fetchConversationWithCache] Cache hit: ${cacheResult.messages.length} messages`);
+          // Log:(`[fetchConversationWithCache] Cache hit: ${cacheResult.messages.length} messages`);
 
           // Get chat details from cache
           const cachedChat = await cacheManager.getChatById(chatId);
@@ -217,7 +217,7 @@ export const fetchConversationWithCache = createAsyncThunk(
       }
 
       // Step 2: Cache miss - fetch from server
-      console.log('[fetchConversationWithCache] Cache miss, fetching from server...');
+      // Log:('[fetchConversationWithCache] Cache miss, fetching from server...');
 
       const params = { _id: chatId, all: true };
       const response = await callApi(endpoints.inbox.getConversation, httpMethods.GET, params);
@@ -243,7 +243,7 @@ export const fetchConversationWithCache = createAsyncThunk(
         hasMore: false,
       };
     } catch (error) {
-      console.error('[fetchConversationWithCache] Error:', error);
+      // Error:('[fetchConversationWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -263,7 +263,7 @@ export const loadMoreMessagesWithCache = createAsyncThunk(
       });
 
       if (cacheResult.messages.length > 0) {
-        console.log(`[loadMoreMessagesWithCache] Cache hit: ${cacheResult.messages.length} more messages`);
+        // Log:(`[loadMoreMessagesWithCache] Cache hit: ${cacheResult.messages.length} more messages`);
 
         return {
           messages: cacheResult.messages,
@@ -273,7 +273,7 @@ export const loadMoreMessagesWithCache = createAsyncThunk(
       }
 
       // Cache miss - fetch from server
-      console.log('[loadMoreMessagesWithCache] Cache miss, fetching from server...');
+      // Log:('[loadMoreMessagesWithCache] Cache miss, fetching from server...');
 
       const response = await callApi(endpoints.inbox.getConversation, httpMethods.GET, {
         _id: chatId,
@@ -299,7 +299,7 @@ export const loadMoreMessagesWithCache = createAsyncThunk(
         fromCache: false,
       };
     } catch (error) {
-      console.error('[loadMoreMessagesWithCache] Error:', error);
+      // Error:('[loadMoreMessagesWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -338,7 +338,7 @@ export const sendMessageWithCache = createAsyncThunk(
         },
       };
     } catch (error) {
-      console.error('[sendMessageWithCache] Error:', error);
+      // Error:('[sendMessageWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -358,7 +358,7 @@ export const confirmMessageSent = createAsyncThunk(
         serverMessage,
       };
     } catch (error) {
-      console.error('[confirmMessageSent] Error:', error);
+      // Error:('[confirmMessageSent] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -378,7 +378,7 @@ export const markMessageFailed = createAsyncThunk(
         error,
       };
     } catch (error) {
-      console.error('[markMessageFailed] Error:', error);
+      // Error:('[markMessageFailed] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -398,7 +398,7 @@ export const updateMessageStatusInCache = createAsyncThunk(
         updates,
       };
     } catch (error) {
-      console.error('[updateMessageStatusInCache] Error:', error);
+      // Error:('[updateMessageStatusInCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -426,7 +426,7 @@ export const handleNewMessageCache = createAsyncThunk(
         message,
       };
     } catch (error) {
-      console.error('[handleNewMessageCache] Error:', error);
+      // Error:('[handleNewMessageCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -443,7 +443,7 @@ export const resetUnreadCountInCache = createAsyncThunk(
 
       return { chatId };
     } catch (error) {
-      console.error('[resetUnreadCountInCache] Error:', error);
+      // Error:('[resetUnreadCountInCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -459,7 +459,7 @@ export const clearAllCacheData = createAsyncThunk(
       await cacheManager.clearAllCache();
       return { success: true };
     } catch (error) {
-      console.error('[clearAllCacheData] Error:', error);
+      // Error:('[clearAllCacheData] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -487,7 +487,7 @@ export const initializeCache = createAsyncThunk(
         stats,
       };
     } catch (error) {
-      console.error('[initializeCache] Error:', error);
+      // Error:('[initializeCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }

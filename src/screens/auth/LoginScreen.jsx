@@ -6,7 +6,6 @@ import {
   Platform,
   Alert,
   ScrollView,
-  Image,
   Dimensions,
 } from 'react-native';
 import {
@@ -43,7 +42,7 @@ export default function LoginScreen() {
   }, [error, dispatch]);
 
   useEffect(() => {
-    console.log('Login Screen - authenticated:', authenticated);
+    // Log:('Login Screen - authenticated:', authenticated);
   }, [authenticated]);
 
   const validateForm = () => {
@@ -79,7 +78,7 @@ export default function LoginScreen() {
       }
     } catch (err) {
       // Error is handled by the error useEffect
-      console.error('Login failed:', err);
+      // Error:('Login failed:', err);
     }
   };
 
@@ -214,7 +213,7 @@ export default function LoginScreen() {
                 </View>
                 <Button
                   mode="text"
-                  onPress={() => console.log('Forgot password')}
+                  onPress={() => { /* Log:('Forgot password') */ }}
                   textColor={colors.primary.main}
                   disabled={loading}
                   compact
@@ -253,7 +252,7 @@ export default function LoginScreen() {
                 <Text style={styles.signUpText}>Don't have an account?</Text>
                 <Button
                   mode="text"
-                  onPress={() => console.log('Sign up')}
+                  onPress={() => { /* Log:('Sign up') */ }}
                   textColor={colors.primary.main}
                   disabled={loading}
                   labelStyle={styles.signUpLabel}

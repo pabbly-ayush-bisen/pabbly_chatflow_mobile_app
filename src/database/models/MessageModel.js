@@ -234,7 +234,7 @@ class MessageModel {
     const records = messages.map((msg) => this.toDbRecord(msg, chatId, settingId));
     await databaseManager.batchInsert(Tables.MESSAGES, records);
 
-    console.log(`[MessageModel] Saved ${messages.length} messages for chat: ${chatId}`);
+    // Log:(`[MessageModel] Saved ${messages.length} messages for chat: ${chatId}`);
   }
 
   /**
@@ -508,7 +508,7 @@ class MessageModel {
    */
   static async deleteMessagesForChat(chatId, settingId) {
     await databaseManager.delete(Tables.MESSAGES, 'chat_id = ? AND setting_id = ?', [chatId, settingId]);
-    console.log(`[MessageModel] Deleted all messages for chat: ${chatId}`);
+    // Log:(`[MessageModel] Deleted all messages for chat: ${chatId}`);
   }
 
   /**
@@ -518,7 +518,7 @@ class MessageModel {
    */
   static async clearMessages(settingId) {
     await databaseManager.delete(Tables.MESSAGES, 'setting_id = ?', [settingId]);
-    console.log(`[MessageModel] Cleared all messages for setting: ${settingId}`);
+    // Log:(`[MessageModel] Cleared all messages for setting: ${settingId}`);
   }
 }
 

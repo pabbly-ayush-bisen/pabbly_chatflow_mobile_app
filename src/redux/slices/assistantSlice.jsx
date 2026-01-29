@@ -22,18 +22,14 @@ export const getAssistants = createAsyncThunk(
       }
 
       const url = `${endpoints.assistants.getAssistants}?${params.toString()}`;
-      console.log('[getAssistants] Request URL:', url);
 
       const response = await callApi(url, httpMethods.GET);
-
-      console.log('[getAssistants] Response:', JSON.stringify(response, null, 2));
 
       if (response.status === 'error') {
         return rejectWithValue(response.message || 'Failed to fetch assistants');
       }
       return response;
     } catch (error) {
-      console.error('[getAssistants] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -72,6 +68,24 @@ export const getAssistantStats = createAsyncThunk(
   }
 );
 
+// Fetch all flows (for sender name lookup in chat messages)
+export const getFlows = createAsyncThunk(
+  'assistant/getFlows',
+  async (_, { rejectWithValue }) => {
+    try {
+      const url = `${endpoints.flows.getAllFlows}?all=true`;
+      const response = await callApi(url, httpMethods.GET);
+
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to fetch flows');
+      }
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 // Initial state
 const initialState = {
   assistants: [],
@@ -86,6 +100,10 @@ const initialState = {
   activeAssistants: 0,
   inactiveAssistants: 0,
   totalResults: 0,
+  // Flows state (for sender name lookup in chat messages)
+  flows: [],
+  flowsStatus: 'idle',
+  flowsError: null,
 };
 
 // Slice
@@ -100,6 +118,7 @@ const assistantSlice = createSlice({
       state.assistantsError = null;
       state.assistantError = null;
       state.statsError = null;
+      state.flowsError = null;
     },
   },
   extraReducers: (builder) => {
@@ -113,13 +132,6 @@ const assistantSlice = createSlice({
         state.assistantsStatus = 'succeeded';
         const payload = action.payload;
 
-        // Debug logging - log the full payload structure
-        console.log('[AssistantSlice] ====== FULL PAYLOAD ======');
-        console.log('[AssistantSlice] payload keys:', payload ? Object.keys(payload) : 'null');
-        console.log('[AssistantSlice] payload.data:', payload?.data);
-        console.log('[AssistantSlice] payload.assistants:', payload?.assistants);
-        console.log('[AssistantSlice] payload._raw:', payload?._raw);
-
         // Handle multiple possible response structures
         // The API might return assistants in different locations
         let assistantsList = [];
@@ -128,39 +140,25 @@ const assistantSlice = createSlice({
         // Check all possible locations for the assistants array (priority order)
         if (Array.isArray(payload?.assistants)) {
           // Direct from callApi spreading: { assistants: [...] }
-          console.log('[AssistantSlice] Found in payload.assistants');
           assistantsList = payload.assistants;
         } else if (Array.isArray(raw?.assistants)) {
           // From raw response: { _raw: { assistants: [...] } }
-          console.log('[AssistantSlice] Found in payload._raw.assistants');
           assistantsList = raw.assistants;
         } else if (Array.isArray(payload?.data?.assistants)) {
           // Nested in data: { data: { assistants: [...] } }
-          console.log('[AssistantSlice] Found in payload.data.assistants');
           assistantsList = payload.data.assistants;
         } else if (Array.isArray(raw?.data?.assistants)) {
           // Nested in raw.data: { _raw: { data: { assistants: [...] } } }
-          console.log('[AssistantSlice] Found in payload._raw.data.assistants');
           assistantsList = raw.data.assistants;
         } else if (Array.isArray(payload?.data)) {
           // Data is array: { data: [...] }
-          console.log('[AssistantSlice] Found in payload.data (array)');
           assistantsList = payload.data;
         } else if (Array.isArray(raw?.data)) {
           // Raw data is array: { _raw: { data: [...] } }
-          console.log('[AssistantSlice] Found in payload._raw.data (array)');
           assistantsList = raw.data;
         } else if (Array.isArray(payload)) {
           // Payload is array: [...]
-          console.log('[AssistantSlice] Found in payload (array)');
           assistantsList = payload;
-        } else {
-          console.log('[AssistantSlice] No assistants found in any known location');
-        }
-
-        console.log('[AssistantSlice] Final assistants list:', assistantsList.length, 'items');
-        if (assistantsList.length > 0) {
-          console.log('[AssistantSlice] First assistant:', JSON.stringify(assistantsList[0], null, 2));
         }
 
         state.assistants = assistantsList;
@@ -202,6 +200,44 @@ const assistantSlice = createSlice({
       .addCase(getAssistantStats.rejected, (state, action) => {
         state.statsStatus = 'failed';
         state.statsError = action.payload;
+      });
+
+    // Get Flows
+    builder
+      .addCase(getFlows.pending, (state) => {
+        state.flowsStatus = 'loading';
+        state.flowsError = null;
+      })
+      .addCase(getFlows.fulfilled, (state, action) => {
+        state.flowsStatus = 'succeeded';
+        const payload = action.payload;
+
+        // Handle multiple possible response structures (similar to assistants)
+        let flowsList = [];
+        const raw = payload?._raw || {};
+
+        // Check all possible locations for the flows array
+        if (Array.isArray(payload?.flows)) {
+          flowsList = payload.flows;
+        } else if (Array.isArray(raw?.flows)) {
+          flowsList = raw.flows;
+        } else if (Array.isArray(payload?.data?.flows)) {
+          flowsList = payload.data.flows;
+        } else if (Array.isArray(raw?.data?.flows)) {
+          flowsList = raw.data.flows;
+        } else if (Array.isArray(payload?.data)) {
+          flowsList = payload.data;
+        } else if (Array.isArray(raw?.data)) {
+          flowsList = raw.data;
+        } else if (Array.isArray(payload)) {
+          flowsList = payload;
+        }
+
+        state.flows = flowsList;
+      })
+      .addCase(getFlows.rejected, (state, action) => {
+        state.flowsStatus = 'failed';
+        state.flowsError = action.payload;
       });
   },
 });

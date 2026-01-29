@@ -41,9 +41,9 @@ class CacheManager {
       this.currentSettingId = settingId;
 
       this.isInitialized = true;
-      console.log('[CacheManager] Initialized with settingId:', settingId);
+      // Log:('[CacheManager] Initialized with settingId:', settingId);
     } catch (error) {
-      console.error('[CacheManager] Initialization error:', error);
+      // Error:('[CacheManager] Initialization error:', error);
       throw error;
     }
   }
@@ -54,7 +54,7 @@ class CacheManager {
    */
   setSettingId(settingId) {
     this.currentSettingId = settingId;
-    console.log('[CacheManager] Setting ID updated:', settingId);
+    // Log:('[CacheManager] Setting ID updated:', settingId);
   }
 
   /**
@@ -79,7 +79,7 @@ class CacheManager {
 
     const settingId = this.currentSettingId;
     if (!settingId) {
-      console.warn('[CacheManager] No setting ID available');
+      // Warn:('[CacheManager] No setting ID available');
       return { chats: [], fromCache: false, isStale: false };
     }
 
@@ -430,7 +430,7 @@ class CacheManager {
     if (!settingId) return;
 
     await databaseManager.clearSettingData(settingId);
-    console.log('[CacheManager] Cleared cache for setting:', settingId);
+    // Log:('[CacheManager] Cleared cache for setting:', settingId);
   }
 
   /**
@@ -442,7 +442,7 @@ class CacheManager {
 
     await databaseManager.clearAllData();
     this.currentSettingId = null;
-    console.log('[CacheManager] All cache cleared');
+    // Log:('[CacheManager] All cache cleared');
   }
 
   /**
@@ -512,7 +512,7 @@ class CacheManager {
   async close() {
     await databaseManager.close();
     this.isInitialized = false;
-    console.log('[CacheManager] Closed');
+    // Log:('[CacheManager] Closed');
   }
 }
 
