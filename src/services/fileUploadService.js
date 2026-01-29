@@ -12,7 +12,11 @@ import { APP_CONFIG } from '../config/app.config';
  */
 export const uploadFile = async (file, onProgress = null) => {
   try {
-    const settingId = await AsyncStorage.getItem('settingId');
+    // Try primary key first, then fallback to alternate key
+    let settingId = await AsyncStorage.getItem('settingId');
+    if (!settingId) {
+      settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+    }
 
     console.log('[FileUpload] Auth check:', {
       hasSettingId: !!settingId,
@@ -20,7 +24,7 @@ export const uploadFile = async (file, onProgress = null) => {
     });
 
     if (!settingId) {
-      throw new Error('Setting ID required - please select a WhatsApp number first');
+      throw new Error('No WhatsApp number selected. Please go to Dashboard and access a WhatsApp number first.');
     }
 
     // Get file URI - handle different possible field names
@@ -201,10 +205,14 @@ const getExtensionFromType = (fileType) => {
  */
 export const uploadToMediaLibrary = async (file, onProgress = null) => {
   try {
-    const settingId = await AsyncStorage.getItem('settingId');
+    // Try primary key first, then fallback to alternate key
+    let settingId = await AsyncStorage.getItem('settingId');
+    if (!settingId) {
+      settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+    }
 
     if (!settingId) {
-      throw new Error('Setting ID required - please select a WhatsApp number first');
+      throw new Error('No WhatsApp number selected. Please go to Dashboard and access a WhatsApp number first.');
     }
 
     // Get file URI - handle different possible field names
@@ -510,10 +518,14 @@ export const validateFileSize = (fileSize, fileType) => {
 export const uploadFileWithProgress = async (file, onProgress = null, abortController = null) => {
   return new Promise(async (resolve, reject) => {
     try {
-      const settingId = await AsyncStorage.getItem('settingId');
+      // Try primary key first, then fallback to alternate key
+      let settingId = await AsyncStorage.getItem('settingId');
+      if (!settingId) {
+        settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+      }
 
       if (!settingId) {
-        reject(new Error('Setting ID required - please select a WhatsApp number first'));
+        reject(new Error('No WhatsApp number selected. Please go to Dashboard and access a WhatsApp number first.'));
         return;
       }
 

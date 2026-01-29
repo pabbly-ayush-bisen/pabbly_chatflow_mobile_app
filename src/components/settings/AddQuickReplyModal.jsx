@@ -671,7 +671,7 @@ const AddQuickReplyModal = ({
                     disabled={isSaving || isUploading}
                     activeOpacity={0.7}
                   >
-                    <View style={[styles.uploadIconContainer, { backgroundColor: typeConfig.bg }]}>
+                    <View style={styles.uploadButtonIcon}>
                       <Icon
                         name={
                           messageType === 'image' ? 'image-plus' :
@@ -680,21 +680,18 @@ const AddQuickReplyModal = ({
                           'file-upload'
                         }
                         size={24}
-                        color={typeConfig.color}
+                        color={chatColors.primary}
                       />
                     </View>
-                    <View style={styles.uploadTextContainer}>
-                      <Text style={styles.uploadButtonTitle}>
-                        Upload {typeConfig.label}
-                      </Text>
-                      <Text style={styles.uploadButtonHint}>
-                        {messageType === 'image' && 'JPG, PNG, GIF up to 5MB'}
-                        {messageType === 'video' && 'MP4, MOV up to 16MB'}
-                        {messageType === 'audio' && 'MP3, WAV, OGG up to 16MB'}
-                        {messageType === 'file' && 'PDF, DOC, XLS up to 100MB'}
-                      </Text>
-                    </View>
-                    <Icon name="chevron-right" size={22} color={colors.text.tertiary} />
+                    <Text style={styles.uploadButtonText}>
+                      Upload {typeConfig.label}
+                    </Text>
+                    <Text style={styles.uploadButtonSubtext}>
+                      {messageType === 'image' && 'JPG, PNG, GIF up to 5MB'}
+                      {messageType === 'video' && 'MP4, MOV up to 16MB'}
+                      {messageType === 'audio' && 'MP3, WAV, OGG up to 16MB'}
+                      {messageType === 'file' && 'PDF, DOC, XLS up to 100MB'}
+                    </Text>
                   </TouchableOpacity>
                 ) : null}
 
@@ -739,26 +736,32 @@ const AddQuickReplyModal = ({
                       </TouchableOpacity>
                     </View>
 
-                    {/* Replace Media Button */}
-                    <TouchableOpacity
-                      style={styles.replaceMediaButton}
-                      onPress={handlePickFile}
-                      activeOpacity={0.7}
-                      disabled={isSaving || isUploading}
-                    >
-                      <Icon
-                        name="refresh"
-                        size={18}
-                        color={isUploading ? colors.grey[400] : chatColors.primary}
-                      />
-                      <Text style={[
-                        styles.replaceMediaText,
-                        isUploading && { color: colors.grey[400] }
-                      ]}>
-                        Replace Media
-                      </Text>
-                    </TouchableOpacity>
                   </View>
+                )}
+
+                {/* Replace Media Button - separate button matching TemplatePreviewDialog */}
+                {(selectedFile || uploadedMedia) && (
+                  <TouchableOpacity
+                    style={[
+                      styles.replaceMediaButton,
+                      isUploading && styles.replaceMediaButtonDisabled
+                    ]}
+                    onPress={handlePickFile}
+                    activeOpacity={0.7}
+                    disabled={isSaving || isUploading}
+                  >
+                    <Icon
+                      name="refresh"
+                      size={18}
+                      color={isUploading ? colors.grey[400] : chatColors.primary}
+                    />
+                    <Text style={[
+                      styles.replaceMediaText,
+                      isUploading && { color: colors.grey[400] }
+                    ]}>
+                      Replace Media
+                    </Text>
+                  </TouchableOpacity>
                 )}
 
                 {/* File Name for document type */}
@@ -777,6 +780,92 @@ const AddQuickReplyModal = ({
                         style={[styles.urlInput, { paddingLeft: 16 }]}
                         editable={!isSaving}
                       />
+                    </View>
+                  </View>
+                )}
+
+                {/* Message Bubble Preview - WhatsApp style */}
+                {(uploadedMedia?.uri || headerFileURL) && (
+                  <View style={styles.previewSection}>
+                    <View style={styles.previewSectionHeader}>
+                      <Icon name="message-text-outline" size={16} color={colors.text.secondary} />
+                      <Text style={styles.previewSectionTitle}>Message Preview</Text>
+                    </View>
+                    <View style={styles.chatBackground}>
+                      <View style={styles.messageBubbleContainer}>
+                        <View style={styles.messageBubble}>
+                          {/* Image Preview */}
+                          {messageType === 'image' && (
+                            <Image
+                              source={{ uri: uploadedMedia?.uri || headerFileURL }}
+                              style={styles.bubbleImage}
+                              resizeMode="cover"
+                            />
+                          )}
+
+                          {/* Video Preview */}
+                          {messageType === 'video' && (
+                            <View style={styles.bubbleVideoPlaceholder}>
+                              <Icon name="play-circle" size={48} color={colors.common.white} />
+                              <Text style={styles.videoPlaceholderText}>Video Preview</Text>
+                            </View>
+                          )}
+
+                          {/* Audio Preview */}
+                          {messageType === 'audio' && (
+                            <View style={styles.bubbleAudioPlaceholder}>
+                              <View style={styles.audioWaveform}>
+                                <Icon name="microphone" size={24} color={chatColors.primary} />
+                                <View style={styles.audioWaveformBars}>
+                                  {[...Array(12)].map((_, i) => (
+                                    <View
+                                      key={i}
+                                      style={[
+                                        styles.audioBar,
+                                        { height: Math.random() * 20 + 8 }
+                                      ]}
+                                    />
+                                  ))}
+                                </View>
+                              </View>
+                              <Text style={styles.audioFileName} numberOfLines={1}>
+                                {fileName || 'Audio file'}
+                              </Text>
+                            </View>
+                          )}
+
+                          {/* File/Document Preview */}
+                          {messageType === 'file' && (
+                            <View style={styles.bubbleDocumentPreview}>
+                              <View style={styles.bubbleDocIcon}>
+                                <Icon name="file-document" size={28} color={colors.grey[600]} />
+                              </View>
+                              <View style={styles.bubbleDocInfo}>
+                                <Text style={styles.bubbleDocName} numberOfLines={1}>
+                                  {fileName || 'Document'}
+                                </Text>
+                                <Text style={styles.bubbleDocMeta}>Document</Text>
+                              </View>
+                              <Icon name="download" size={20} color={colors.grey[500]} />
+                            </View>
+                          )}
+
+                          {/* Caption/Message Text */}
+                          {message && (
+                            <Text style={[styles.bubbleText, messageType !== 'text' && { marginTop: 8 }]}>
+                              {message}
+                            </Text>
+                          )}
+
+                          {/* Time and Status */}
+                          <View style={styles.bubbleMetaContainer}>
+                            <Text style={styles.bubbleTimestamp}>
+                              {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Text>
+                            <Icon name="check-all" size={14} color={chatColors.tickBlue} />
+                          </View>
+                        </View>
+                      </View>
                     </View>
                   </View>
                 )}
@@ -1078,58 +1167,58 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
 
-  // Upload Button
+  // Upload Button - matching TemplatePreviewDialog style
   uploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.grey[50],
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.grey[200],
+    borderWidth: 2,
+    borderColor: chatColors.primary + '40',
     borderStyle: 'dashed',
-    gap: 14,
-  },
-  uploadIconContainer: {
-    width: 48,
-    height: 48,
     borderRadius: 12,
-    justifyContent: 'center',
+    padding: 24,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  uploadTextContainer: {
-    flex: 1,
+  uploadButtonIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: chatColors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
-  uploadButtonTitle: {
+  uploadButtonText: {
     fontSize: 15,
     fontWeight: '600',
     color: colors.text.primary,
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  uploadButtonHint: {
+  uploadButtonSubtext: {
     fontSize: 12,
-    color: colors.text.tertiary,
-    marginTop: 2,
+    color: colors.text.secondary,
+    textAlign: 'center',
   },
 
   // Uploaded Media Container - matches TemplatePreviewDialog
   uploadedMediaContainer: {
-    backgroundColor: colors.grey[50],
-    borderRadius: 12,
-    padding: 12,
     marginTop: 12,
   },
   uploadedMediaInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    backgroundColor: colors.grey[50],
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
   },
   mediaTypeIcon: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
     overflow: 'hidden',
   },
   mediaThumb: {
@@ -1139,37 +1228,170 @@ const styles = StyleSheet.create({
   },
   mediaFileInfo: {
     flex: 1,
+    marginRight: 12,
   },
   mediaFileName: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.text.primary,
+    marginBottom: 4,
   },
   mediaFileSize: {
     fontSize: 12,
-    color: colors.text.tertiary,
-    marginTop: 2,
+    color: colors.text.secondary,
   },
   removeMediaButton: {
-    padding: 4,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   replaceMediaButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    marginTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.grey[200],
+    backgroundColor: colors.common.white,
+    borderWidth: 1,
+    borderColor: chatColors.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  replaceMediaButtonDisabled: {
+    borderColor: colors.grey[300],
   },
   replaceMediaText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: chatColors.primary,
   },
   fileNameInputGroup: {
     marginTop: 16,
+  },
+
+  // Message Bubble Preview styles
+  previewSection: {
+    marginTop: 20,
+  },
+  previewSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  previewSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  chatBackground: {
+    backgroundColor: '#E8E2DB',
+    borderRadius: 12,
+    padding: 16,
+    minHeight: 100,
+  },
+  messageBubbleContainer: {
+    alignItems: 'flex-end',
+  },
+  messageBubble: {
+    backgroundColor: chatColors.bubbleOutgoing,
+    borderRadius: 12,
+    borderTopRightRadius: 4,
+    maxWidth: '85%',
+    minWidth: 120,
+    overflow: 'hidden',
+  },
+  bubbleImage: {
+    width: '100%',
+    height: 160,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 4,
+  },
+  bubbleVideoPlaceholder: {
+    width: '100%',
+    height: 120,
+    backgroundColor: colors.grey[800],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoPlaceholderText: {
+    color: colors.common.white,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  bubbleAudioPlaceholder: {
+    padding: 12,
+    backgroundColor: chatColors.bubbleOutgoing,
+  },
+  audioWaveform: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  audioWaveformBars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    flex: 1,
+  },
+  audioBar: {
+    width: 3,
+    backgroundColor: chatColors.primary,
+    borderRadius: 2,
+  },
+  audioFileName: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    marginTop: 6,
+  },
+  bubbleDocumentPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: colors.grey[100],
+    gap: 10,
+  },
+  bubbleDocIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.common.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bubbleDocInfo: {
+    flex: 1,
+  },
+  bubbleDocName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  bubbleDocMeta: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  bubbleText: {
+    fontSize: 14,
+    color: colors.text.primary,
+    lineHeight: 20,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  bubbleMetaContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 10,
+    paddingBottom: 6,
+    gap: 4,
+  },
+  bubbleTimestamp: {
+    fontSize: 11,
+    color: colors.text.secondary,
   },
 
   // Form Actions

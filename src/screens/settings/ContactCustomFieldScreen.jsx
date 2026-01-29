@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
   // Fields List
   fieldsList: {
     paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingBottom: 80,
   },
   separator: {
     height: 10,

@@ -1,8 +1,15 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
 import { APP_CONFIG } from '../config/app.config';
+
+// Notification preferences storage key
+const NOTIFICATION_PREFS_KEY = '@pabbly_notification_prefs';
+
+// Sound object reference for cleanup
+let notificationSound = null;
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -128,6 +135,127 @@ const sendTokenToServer = async (token) => {
 };
 
 /**
+ * Get notification preferences from storage
+ * @returns {Promise<Object>} Notification preferences
+ */
+export const getNotificationPreferences = async () => {
+  try {
+    const prefs = await AsyncStorage.getItem(NOTIFICATION_PREFS_KEY);
+    if (prefs) {
+      return JSON.parse(prefs);
+    }
+    // Default preferences
+    return {
+      notificationsEnabled: true,
+      soundEnabled: true,
+      vibrationEnabled: true,
+    };
+  } catch (error) {
+    console.error('Error getting notification preferences:', error);
+    return {
+      notificationsEnabled: true,
+      soundEnabled: true,
+      vibrationEnabled: true,
+    };
+  }
+};
+
+/**
+ * Play WhatsApp-like notification sound
+ * Uses a pleasant pop/chime sound similar to WhatsApp
+ */
+export const playNotificationSound = async () => {
+  try {
+    // Unload previous sound if exists
+    if (notificationSound) {
+      await notificationSound.unloadAsync();
+      notificationSound = null;
+    }
+
+    // Configure audio mode
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    });
+
+    // Load and play the notification sound
+    // Using a built-in system sound URI that works across platforms
+    const { sound } = await Audio.Sound.createAsync(
+      // WhatsApp-like notification sound - using a web URL for a pleasant pop sound
+      { uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' },
+      { shouldPlay: true, volume: 0.8 }
+    );
+
+    notificationSound = sound;
+
+    // Cleanup after sound finishes
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.didJustFinish) {
+        sound.unloadAsync();
+        notificationSound = null;
+      }
+    });
+  } catch (error) {
+    console.log('Error playing notification sound:', error);
+    // Fallback: try using system default
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/notification.mp3'),
+        { shouldPlay: true, volume: 0.8 }
+      );
+      notificationSound = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          sound.unloadAsync();
+          notificationSound = null;
+        }
+      });
+    } catch (fallbackError) {
+      console.log('Fallback sound also failed:', fallbackError);
+    }
+  }
+};
+
+/**
+ * Trigger vibration pattern similar to WhatsApp
+ */
+export const vibrateNotification = () => {
+  // WhatsApp-like vibration pattern: short buzz, pause, short buzz
+  const pattern = Platform.OS === 'android'
+    ? [0, 100, 50, 100] // Android: delay, vibrate, pause, vibrate
+    : [100, 100]; // iOS: simplified pattern
+
+  Vibration.vibrate(pattern);
+};
+
+/**
+ * Play sound and vibrate based on user preferences
+ */
+export const triggerNotificationFeedback = async () => {
+  try {
+    const prefs = await getNotificationPreferences();
+
+    if (!prefs.notificationsEnabled) {
+      return; // Notifications disabled, do nothing
+    }
+
+    // Play sound if enabled
+    if (prefs.soundEnabled) {
+      await playNotificationSound();
+    }
+
+    // Vibrate if enabled
+    if (prefs.vibrationEnabled) {
+      vibrateNotification();
+    }
+  } catch (error) {
+    console.error('Error triggering notification feedback:', error);
+  }
+};
+
+/**
  * Show a local notification for a new message
  * @param {Object} message - Message object
  * @param {Object} contact - Contact object
@@ -135,6 +263,16 @@ const sendTokenToServer = async (token) => {
  */
 export const showMessageNotification = async (message, contact, chatId) => {
   try {
+    // Check if notifications are enabled
+    const prefs = await getNotificationPreferences();
+    if (!prefs.notificationsEnabled) {
+      console.log('Notifications disabled by user preference');
+      return;
+    }
+
+    // Trigger sound and vibration feedback
+    await triggerNotificationFeedback();
+
     const contactName = contact?.name || contact?.phoneNumber || 'Unknown';
     let messageText = 'New message';
 
@@ -258,4 +396,8 @@ export default {
   addNotificationResponseListener,
   addNotificationReceivedListener,
   getLastNotificationResponse,
+  getNotificationPreferences,
+  playNotificationSound,
+  vibrateNotification,
+  triggerNotificationFeedback,
 };

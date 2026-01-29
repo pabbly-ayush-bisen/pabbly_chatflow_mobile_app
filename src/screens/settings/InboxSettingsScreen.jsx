@@ -1223,6 +1223,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 80,
   },
   loadingBox: {
     flex: 1,

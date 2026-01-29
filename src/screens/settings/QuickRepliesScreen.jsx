@@ -316,16 +316,18 @@ export default function QuickRepliesScreen() {
 
   const handleSaveEditReply = async (replyData) => {
     try {
+      // Match web app format: include _id in data item, don't pass settingId at top level
       const data = {
         key: 'quickReplies',
-        settingId: replyData._id,
         data: [{
+          _id: replyData._id,
           shortcut: replyData.shortcut,
           type: replyData.type,
           message: replyData.message,
           ...(replyData.headerFileURL && { headerFileURL: replyData.headerFileURL }),
           ...(replyData.fileName && { fileName: replyData.fileName }),
         }],
+        shouldUpdate: true,
       };
 
       await dispatch(updateSettings(data)).unwrap();
@@ -508,6 +510,9 @@ export default function QuickRepliesScreen() {
 
     const typeConfig = getTypeConfig(previewReply.type);
     const time = formatTime();
+    const createdDate = formatDate(previewReply.createdAt);
+    const updatedDate = formatDate(previewReply.updatedAt);
+    const messageLength = previewReply.message?.length || 0;
 
     return (
       <Modal
@@ -531,10 +536,10 @@ export default function QuickRepliesScreen() {
                 <Icon name={typeConfig.icon} size={24} color={typeConfig.color} />
               </View>
               <View style={styles.previewHeaderInfo}>
-                <Text style={styles.previewHeaderTitle}>Quick Reply Preview</Text>
-                <View style={styles.previewShortcutRow}>
-                  <Text style={styles.previewShortcutLabel}>Shortcut:</Text>
-                  <Text style={styles.previewShortcutValue} numberOfLines={1}>/{previewReply.shortcut}</Text>
+                <Text style={styles.previewHeaderTitle}>Quick Reply Details</Text>
+                <View style={[styles.typeBadge, { backgroundColor: typeConfig.bg, alignSelf: 'flex-start', marginTop: 4 }]}>
+                  <Icon name={typeConfig.icon} size={12} color={typeConfig.color} />
+                  <Text style={[styles.typeText, { color: typeConfig.color }]}>{typeConfig.label}</Text>
                 </View>
               </View>
             </View>
@@ -552,6 +557,81 @@ export default function QuickRepliesScreen() {
             contentContainerStyle={styles.previewScrollContent}
             showsVerticalScrollIndicator={false}
           >
+            {/* Quick Reply Info Card */}
+            <View style={styles.previewInfoCard}>
+              {/* Shortcut - Prominent Display */}
+              <View style={styles.previewShortcutCard}>
+                <View style={styles.previewShortcutIconContainer}>
+                  <Icon name="lightning-bolt" size={20} color={colors.primary.main} />
+                </View>
+                <View style={styles.previewShortcutContent}>
+                  <Text style={styles.previewShortcutTitle}>Shortcut Command</Text>
+                  <Text style={styles.previewShortcutCommand} numberOfLines={1}>/{previewReply.shortcut}</Text>
+                </View>
+              </View>
+
+              {/* Info Grid */}
+              <View style={styles.previewInfoGrid}>
+                {/* Created Date */}
+                {createdDate && (
+                  <View style={styles.previewInfoItem}>
+                    <View style={styles.previewInfoIconWrapper}>
+                      <Icon name="calendar-plus" size={16} color={colors.success.main} />
+                    </View>
+                    <View style={styles.previewInfoContent}>
+                      <Text style={styles.previewInfoLabel}>Created</Text>
+                      <Text style={styles.previewInfoValue}>{createdDate}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Updated Date */}
+                {updatedDate && updatedDate !== createdDate && (
+                  <View style={styles.previewInfoItem}>
+                    <View style={styles.previewInfoIconWrapper}>
+                      <Icon name="calendar-edit" size={16} color={colors.warning.main} />
+                    </View>
+                    <View style={styles.previewInfoContent}>
+                      <Text style={styles.previewInfoLabel}>Updated</Text>
+                      <Text style={styles.previewInfoValue}>{updatedDate}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Created By */}
+                {previewReply.createdBy && (
+                  <View style={styles.previewInfoItem}>
+                    <View style={styles.previewInfoIconWrapper}>
+                      <Icon name="account" size={16} color={colors.info.main} />
+                    </View>
+                    <View style={styles.previewInfoContent}>
+                      <Text style={styles.previewInfoLabel}>Created By</Text>
+                      <Text style={styles.previewInfoValue} numberOfLines={1}>{previewReply.createdBy}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Has Media */}
+                {previewReply.type !== 'text' && previewReply.headerFileURL && (
+                  <View style={styles.previewInfoItem}>
+                    <View style={styles.previewInfoIconWrapper}>
+                      <Icon name="attachment" size={16} color={colors.secondary.main} />
+                    </View>
+                    <View style={styles.previewInfoContent}>
+                      <Text style={styles.previewInfoLabel}>Media</Text>
+                      <Text style={styles.previewInfoValue}>Attached</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* Section Title */}
+            <View style={styles.previewSectionHeader}>
+              <Icon name="message-text-outline" size={16} color={colors.text.secondary} />
+              <Text style={styles.previewSectionTitle}>Message Preview</Text>
+            </View>
+
             {/* Chat Background */}
             <View style={styles.chatBackground}>
               {/* Message Type Label */}
@@ -617,12 +697,15 @@ export default function QuickRepliesScreen() {
                     </TouchableOpacity>
                   )}
 
-                  {/* Text Message */}
+                  {/* Text Message - Show truncated in bubble */}
                   {(previewReply.type === 'text' || previewReply.message) && (
-                    <Text style={[
-                      styles.bubbleText,
-                      (previewReply.type !== 'text' && previewReply.headerFileURL) && { marginTop: 8 }
-                    ]}>
+                    <Text
+                      style={[
+                        styles.bubbleText,
+                        (previewReply.type !== 'text' && previewReply.headerFileURL) && { marginTop: 8 }
+                      ]}
+                      numberOfLines={6}
+                    >
                       {previewReply.message || (previewReply.type === 'text' ? 'No message content' : '')}
                     </Text>
                   )}
@@ -643,6 +726,21 @@ export default function QuickRepliesScreen() {
                 </View>
               </View>
             </View>
+
+            {/* Full Message Content - Show complete text for long messages */}
+            {previewReply.message && messageLength > 100 && (
+              <>
+                <View style={[styles.previewSectionHeader, { marginTop: 20 }]}>
+                  <Icon name="text-box-outline" size={16} color={colors.text.secondary} />
+                  <Text style={styles.previewSectionTitle}>Full Message Content</Text>
+                </View>
+                <View style={styles.fullMessageContainer}>
+                  <Text style={styles.fullMessageText} selectable>
+                    {previewReply.message}
+                  </Text>
+                </View>
+              </>
+            )}
           </ScrollView>
 
           {/* Actions */}
@@ -901,7 +999,7 @@ const styles = StyleSheet.create({
   // List
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 100,
+    paddingBottom: 80,
     flexGrow: 1,
   },
   separator: {
@@ -1155,7 +1253,7 @@ const styles = StyleSheet.create({
   },
   previewScrollView: {
     flexGrow: 1,
-    maxHeight: SCREEN_HEIGHT * 0.5,
+    flexShrink: 1,
   },
   previewScrollContent: {
     paddingHorizontal: 16,
@@ -1163,12 +1261,120 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
 
+  // Preview Info Card
+  previewInfoCard: {
+    backgroundColor: colors.common.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  previewShortcutCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.lighter,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  previewShortcutIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: colors.common.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  previewShortcutContent: {
+    flex: 1,
+  },
+  previewShortcutTitle: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.primary.dark,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  previewShortcutCommand: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary.darker,
+  },
+  previewInfoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -6,
+  },
+  previewInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '50%',
+    paddingHorizontal: 6,
+    marginBottom: 12,
+  },
+  previewInfoIconWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: colors.grey[50],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  previewInfoContent: {
+    flex: 1,
+  },
+  previewInfoLabel: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+    marginBottom: 1,
+  },
+  previewInfoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  previewSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 6,
+  },
+  previewSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  // Full Message Content
+  fullMessageContainer: {
+    backgroundColor: colors.common.white,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+  },
+  fullMessageText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.text.primary,
+  },
+
   // Chat Background (WhatsApp style)
   chatBackground: {
     backgroundColor: chatColors.chatBg,
     borderRadius: 12,
     padding: 16,
-    minHeight: 150,
   },
   messageTypeLabel: {
     fontSize: 11,

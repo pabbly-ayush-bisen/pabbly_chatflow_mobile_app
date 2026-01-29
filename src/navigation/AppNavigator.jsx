@@ -1,5 +1,6 @@
-import React, { useRef, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { getLastNotificationResponse } from '../services/notificationService';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -7,7 +8,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createDrawerNavigator, DrawerContentScrollView } from '@react-navigation/drawer';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
-import { Text, Divider, Avatar } from 'react-native-paper';
+import { Text, Divider } from 'react-native-paper';
 import { colors } from '../theme';
 import { logout } from '../redux/slices/userSlice';
 
@@ -32,6 +33,10 @@ import ContactCustomFieldScreen from '../screens/settings/ContactCustomFieldScre
 import TagsScreen from '../screens/settings/TagsScreen';
 import QuickRepliesScreen from '../screens/settings/QuickRepliesScreen';
 import TeamMemberScreen from '../screens/settings/TeamMemberScreen';
+import ChatRulesScreen from '../screens/settings/ChatRulesScreen';
+import ConfigureSLAScreen from '../screens/settings/ConfigureSLAScreen';
+import TimeZoneScreen from '../screens/settings/TimeZoneScreen';
+import MyAccountScreen from '../screens/settings/MyAccountScreen';
 
 // Auth screens
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -54,17 +59,23 @@ const MoreStack = createStackNavigator();
 // Custom Drawer Content
 function CustomDrawerContent(props) {
   const dispatch = useDispatch();
-  const { user } = useSelector((state) => state.user);
   const { navigation } = props;
+  const [showWebFeatures, setShowWebFeatures] = useState(false);
+  const { teamMemberStatus } = useSelector((state) => state.user);
+  const isTeamMemberLoggedIn = !!teamMemberStatus?.loggedIn;
 
-  const getInitials = (name) => {
-    if (!name) return 'U';
-    const parts = name.trim().split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
-  };
+  // Web-only features with correct sequence
+  // Some features are hidden for team members
+  const webOnlyFeatures = [
+    { title: 'Team Queue', description: 'Manage team chat queues', icon: 'account-multiple-outline', showForTeamMember: true },
+    { title: 'Explore Template', description: 'Browse template gallery', icon: 'file-search-outline', showForTeamMember: true },
+    { title: 'Broadcast', description: 'Send bulk messages to contacts', icon: 'bullhorn-outline', showForTeamMember: true },
+    { title: 'Flow', description: 'Create automated workflows', icon: 'sitemap-outline', showForTeamMember: true },
+    { title: 'Catalog', description: 'Manage product catalogs', icon: 'shopping-outline', showForTeamMember: true },
+    { title: 'Activity Log', description: 'View system activity', icon: 'history', showForTeamMember: false },
+    { title: 'WhatsApp Payment API', description: 'Payment integration settings', icon: 'credit-card-outline', showForTeamMember: true },
+    { title: 'Webhook', description: 'Configure webhooks', icon: 'webhook', showForTeamMember: false },
+  ].filter(feature => isTeamMemberLoggedIn ? feature.showForTeamMember : true);
 
   const handleLogout = async () => {
     try {
@@ -75,19 +86,6 @@ function CustomDrawerContent(props) {
   };
 
   const menuItems = [
-    {
-      title: 'Broadcast',
-      description: 'Send messages to multiple contacts',
-      icon: 'bullhorn-outline',
-      onPress: () => {
-        navigation.closeDrawer();
-        navigation.navigate('MainTabs', {
-          screen: 'MoreTab',
-          params: { screen: 'Broadcast' },
-        });
-      },
-      color: colors.warning.main,
-    },
     {
       title: 'AI Assistant',
       description: 'Manage AI assistants',
@@ -130,62 +128,91 @@ function CustomDrawerContent(props) {
   ];
 
   return (
-    <DrawerContentScrollView {...props} contentContainerStyle={styles.drawerContent}>
-      {/* User Profile Section */}
-      <View style={styles.drawerHeader}>
-        <View style={styles.drawerLogoRow}>
-          <ChatflowLogo width={140} showText={true} showIcon={true} />
+    <SafeAreaView style={styles.drawerContainer} edges={['top']}>
+      {/* Fixed Header - Logo Only */}
+      <View style={styles.drawerFixedHeader}>
+        {/* Logo Section */}
+        <View style={styles.drawerLogoContainer}>
+          <ChatflowLogo width={130} showText={true} showIcon={true} />
         </View>
-        <View style={styles.drawerUserSection}>
-          {user?.profilePicture ? (
-            <Avatar.Image size={56} source={{ uri: user.profilePicture }} />
-          ) : (
-            <Avatar.Text
-              size={56}
-              label={getInitials(user?.name || user?.email)}
-              style={styles.drawerAvatar}
-              labelStyle={styles.drawerAvatarLabel}
-            />
-          )}
-          <View style={styles.drawerUserInfo}>
-            <Text style={styles.drawerUserName} numberOfLines={1}>
-              {user?.name || 'User'}
-            </Text>
-            <Text style={styles.drawerUserEmail} numberOfLines={1}>
-              {user?.email || ''}
-            </Text>
-          </View>
-        </View>
+        <Divider style={styles.drawerDivider} />
       </View>
 
-      <Divider style={styles.drawerDivider} />
+      {/* Scrollable Content - Menu Items & Available on Web */}
+      <ScrollView
+        style={styles.drawerScrollView}
+        contentContainerStyle={styles.drawerScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Menu Items */}
+        <View style={styles.drawerMenuContainer}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.drawerMenuItem}
+              onPress={item.onPress}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.drawerMenuIconBox, { backgroundColor: item.color + '15' }]}>
+                <Icon name={item.icon} size={22} color={item.color} />
+              </View>
+              <View style={styles.drawerMenuTextContainer}>
+                <Text style={styles.drawerMenuTitle}>{item.title}</Text>
+                <Text style={styles.drawerMenuDescription}>{item.description}</Text>
+              </View>
+              <Icon name="chevron-right" size={20} color={colors.grey[400]} />
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      {/* Menu Items */}
-      <View style={styles.drawerMenuContainer}>
-        {menuItems.map((item, index) => (
+        {/* Available on Web Section - No Card, Aligned with menu items */}
+        <View style={styles.drawerMenuContainer}>
           <TouchableOpacity
-            key={index}
             style={styles.drawerMenuItem}
-            onPress={item.onPress}
+            onPress={() => setShowWebFeatures(!showWebFeatures)}
             activeOpacity={0.7}
           >
-            <View style={[styles.drawerMenuIconBox, { backgroundColor: item.color + '15' }]}>
-              <Icon name={item.icon} size={22} color={item.color} />
+            <View style={[styles.drawerMenuIconBox, { backgroundColor: colors.info.main + '15' }]}>
+              <Icon name="monitor" size={22} color={colors.info.main} />
             </View>
             <View style={styles.drawerMenuTextContainer}>
-              <Text style={styles.drawerMenuTitle}>{item.title}</Text>
-              <Text style={styles.drawerMenuDescription}>{item.description}</Text>
+              <Text style={styles.drawerMenuTitle}>Available on Web</Text>
+              <Text style={styles.drawerMenuDescription}>Features only on web dashboard</Text>
             </View>
-            <Icon name="chevron-right" size={20} color={colors.grey[400]} />
+            <Icon
+              name={showWebFeatures ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color={colors.grey[400]}
+            />
           </TouchableOpacity>
-        ))}
-      </View>
 
-      {/* Spacer */}
-      <View style={styles.drawerSpacer} />
+          {showWebFeatures && (
+            <View style={styles.webFeaturesExpanded}>
+              {webOnlyFeatures.map((feature, index) => (
+                <View key={index} style={styles.webFeatureRow}>
+                  <View style={styles.webFeatureIconSmall}>
+                    <Icon name={feature.icon} size={18} color={colors.grey[400]} />
+                  </View>
+                  <View style={styles.webFeatureContent}>
+                    <Text style={styles.webFeatureName}>{feature.title}</Text>
+                    <Text style={styles.webFeatureDesc}>{feature.description}</Text>
+                  </View>
+                  <View style={styles.webBadge}>
+                    <Text style={styles.webBadgeText}>Web</Text>
+                  </View>
+                </View>
+              ))}
+              <View style={styles.webNoteInline}>
+                <Icon name="information-outline" size={14} color={colors.info.main} />
+                <Text style={styles.webNoteText}>Visit app.pabbly.com for full access</Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
 
-      {/* Logout Button */}
-      <View style={styles.drawerFooter}>
+      {/* Fixed Footer - Logout */}
+      <SafeAreaView edges={['bottom']} style={styles.drawerFixedFooter}>
         <Divider style={styles.drawerDivider} />
         <TouchableOpacity
           style={styles.logoutButton}
@@ -197,8 +224,8 @@ function CustomDrawerContent(props) {
           </View>
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
-      </View>
-    </DrawerContentScrollView>
+      </SafeAreaView>
+    </SafeAreaView>
   );
 }
 
@@ -232,11 +259,103 @@ function ContactsWithHeader() {
   );
 }
 
-// Custom Tab Bar Icon component
-const TabIcon = ({ name, focused, color }) => {
+// Modern Colorful Tab Bar Component
+const CustomTabBar = ({ state, descriptors, navigation }) => {
+  const insets = useSafeAreaInsets();
+
+  // Tab configuration with colorful icons
+  const tabConfig = {
+    DashboardTab: {
+      icon: 'home',
+      iconOutline: 'home-outline',
+      label: 'Home',
+      color: '#6366F1', // Indigo
+      bgColor: '#EEF2FF',
+    },
+    InboxTab: {
+      icon: 'chat',
+      iconOutline: 'chat-outline',
+      label: 'Inbox',
+      color: '#10B981', // Emerald
+      bgColor: '#ECFDF5',
+    },
+    ContactsTab: {
+      icon: 'account-group',
+      iconOutline: 'account-group-outline',
+      label: 'Contacts',
+      color: '#F59E0B', // Amber
+      bgColor: '#FEF3C7',
+    },
+    TemplatesTab: {
+      icon: 'file-document',
+      iconOutline: 'file-document-outline',
+      label: 'Templates',
+      color: '#8B5CF6', // Violet
+      bgColor: '#F3E8FF',
+    },
+    MoreTab: {
+      icon: 'dots-horizontal-circle',
+      iconOutline: 'dots-horizontal-circle-outline',
+      label: 'More',
+      color: '#64748B', // Slate
+      bgColor: '#F1F5F9',
+    },
+  };
+
   return (
-    <View style={[styles.tabIconContainer, focused && styles.tabIconContainerActive]}>
-      <Icon name={name} size={24} color={color} />
+    <View style={[
+      styles.tabBarWrapper,
+      { paddingBottom: Platform.OS === 'ios' ? insets.bottom : 8 }
+    ]}>
+      <View style={styles.tabBarContainer}>
+        {state.routes.map((route, index) => {
+          const { options } = descriptors[route.key];
+          const config = tabConfig[route.name] || {};
+          const label = config.label || options.tabBarLabel || route.name;
+          const isFocused = state.index === index;
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
+              onPress={onPress}
+              style={styles.tabItem}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.tabIconWrapper,
+                isFocused && { backgroundColor: config.bgColor }
+              ]}>
+                <Icon
+                  name={isFocused ? config.icon : config.iconOutline}
+                  size={26}
+                  color={isFocused ? config.color : '#9CA3AF'}
+                />
+              </View>
+              <Text style={[
+                styles.tabLabel,
+                isFocused && { color: config.color, fontWeight: '600' }
+              ]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 };
@@ -383,56 +502,38 @@ function MoreStackNavigator() {
         component={TeamMemberScreen}
         options={({ navigation }) => getChildScreenOptions(navigation, 'Team Members')}
       />
+      <MoreStack.Screen
+        name="ChatRules"
+        component={ChatRulesScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'Chat Rules')}
+      />
+      <MoreStack.Screen
+        name="ConfigureSLA"
+        component={ConfigureSLAScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'Configure SLA')}
+      />
+      <MoreStack.Screen
+        name="TimeZone"
+        component={TimeZoneScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'Time Zone')}
+      />
+      <MoreStack.Screen
+        name="MyAccount"
+        component={MyAccountScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'My Account')}
+      />
     </MoreStack.Navigator>
   );
 }
 
-// Bottom Tab Navigator for main app - tabs visible on all screens
+// Bottom Tab Navigator for main app - modern floating tab bar
 function MainTabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color }) => {
-          let iconName;
-
-          if (route.name === 'DashboardTab') {
-            iconName = focused ? 'view-dashboard' : 'view-dashboard-outline';
-          } else if (route.name === 'InboxTab') {
-            iconName = focused ? 'message' : 'message-outline';
-          } else if (route.name === 'ContactsTab') {
-            iconName = focused ? 'account-group' : 'account-group-outline';
-          } else if (route.name === 'TemplatesTab') {
-            iconName = focused ? 'file-document' : 'file-document-outline';
-          } else if (route.name === 'MoreTab') {
-            iconName = focused ? 'dots-horizontal-circle' : 'dots-horizontal-circle-outline';
-          }
-
-          return <TabIcon name={iconName} focused={focused} color={color} />;
-        },
-        tabBarActiveTintColor: colors.primary.main,
-        tabBarInactiveTintColor: colors.grey[500],
-        tabBarStyle: {
-          backgroundColor: colors.common.white,
-          borderTopWidth: 0,
-          height: 70,
-          paddingBottom: 12,
-          paddingTop: 8,
-          shadowColor: colors.common.black,
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.06,
-          shadowRadius: 12,
-          elevation: 10,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-          marginTop: 4,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 4,
-        },
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
         headerShown: false,
-      })}
+      }}
     >
       <Tab.Screen
         name="DashboardTab"
@@ -469,6 +570,12 @@ function MainTabs() {
         options={{
           tabBarLabel: 'More',
         }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            // Reset the MoreTab stack to its initial screen when tab is pressed
+            navigation.navigate('MoreTab', { screen: 'MoreMain' });
+          },
+        })}
       />
     </Tab.Navigator>
   );
@@ -595,15 +702,49 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  tabIconContainer: {
-    width: 40,
-    height: 32,
+  // Modern Colorful Tab Bar
+  tabBarWrapper: {
+    position: 'absolute',
+    bottom: -30,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  tabBarContainer: {
+    flexDirection: 'row',
+    paddingTop: 8,
+    paddingHorizontal: 15,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  tabIconWrapper: {
+    width: 56,
+    height: 36,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
+    marginBottom: 2,
   },
-  tabIconContainerActive: {
-    backgroundColor: colors.primary.lighter,
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  tabLabelActive: {
+    fontWeight: '600',
   },
   // Back Button Style
   backButton: {
@@ -612,55 +753,39 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   // Drawer Styles
-  drawerContent: {
+  drawerContainer: {
+    flex: 1,
+    backgroundColor: colors.common.white,
+  },
+  drawerFixedHeader: {
+    backgroundColor: colors.common.white,
+  },
+  drawerScrollView: {
     flex: 1,
   },
-  drawerHeader: {
-    padding: 20,
-    paddingTop: 16,
+  drawerScrollContent: {
+    paddingBottom: 10,
   },
-  drawerLogoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
+  drawerFixedFooter: {
+    backgroundColor: colors.common.white,
   },
-  drawerUserSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  drawerAvatar: {
-    backgroundColor: colors.primary.main,
-  },
-  drawerAvatarLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  drawerUserInfo: {
-    flex: 1,
-  },
-  drawerUserName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text.primary,
-    marginBottom: 2,
-  },
-  drawerUserEmail: {
-    fontSize: 13,
-    color: colors.text.secondary,
+  drawerLogoContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
   drawerDivider: {
     backgroundColor: colors.grey[200],
     marginHorizontal: 16,
   },
   drawerMenuContainer: {
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 16,
   },
   drawerMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 4,
     gap: 12,
   },
@@ -684,11 +809,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.secondary,
   },
-  drawerSpacer: {
+  // Web Features Expanded (minimal indentation)
+  webFeaturesExpanded: {
+    marginLeft: 20,
+    paddingRight: 4,
+    paddingTop: 4,
+  },
+  webFeatureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 10,
+  },
+  webFeatureIconSmall: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: colors.grey[50],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  webFeatureContent: {
     flex: 1,
   },
-  drawerFooter: {
-    paddingBottom: 20,
+  webFeatureName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  webFeatureDesc: {
+    fontSize: 10,
+    color: colors.text.tertiary,
+    marginTop: 1,
+  },
+  webBadge: {
+    backgroundColor: colors.grey[100],
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  webBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.text.tertiary,
+  },
+  webNoteInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingTop: 4,
+    gap: 6,
+  },
+  webNoteText: {
+    fontSize: 11,
+    color: colors.info.main,
   },
   logoutButton: {
     flexDirection: 'row',
@@ -696,7 +870,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 20,
     gap: 12,
-    marginTop: 12,
+    marginTop: 8,
   },
   logoutText: {
     fontSize: 15,

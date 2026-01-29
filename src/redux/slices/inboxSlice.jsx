@@ -103,12 +103,101 @@ export const fetchChats = createAsyncThunk(
   'inbox/fetchChats',
   async (params = {}, { rejectWithValue }) => {
     try {
-      const response = await callApi(endpoints.inbox.getChats, httpMethods.GET, params);
+      const { all: fetchAll, filter } = params;
+      let allChats = [];
+      let lastChatUpdatedAt = null;
+      let hasMore = true;
+      let pageCount = 0;
+      const maxPages = 50; // Safety limit to prevent infinite loops
+
+      console.log('[fetchChats] Starting fetch with params:', JSON.stringify(params));
+
+      // If all: true, we need to paginate through ALL pages
+      if (fetchAll === true) {
+        while (hasMore && pageCount < maxPages) {
+          pageCount++;
+          const requestParams = {};
+
+          // Add filter if specified
+          if (filter && filter !== 'all') {
+            requestParams.filter = filter;
+          }
+
+          // Add pagination cursor for subsequent pages
+          if (lastChatUpdatedAt) {
+            requestParams.lastChatUpdatedAt = lastChatUpdatedAt;
+          }
+
+          console.log(`[fetchChats] Page ${pageCount} - Request params:`, JSON.stringify(requestParams));
+
+          const response = await callApi(endpoints.inbox.getChats, httpMethods.GET, requestParams);
+
+          if (response.status === 'error') {
+            console.error('[fetchChats] API Error:', response.message);
+            return rejectWithValue(response.message || 'Failed to fetch chats');
+          }
+
+          // Extract chats from response
+          const rawChats = response.data?.chats || response.chats || response._raw?.chats || [];
+          console.log(`[fetchChats] Page ${pageCount} - Received ${rawChats.length} chats`);
+
+          if (rawChats.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          // Append chats to our collection
+          allChats = [...allChats, ...rawChats];
+
+          // Check if there are more chats to fetch
+          hasMore = response.data?.hasMoreChats || response.hasMoreChats || response._raw?.hasMoreChats || false;
+
+          // Get the oldest chat's updatedAt for next page cursor
+          if (hasMore && rawChats.length > 0) {
+            const lastChat = rawChats[rawChats.length - 1];
+            lastChatUpdatedAt = lastChat.updatedAt || lastChat.lastMessageAt || lastChat.createdAt;
+          }
+
+          console.log(`[fetchChats] Page ${pageCount} - hasMoreChats: ${hasMore}, nextCursor: ${lastChatUpdatedAt}`);
+        }
+
+        // Deduplicate chats by _id to prevent duplicate key errors in FlatList
+        const uniqueChatsMap = new Map();
+        allChats.forEach(chat => {
+          if (chat._id && !uniqueChatsMap.has(chat._id)) {
+            uniqueChatsMap.set(chat._id, chat);
+          }
+        });
+        const uniqueChats = Array.from(uniqueChatsMap.values());
+
+        console.log(`[fetchChats] Completed! Total chats fetched: ${allChats.length}, unique: ${uniqueChats.length} across ${pageCount} pages`);
+
+        // Return all chats in the expected format
+        return {
+          status: 'success',
+          chats: uniqueChats,
+          data: { chats: uniqueChats },
+          hasMoreChats: false, // We've fetched everything
+          _raw: { chats: uniqueChats, hasMoreChats: false },
+        };
+      }
+
+      // Regular single-page fetch (for manual pagination if needed)
+      const requestParams = { ...params };
+      delete requestParams.all;
+
+      const response = await callApi(endpoints.inbox.getChats, httpMethods.GET, requestParams);
+
       if (response.status === 'error') {
         return rejectWithValue(response.message || 'Failed to fetch chats');
       }
+
+      const rawChats = response.data?.chats || response.chats || response._raw?.chats || [];
+      console.log('[fetchChats] Single page fetch - Received:', rawChats.length, 'chats');
+
       return response;
     } catch (error) {
+      console.error('[fetchChats] Exception:', error.message);
       return rejectWithValue(error.message);
     }
   }
@@ -248,17 +337,18 @@ export const updateContactChat = createAsyncThunk(
 );
 
 // Toggle AI Assistant for a chat
+// Uses the same endpoint as web app: aiassistants/toggle-chat-assistant
 export const toggleAiAssistant = createAsyncThunk(
   'inbox/toggleAiAssistant',
   async ({ chatId, assistantId, isActive }, { rejectWithValue }) => {
     try {
-      const url = `${endpoints.inbox.toggleAiAssistant || '/chat/ai-assistant'}`;
+      const url = endpoints.assistants.toggleAiAssistant;
       const response = await callApi(url, httpMethods.POST, {
         chatId,
         assistantId,
         isActive,
       });
-      if (response.status !== 'success' && response.status === 'error') {
+      if (response.status === 'error') {
         return rejectWithValue(response.message || 'Failed to toggle AI Assistant');
       }
       return { chatId, isActive, response };
@@ -884,15 +974,21 @@ const inboxSlice = createSlice({
       })
       .addCase(fetchChats.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        const data = action.payload.data || action.payload;
+        const payload = action.payload || {};
+        // API can return chats in different locations:
+        // 1. payload.data.chats (nested in data object)
+        // 2. payload.chats (top-level from callApi)
+        // 3. payload._raw.chats (raw response fallback)
+        const rawChats = payload.data?.chats || payload.chats || payload._raw?.chats || [];
+
         // Sort chats by latest activity (lastMessage timestamp or updatedAt)
-        const chats = (data.chats || []).map(normalizeChatForList);
+        const chats = rawChats.map(normalizeChatForList);
         state.chats = chats.sort((a, b) => {
           const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
           const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
           return bTime - aTime; // Descending order (newest first)
         });
-        state.hasMoreChats = data.hasMoreChats || false;
+        state.hasMoreChats = payload.data?.hasMoreChats || payload.hasMoreChats || payload._raw?.hasMoreChats || false;
       })
       .addCase(fetchChats.rejected, (state, action) => {
         state.status = 'failed';
@@ -1169,14 +1265,16 @@ const inboxSlice = createSlice({
       })
       .addCase(fetchMoreChats.fulfilled, (state, action) => {
         state.isLoadingMore = false;
-        const data = action.payload.data || action.payload;
-        const newChats = (data.chats || []).map(normalizeChatForList);
+        const payload = action.payload || {};
+        // API can return chats in different locations (same as fetchChats)
+        const rawChats = payload.data?.chats || payload.chats || payload._raw?.chats || [];
+        const newChats = rawChats.map(normalizeChatForList);
         // Append new chats, avoiding duplicates
         const existingIds = new Set(state.chats.map(c => c._id));
         const uniqueNewChats = newChats.filter(c => !existingIds.has(c._id));
         state.chats = [...state.chats, ...uniqueNewChats];
-        state.hasMoreChats = data.hasMoreChats || false;
-        state.paginationCursor = data.cursor || null;
+        state.hasMoreChats = payload.data?.hasMoreChats || payload.hasMoreChats || payload._raw?.hasMoreChats || false;
+        state.paginationCursor = payload.data?.cursor || payload.cursor || payload._raw?.cursor || null;
       })
       .addCase(fetchMoreChats.rejected, (state, action) => {
         state.isLoadingMore = false;

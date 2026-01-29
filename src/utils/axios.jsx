@@ -45,16 +45,36 @@ axiosInstance.interceptors.request.use(
 );
 
 // Response interceptor
+// IMPORTANT: Only clear session on explicit 401 Unauthorized with session-related messages
+// Do NOT clear on 400 errors or network errors - this would log out users incorrectly
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401 || error.response?.status === 400) {
-      // Clear storage on unauthorized
-      await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
-      await AsyncStorage.removeItem(APP_CONFIG.userKey);
-      await AsyncStorage.removeItem('settingId');
-      // Navigation will be handled by the app
+    const status = error.response?.status;
+
+    // Only handle 401 Unauthorized - this means the session might be invalid
+    if (status === 401) {
+      const errorMessage = (error.response?.data?.message || '').toLowerCase();
+
+      // Check if this is a genuine session invalidation
+      // (not just a permission error on a specific resource)
+      const sessionInvalidKeywords = ['session', 'token', 'unauthorized', 'authentication', 'login', 'expired'];
+      const isSessionInvalid = sessionInvalidKeywords.some((keyword) => errorMessage.includes(keyword));
+
+      if (isSessionInvalid) {
+        console.log('[Axios] Session invalidated by server:', error.response?.data?.message);
+        // Clear storage only for genuine session invalidation
+        await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
+        await AsyncStorage.removeItem(APP_CONFIG.userKey);
+        await AsyncStorage.removeItem('settingId');
+        await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
+      } else {
+        console.log('[Axios] 401 error but not session related:', error.response?.data?.message);
+      }
     }
+    // Note: 400 errors are NOT session related - don't clear storage
+    // Network errors (no response) should NOT logout the user - they might be offline
+
     return Promise.reject(error);
   }
 );
@@ -113,14 +133,26 @@ export async function callApi(url, method, data = {}, customHeaders = {}) {
 
     // Return in frontend-compatible format
     // Frontend expects: { status: 'success', data: {...}, statusCode }
-    // API response structure: { data: { data: {...}, message, status }, status: 200 }
-    // We want to return: { status, data: <actual data>, statusCode }
+    // API response structure varies:
+    //   - Some endpoints: { status, data: { ... }, message }
+    //   - Some endpoints: { status, assistants: [...], pagination: {...} }
+    //   - Some endpoints: { status, chats: [...], hasMoreChats: boolean }
+    // We return both nested data AND top-level fields to handle all cases
+    const responseBody = response.data || {};
     return {
-      status: response.data?.status || 'success',
-      data: response.data?.data,  // Extract the nested data
-      message: response.data?.message,
+      status: responseBody.status || 'success',
+      data: responseBody.data,  // Nested data if present
+      // Also spread top-level fields for endpoints that don't nest in 'data'
+      assistants: responseBody.assistants,
+      pagination: responseBody.pagination,
+      message: responseBody.message,
+      // Chat list endpoints return chats at top level
+      chats: responseBody.chats,
+      hasMoreChats: responseBody.hasMoreChats,
       statusCode: response.status,
       success: true,
+      // Include raw response for debugging
+      _raw: responseBody,
     };
   } catch (error) {
     // Enhanced error logging
@@ -245,6 +277,7 @@ export const endpoints = {
     updateAssistant: 'aiassistants',
     getAssistants: 'aiassistants',
     toggleStatus: 'aiassistants/toggle-status',
+    toggleAiAssistant: 'aiassistants/toggle-chat-assistant',
     renameAssistant: 'aiassistants/rename',
     deleteAssistant: 'aiassistants',
     getAssistantStats: 'aiassistants/stats',

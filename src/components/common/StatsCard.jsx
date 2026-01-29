@@ -26,11 +26,13 @@ const StatsCard = ({
 
   return (
     <View style={[styles.container, style]}>
-      <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
-        <Icon name={icon} size={22} color={iconColor} />
+      <View style={styles.topRow}>
+        <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
+          <Icon name={icon} size={18} color={iconColor} />
+        </View>
+        <Text style={styles.label}>{title}</Text>
       </View>
       <Text style={styles.value}>{formattedValue}</Text>
-      <Text style={styles.label}>{title}</Text>
     </View>
   );
 };
@@ -38,34 +40,34 @@ const StatsCard = ({
 const styles = StyleSheet.create({
   container: {
     width: (SCREEN_WIDTH - 44) / 2,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
   },
   iconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-  },
-  value: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.text.primary,
-    marginBottom: 2,
   },
   label: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.text.secondary,
     fontWeight: '500',
+  },
+  value: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: colors.text.primary,
   },
 });
 

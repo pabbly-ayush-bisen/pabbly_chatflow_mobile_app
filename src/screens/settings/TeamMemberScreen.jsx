@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl, ScrollView } from 'react-native';
 import { Text, Card, ActivityIndicator, Surface, Chip } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
 import { colors } from '../../theme/colors';
+import { TeamMembersListSkeleton, StatsGridSkeleton } from '../../components/common';
 
 export default function TeamMemberScreen() {
   const [loading, setLoading] = useState(true);
@@ -184,12 +185,20 @@ export default function TeamMemberScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text variant="bodyLarge" style={styles.loadingText}>
-            Loading team members...
+        <View style={styles.header}>
+          <Text variant="headlineMedium" style={styles.headerTitle}>
+            Team Members
+          </Text>
+          <Text variant="bodyMedium" style={styles.headerSubtitle}>
+            Loading...
           </Text>
         </View>
+        <ScrollView style={styles.skeletonContainer} contentContainerStyle={styles.skeletonContent}>
+          <StatsGridSkeleton />
+          <View style={{ marginTop: 16 }}>
+            <TeamMembersListSkeleton count={5} />
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -235,6 +244,12 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     color: colors.text.secondary,
+  },
+  skeletonContainer: {
+    flex: 1,
+  },
+  skeletonContent: {
+    padding: 16,
   },
   header: {
     padding: 16,

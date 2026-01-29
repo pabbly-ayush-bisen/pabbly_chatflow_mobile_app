@@ -1,5 +1,14 @@
 import { format, formatDistance, formatRelative } from 'date-fns';
 
+// UUID Generator for database records
+export const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 // Date formatting utilities
 export const dateHelpers = {
   // Format date to readable string

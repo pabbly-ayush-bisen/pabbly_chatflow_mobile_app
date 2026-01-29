@@ -1,82 +1,106 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, Linking, Platform } from 'react-native';
-import { Text, Card, List, Divider, Button, Surface } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Linking,
+  Platform,
+  TouchableOpacity,
+  Dimensions,
+  Image,
+} from 'react-native';
+import { Text, Snackbar } from 'react-native-paper';
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import ChatflowLogo from '../components/ChatflowLogo';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_GAP = 12;
+const HORIZONTAL_PADDING = 16;
+const VIDEO_CARD_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
 
 export default function GetHelpScreen() {
-  const appVersion = '1.0.0'; // You can dynamically get this from package.json
+  const appVersion = '1.0.0';
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
 
-  const helpCategories = [
+  // Video tutorials with actual thumbnails
+  const videoTutorials = [
     {
-      title: 'FAQs',
-      icon: 'frequently-asked-questions',
-      items: [
-        {
-          question: 'How do I send a message?',
-          answer: 'Go to the Inbox screen, select a chat, and use the message input at the bottom to send messages.',
-        },
-        {
-          question: 'How do I create a broadcast?',
-          answer: 'Navigate to the Broadcasts screen, tap the + button, select recipients, compose your message, and send.',
-        },
-        {
-          question: 'Can I use templates in messages?',
-          answer: 'Yes, go to Templates screen to view available templates. You can use them when sending messages or broadcasts.',
-        },
-        {
-          question: 'How do I manage contacts?',
-          answer: 'Visit the Contacts screen to view, add, edit, or organize your contacts into lists.',
-        },
-        {
-          question: 'What are quick replies?',
-          answer: 'Quick replies are saved message templates you can use frequently. Create them in Settings > Quick Replies.',
-        },
-      ],
+      id: 1,
+      title: 'Create WhatsApp Cloud API Account',
+      thumbnail: require('../../assets/thumbnails/whatsapp-cloud-api.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=-GAYCaqIHeI',
+    },
+    {
+      id: 2,
+      title: 'Pabbly Chatflow Inbox Overview',
+      thumbnail: require('../../assets/thumbnails/inbox-overview.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=JE0f2lwFNMI',
+    },
+    {
+      id: 3,
+      title: 'Contact Management Overview',
+      thumbnail: require('../../assets/thumbnails/contact-overview.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=j919a9bIi4w',
+    },
+    {
+      id: 4,
+      title: 'Team Member Overview',
+      thumbnail: require('../../assets/thumbnails/team-member-overview.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=EnB4Ju1tTN8',
+    },
+    {
+      id: 5,
+      title: 'Create Templates in Chatflow',
+      thumbnail: require('../../assets/thumbnails/create-templates.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=lmXyI79aENQ',
+    },
+    {
+      id: 6,
+      title: 'WhatsApp Chatbot with Flow Builder',
+      thumbnail: require('../../assets/thumbnails/flow-builder.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=NXIbDhxXKF0',
+    },
+    {
+      id: 7,
+      title: 'Broadcast Messages & API Campaigns',
+      thumbnail: require('../../assets/thumbnails/broadcast-api.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=b1g9QbrP9jU',
+    },
+    {
+      id: 8,
+      title: 'Explore Settings Section',
+      thumbnail: require('../../assets/thumbnails/settings-explore.png'),
+      youtubeUrl: 'https://www.youtube.com/watch?v=zqv2ggtzq8M',
     },
   ];
 
-  const documentationLinks = [
+  // Compact quick actions
+  const quickActions = [
     {
-      title: 'Getting Started Guide',
-      url: 'https://www.pabbly.com/connect/docs/getting-started/',
-      icon: 'book-open-variant',
+      title: 'Documentation',
+      icon: 'book-open-page-variant-outline',
+      color: '#2196F3',
+      onPress: () => handleOpenWebsite('https://www.pabbly.com/connect/docs/chatflow/'),
     },
     {
-      title: 'WhatsApp Business API',
-      url: 'https://www.pabbly.com/connect/docs/whatsapp-business-api/',
-      icon: 'api',
+      title: 'Community',
+      icon: 'account-group-outline',
+      color: '#9C27B0',
+      onPress: () => handleOpenWebsite('https://forum.pabbly.com'),
     },
     {
-      title: 'Chatflow Documentation',
-      url: 'https://www.pabbly.com/connect/docs/chatflow/',
-      icon: 'file-document',
+      title: 'YouTube',
+      icon: 'youtube',
+      color: '#FF0000',
+      onPress: () => handleOpenWebsite('https://youtube.com/@pabbly'),
     },
     {
-      title: 'Video Tutorials',
-      url: 'https://www.youtube.com/c/PabblyOnline',
-      icon: 'video',
-    },
-  ];
-
-  const supportContacts = [
-    {
-      title: 'Email Support',
-      value: 'support@pabbly.com',
-      icon: 'email',
-      action: () => handleEmailSupport(),
-    },
-    {
-      title: 'Website',
-      value: 'www.pabbly.com',
-      icon: 'web',
-      action: () => handleOpenWebsite('https://www.pabbly.com'),
-    },
-    {
-      title: 'Help Center',
-      value: 'Forum & Knowledge Base',
-      icon: 'help-circle',
-      action: () => handleOpenWebsite('https://forum.pabbly.com'),
+      title: 'Support',
+      icon: 'headset',
+      color: '#4CAF50',
+      onPress: () => handleEmailSupport(),
     },
   ];
 
@@ -91,10 +115,10 @@ export default function GetHelpScreen() {
         if (supported) {
           return Linking.openURL(url);
         } else {
-          console.log("Can't handle email URL");
+          showSnackbar('Unable to open email client');
         }
       })
-      .catch((err) => console.error('Error opening email:', err));
+      .catch(() => showSnackbar('Failed to open email'));
   };
 
   const handleOpenWebsite = (url) => {
@@ -103,178 +127,167 @@ export default function GetHelpScreen() {
         if (supported) {
           return Linking.openURL(url);
         } else {
-          console.log("Can't handle URL:", url);
+          showSnackbar('Unable to open link');
         }
       })
-      .catch((err) => console.error('Error opening URL:', err));
+      .catch(() => showSnackbar('Failed to open link'));
   };
 
-  const handleOpenDocumentation = (url) => {
-    handleOpenWebsite(url);
+  const showSnackbar = (message) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+  };
+
+  // Render video cards in pairs (2 per row)
+  const renderVideoGrid = () => {
+    const rows = [];
+    for (let i = 0; i < videoTutorials.length; i += 2) {
+      const video1 = videoTutorials[i];
+      const video2 = videoTutorials[i + 1];
+      rows.push(
+        <View key={i} style={styles.videoRow}>
+          <TouchableOpacity
+            style={styles.videoCard}
+            onPress={() => handleOpenWebsite(video1.youtubeUrl)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.thumbnailContainer}>
+              <Image source={video1.thumbnail} style={styles.thumbnailImage} resizeMode="cover" />
+              <View style={styles.playOverlay}>
+                <View style={styles.playButton}>
+                  <Icon name="play" size={20} color={colors.common.white} />
+                </View>
+              </View>
+            </View>
+            <View style={styles.videoInfo}>
+              <Text style={styles.videoTitle} numberOfLines={2}>{video1.title}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {video2 && (
+            <TouchableOpacity
+              style={styles.videoCard}
+              onPress={() => handleOpenWebsite(video2.youtubeUrl)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.thumbnailContainer}>
+                <Image source={video2.thumbnail} style={styles.thumbnailImage} resizeMode="cover" />
+                <View style={styles.playOverlay}>
+                  <View style={styles.playButton}>
+                    <Icon name="play" size={20} color={colors.common.white} />
+                  </View>
+                </View>
+              </View>
+              <View style={styles.videoInfo}>
+                <Text style={styles.videoTitle} numberOfLines={2}>{video2.title}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+      );
+    }
+    return rows;
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text variant="headlineMedium" style={styles.headerTitle}>
-          Get Help
-        </Text>
-        <Text variant="bodyMedium" style={styles.headerSubtitle}>
-          FAQs, documentation, and support
-        </Text>
-      </View>
+    <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Compact Hero Section */}
+        <View style={styles.heroSection}>
+          <View style={styles.heroIconCircle}>
+            <Icon name="lifebuoy" size={28} color={colors.primary.main} />
+          </View>
+          <View style={styles.heroTextBox}>
+            <Text style={styles.heroTitle}>How can we help?</Text>
+            <Text style={styles.heroSubtitle}>
+              Watch tutorials and get support
+            </Text>
+          </View>
+        </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* FAQs Section */}
-        <Surface style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
-            Frequently Asked Questions
-          </Text>
+        {/* Video Tutorials Section - 2 column grid */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Video Tutorials</Text>
+            <TouchableOpacity
+              style={styles.viewAllButton}
+              onPress={() => handleOpenWebsite('https://youtube.com/@pabbly')}
+            >
+              <Text style={styles.viewAllText}>View All</Text>
+              <Icon name="arrow-right" size={16} color={colors.primary.main} />
+            </TouchableOpacity>
+          </View>
 
-          {helpCategories[0].items.map((item, index) => (
-            <View key={index} style={styles.faqItem}>
-              <Text variant="titleMedium" style={styles.faqQuestion}>
-                {item.question}
-              </Text>
-              <Text variant="bodyMedium" style={styles.faqAnswer}>
-                {item.answer}
-              </Text>
-              {index < helpCategories[0].items.length - 1 && <Divider style={styles.divider} />}
+          <View style={styles.videoGrid}>
+            {renderVideoGrid()}
+          </View>
+        </View>
+
+        {/* Compact Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.quickActionsRow}>
+            {quickActions.map((action, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.quickActionChip}
+                onPress={action.onPress}
+                activeOpacity={0.7}
+              >
+                <Icon name={action.icon} size={18} color={action.color} />
+                <Text style={styles.quickActionText}>{action.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Contact Support - Compact */}
+        <View style={styles.section}>
+          <View style={styles.contactCard}>
+            <View style={styles.contactLeft}>
+              <View style={styles.contactIconBox}>
+                <Icon name="email-outline" size={22} color={colors.common.white} />
+              </View>
+              <View style={styles.contactText}>
+                <Text style={styles.contactTitle}>Need More Help?</Text>
+                <Text style={styles.contactSubtitle}>support@pabbly.com</Text>
+              </View>
             </View>
-          ))}
-        </Surface>
-
-        {/* Documentation Section */}
-        <Surface style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
-            Documentation
-          </Text>
-
-          {documentationLinks.map((link, index) => (
-            <React.Fragment key={index}>
-              <List.Item
-                title={link.title}
-                left={(props) => <List.Icon {...props} icon={link.icon} color={colors.primary.main} />}
-                right={(props) => <List.Icon {...props} icon="open-in-new" />}
-                onPress={() => handleOpenDocumentation(link.url)}
-                style={styles.listItem}
-                titleStyle={styles.listTitle}
-              />
-              {index < documentationLinks.length - 1 && <Divider style={styles.divider} />}
-            </React.Fragment>
-          ))}
-        </Surface>
-
-        {/* Contact Support Section */}
-        <Surface style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
-            Contact Support
-          </Text>
-
-          {supportContacts.map((contact, index) => (
-            <React.Fragment key={index}>
-              <List.Item
-                title={contact.title}
-                description={contact.value}
-                left={(props) => <List.Icon {...props} icon={contact.icon} color={colors.primary.main} />}
-                right={(props) => <List.Icon {...props} icon="chevron-right" />}
-                onPress={contact.action}
-                style={styles.listItem}
-                titleStyle={styles.listTitle}
-                descriptionStyle={styles.listDescription}
-              />
-              {index < supportContacts.length - 1 && <Divider style={styles.divider} />}
-            </React.Fragment>
-          ))}
-
-          <Button
-            mode="contained"
-            icon="email"
-            onPress={handleEmailSupport}
-            style={styles.emailButton}
-          >
-            Email Support Team
-          </Button>
-        </Surface>
-
-        {/* App Info Section */}
-        <Surface style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
-            App Information
-          </Text>
-
-          <View style={styles.infoRow}>
-            <Text variant="bodyMedium" style={styles.infoLabel}>
-              Version:
-            </Text>
-            <Text variant="bodyMedium" style={styles.infoValue}>
-              {appVersion}
-            </Text>
+            <TouchableOpacity
+              style={styles.contactButton}
+              onPress={handleEmailSupport}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.contactButtonText}>Email Us</Text>
+            </TouchableOpacity>
           </View>
+        </View>
 
-          <View style={styles.infoRow}>
-            <Text variant="bodyMedium" style={styles.infoLabel}>
-              Platform:
-            </Text>
-            <Text variant="bodyMedium" style={styles.infoValue}>
-              {Platform.OS === 'ios' ? 'iOS' : 'Android'}
-            </Text>
+        {/* App Info Footer */}
+        <View style={styles.appInfoSection}>
+          <ChatflowLogo width={90} showText={true} showIcon={true} />
+          <View style={styles.appInfoRow}>
+            <Text style={styles.appInfoText}>Version {appVersion}</Text>
+            <Text style={styles.appInfoDot}>•</Text>
+            <Text style={styles.appInfoText}>{Platform.OS === 'ios' ? 'iOS' : 'Android'}</Text>
           </View>
+          <Text style={styles.appCopyright}>Made with care by Pabbly</Text>
+        </View>
 
-          <View style={styles.infoRow}>
-            <Text variant="bodyMedium" style={styles.infoLabel}>
-              Build:
-            </Text>
-            <Text variant="bodyMedium" style={styles.infoValue}>
-              Production
-            </Text>
-          </View>
-        </Surface>
-
-        {/* Additional Resources */}
-        <Surface style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
-            Additional Resources
-          </Text>
-
-          <Card style={styles.resourceCard}>
-            <Card.Content>
-              <Text variant="titleMedium" style={styles.resourceTitle}>
-                Community Forum
-              </Text>
-              <Text variant="bodyMedium" style={styles.resourceDescription}>
-                Join our community to connect with other users and get answers to your questions.
-              </Text>
-              <Button
-                mode="outlined"
-                onPress={() => handleOpenWebsite('https://forum.pabbly.com')}
-                style={styles.resourceButton}
-              >
-                Visit Forum
-              </Button>
-            </Card.Content>
-          </Card>
-
-          <Card style={styles.resourceCard}>
-            <Card.Content>
-              <Text variant="titleMedium" style={styles.resourceTitle}>
-                Feature Requests
-              </Text>
-              <Text variant="bodyMedium" style={styles.resourceDescription}>
-                Have an idea for a new feature? Let us know!
-              </Text>
-              <Button
-                mode="outlined"
-                onPress={() => handleEmailSupport()}
-                style={styles.resourceButton}
-              >
-                Submit Request
-              </Button>
-            </Card.Content>
-          </Card>
-        </Surface>
+        <View style={styles.bottomSpacing} />
       </ScrollView>
-    </SafeAreaView>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={2000}
+      >
+        {snackbarMessage}
+      </Snackbar>
+    </View>
   );
 }
 
@@ -283,95 +296,230 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background.default,
   },
-  header: {
-    padding: 16,
-    backgroundColor: colors.background.paper,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  headerTitle: {
-    color: colors.text.primary,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    color: colors.text.secondary,
-  },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 24,
   },
-  section: {
-    backgroundColor: colors.background.paper,
-    borderRadius: 12,
+
+  // Compact Hero Section
+  heroSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.lighter,
+    marginHorizontal: HORIZONTAL_PADDING,
+    marginTop: 16,
+    marginBottom: 20,
     padding: 16,
-    marginBottom: 16,
-    elevation: 1,
+    borderRadius: 14,
+    gap: 14,
+  },
+  heroIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: colors.common.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: colors.primary.main,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  heroTextBox: {
+    flex: 1,
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary.darker,
+    marginBottom: 2,
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: colors.primary.dark,
+    opacity: 0.85,
+  },
+
+  // Section
+  section: {
+    paddingHorizontal: HORIZONTAL_PADDING,
+    marginBottom: 20,
   },
   sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
     color: colors.text.primary,
-    fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  faqItem: {
-    marginBottom: 16,
-  },
-  faqQuestion: {
-    color: colors.text.primary,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  faqAnswer: {
-    color: colors.text.secondary,
-    lineHeight: 20,
-  },
-  listItem: {
-    paddingHorizontal: 0,
-    paddingVertical: 8,
-  },
-  listTitle: {
-    color: colors.text.primary,
-    fontWeight: '600',
-  },
-  listDescription: {
-    color: colors.text.secondary,
-  },
-  divider: {
-    marginVertical: 8,
-    backgroundColor: colors.divider,
-  },
-  emailButton: {
-    marginTop: 16,
-    backgroundColor: colors.primary.main,
-  },
-  infoRow: {
+  sectionHeaderRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  infoLabel: {
-    color: colors.text.secondary,
-    fontWeight: '600',
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  infoValue: {
+  viewAllText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary.main,
+  },
+
+  // Video Grid
+  videoGrid: {
+    gap: CARD_GAP,
+  },
+  videoRow: {
+    flexDirection: 'row',
+    gap: CARD_GAP,
+  },
+  videoCard: {
+    width: VIDEO_CARD_WIDTH,
+    backgroundColor: colors.common.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+    overflow: 'hidden',
+  },
+  thumbnailContainer: {
+    width: '100%',
+    height: VIDEO_CARD_WIDTH * 0.56, // 16:9 aspect ratio
+    position: 'relative',
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  playOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  playButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoInfo: {
+    padding: 10,
+  },
+  videoTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.primary,
+    lineHeight: 16,
+  },
+
+  // Compact Quick Actions
+  quickActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quickActionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.common.white,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+    gap: 8,
+  },
+  quickActionText: {
+    fontSize: 13,
+    fontWeight: '600',
     color: colors.text.primary,
   },
-  resourceCard: {
-    backgroundColor: colors.background.neutral,
+
+  // Contact Card - Compact
+  contactCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.primary.main,
+    borderRadius: 12,
+    padding: 14,
+  },
+  contactLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  contactIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contactText: {
+    flex: 1,
+  },
+  contactTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.common.white,
+    marginBottom: 1,
+  },
+  contactSubtitle: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  contactButton: {
+    backgroundColor: colors.common.white,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
-    marginBottom: 12,
   },
-  resourceTitle: {
-    color: colors.text.primary,
+  contactButtonText: {
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 8,
+    color: colors.primary.main,
   },
-  resourceDescription: {
-    color: colors.text.secondary,
-    marginBottom: 12,
-    lineHeight: 20,
+
+  // App Info
+  appInfoSection: {
+    alignItems: 'center',
+    paddingHorizontal: HORIZONTAL_PADDING,
+    paddingTop: 8,
   },
-  resourceButton: {
-    borderColor: colors.primary.main,
+  appInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  appInfoText: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+  },
+  appInfoDot: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+  },
+  appCopyright: {
+    fontSize: 10,
+    color: colors.text.tertiary,
+    marginTop: 4,
+  },
+
+  // Bottom Spacing
+  bottomSpacing: {
+    height: 20,
   },
 });

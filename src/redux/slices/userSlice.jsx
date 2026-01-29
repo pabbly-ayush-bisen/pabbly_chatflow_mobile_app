@@ -1,7 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
-import { APP_CONFIG } from '../../config/app.config';
+import { sessionManager } from '../../services/SessionManager';
+import { cacheManager } from '../../database/CacheManager';
 
 // ============================================================================
 // ASYNC THUNKS - Same as Web App Implementation
@@ -9,6 +10,7 @@ import { APP_CONFIG } from '../../config/app.config';
 
 /**
  * Login User - Same as web app's loginUser thunk
+ * Uses SessionManager for persistent session storage
  */
 export const signIn = createAsyncThunk(
   'user/signIn',
@@ -22,19 +24,39 @@ export const signIn = createAsyncThunk(
         return rejectWithValue(response.data?.message || response.message || 'Login failed');
       }
 
-      // Store token and user data on successful login
-      if (response.data?.token) {
-        await AsyncStorage.setItem(APP_CONFIG.tokenKey, response.data.token);
-      }
-      if (response.data?.user) {
-        await AsyncStorage.setItem(APP_CONFIG.userKey, JSON.stringify(response.data.user));
-      }
+      // Debug: Log the full response structure to identify correct paths
+      console.log('[signIn] Full API response:', JSON.stringify(response, null, 2));
+      console.log('[signIn] Response keys:', Object.keys(response));
+      console.log('[signIn] response._raw:', response._raw);
+      console.log('[signIn] response._raw keys:', response._raw ? Object.keys(response._raw) : 'no _raw');
 
-      // Store shouldCheckSession like web app does
-      await AsyncStorage.setItem(
-        'shouldCheckSession',
-        JSON.stringify({ status: true, timestamp: Date.now() })
-      );
+      // The callApi wrapper puts the raw API response in _raw
+      // Token and user can be at: response.data, response._raw, or nested in response._raw.data
+      const rawResponse = response._raw || {};
+      const nestedData = response.data || rawResponse.data || {};
+
+      // Determine correct token and user paths (check all possible locations)
+      const token = response.data?.token || rawResponse.token || nestedData.token;
+      const user = response.data?.user || rawResponse.user || nestedData.user;
+      const settingId = user?.settingId || rawResponse.settingId || nestedData.settingId;
+      const tokenExpiresAt = response.data?.tokenExpiresAt || rawResponse.tokenExpiresAt || nestedData.tokenExpiresAt;
+
+      console.log('[signIn] Extracted values:', {
+        hasToken: !!token,
+        hasUser: !!user,
+        settingId,
+        tokenExpiresAt
+      });
+
+      // Use SessionManager to create persistent session
+      await sessionManager.createSession({
+        token,
+        user,
+        settingId,
+        tokenExpiresAt,
+      });
+
+      console.log('[signIn] Session created successfully via SessionManager');
 
       return response;
     } catch (error) {
@@ -67,6 +89,7 @@ export const checkSession = createAsyncThunk(
 
 /**
  * Logout - Same as web app's logout thunk
+ * Uses SessionManager to destroy session and clears all cached data
  */
 export const logout = createAsyncThunk(
   'user/logout',
@@ -79,29 +102,30 @@ export const logout = createAsyncThunk(
         return rejectWithValue(response.data?.message || 'Logout failed');
       }
 
-      // Clear storage like web app does
-      await AsyncStorage.removeItem('settingId');
-      await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
-      await AsyncStorage.removeItem('shouldCheckSession');
-      await AsyncStorage.removeItem('tokenExpiresAt');
-      await AsyncStorage.removeItem('notifiedThresholds');
-      await AsyncStorage.removeItem('timezone');
-      await AsyncStorage.removeItem('selectedFolderId');
-      await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
-      await AsyncStorage.removeItem(APP_CONFIG.userKey);
+      // Use SessionManager to destroy session (clears all auth storage)
+      await sessionManager.destroySession();
 
+      // Clear cached data (chats, messages, etc.)
+      try {
+        await cacheManager.clearAllCache();
+        console.log('[logout] Cache cleared successfully');
+      } catch (cacheError) {
+        console.warn('[logout] Failed to clear cache:', cacheError.message);
+      }
+
+      console.log('[logout] Session destroyed successfully');
       return response;
     } catch (error) {
-      // Still clear storage even on error
-      await AsyncStorage.removeItem('settingId');
-      await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
-      await AsyncStorage.removeItem('shouldCheckSession');
-      await AsyncStorage.removeItem('tokenExpiresAt');
-      await AsyncStorage.removeItem('notifiedThresholds');
-      await AsyncStorage.removeItem('timezone');
-      await AsyncStorage.removeItem('selectedFolderId');
-      await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
-      await AsyncStorage.removeItem(APP_CONFIG.userKey);
+      // Still destroy session even on API error
+      await sessionManager.destroySession();
+
+      // Still try to clear cache
+      try {
+        await cacheManager.clearAllCache();
+      } catch (cacheError) {
+        console.warn('[logout] Failed to clear cache on error:', cacheError.message);
+      }
+
       return rejectWithValue(error.response?.data || error.message);
     }
   }
@@ -380,10 +404,22 @@ const userSlice = createSlice({
         state.loading = true;
         state.error = null;
       })
-      .addCase(loginViaTeammemberAccount.fulfilled, (state) => {
+      .addCase(loginViaTeammemberAccount.fulfilled, (state, action) => {
         state.loading = false;
         state.error = null;
-        // After team member login, checkSession should be called to update state
+
+        // Store the settingId from the request payload immediately
+        // This ensures file upload and other services have access to it
+        // before checkSession is called
+        const settingIdFromPayload = action.meta.arg?.settingId;
+        if (settingIdFromPayload) {
+          state.settingId = settingIdFromPayload;
+          // Store under both keys for compatibility with all services
+          AsyncStorage.setItem('settingId', settingIdFromPayload);
+          AsyncStorage.setItem('@pabbly_chatflow_settingId', settingIdFromPayload);
+        }
+
+        // After team member login, checkSession should be called to update full state
       })
       .addCase(loginViaTeammemberAccount.rejected, (state, action) => {
         state.loading = false;

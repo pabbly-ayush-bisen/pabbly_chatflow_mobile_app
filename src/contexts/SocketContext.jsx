@@ -18,6 +18,7 @@ import {
   handleTeamMemberLogout,
   handleUpdateChatOnContactUpdate,
   handleUpdateTemplateStatus,
+  handleNewMessagesBulk,
 } from '../services/socketHandlers';
 import { fetchChats } from '../redux/slices/inboxSlice';
 import {
@@ -57,7 +58,8 @@ export const SocketProvider = ({ children }) => {
     console.log('Socket connected - fetching chats');
     setConnectionStatus('connected');
     setError(null);
-    dispatch(fetchChats());
+    // Fetch ALL chats without pagination (matching web app behavior)
+    dispatch(fetchChats({ all: true }));
   }, [dispatch]);
 
   const handleDisconnect = useCallback((reason) => {
@@ -162,6 +164,12 @@ export const SocketProvider = ({ children }) => {
       console.log('[SocketContext] updateTemplateStatus received');
       handleUpdateTemplateStatus(dispatch, template);
     });
+
+    // Bulk new messages (matching web app behavior)
+    subscribeToEvent('newMessagesBulk', (newChats) => {
+      console.log('[SocketContext] newMessagesBulk received:', newChats?.length || 0, 'chats');
+      handleNewMessagesBulk(dispatch, newChats, store.getState);
+    });
   }, [dispatch, store]);
 
   const removeEventListeners = useCallback(() => {
@@ -174,6 +182,7 @@ export const SocketProvider = ({ children }) => {
     unsubscribeFromEvent('teamMemberLogout');
     unsubscribeFromEvent('updateChatOnContactUpdate');
     unsubscribeFromEvent('updateTemplateStatus');
+    unsubscribeFromEvent('newMessagesBulk');
   }, []);
 
   const connect = useCallback(async () => {

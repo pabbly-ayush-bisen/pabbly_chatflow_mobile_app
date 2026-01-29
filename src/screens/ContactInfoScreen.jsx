@@ -22,6 +22,7 @@ import { colors, chatColors, getAvatarColor } from '../theme/colors';
 import { format, formatDistanceToNow } from 'date-fns';
 import { updateContactChat, setChatStatus, updateChatInList } from '../redux/slices/inboxSlice';
 import { updateContact } from '../redux/slices/contactSlice';
+import { getSettings } from '../redux/slices/settingsSlice';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -32,9 +33,10 @@ const TABS = [
   { id: 'activity', label: 'Activity', icon: 'history' },
 ];
 
-// Chat status configuration
+// Chat status configuration - matches web app STATUS array in team-queue.jsx
 const CHAT_STATUS_OPTIONS = [
   { value: 'open', label: 'Open', icon: 'message-outline', color: colors.info.main, description: 'Chat is open and active' },
+  { value: 'aiAssistant', label: 'AI Assistant', icon: 'robot', color: '#7C3AED', description: 'Managed by AI Assistant' },
   { value: 'intervened', label: 'Intervened', icon: 'hand-back-left', color: colors.warning.main, description: 'Manual intervention mode' },
   { value: 'on_hold', label: 'On Hold', icon: 'pause-circle-outline', color: colors.grey[600], description: 'Chat is temporarily paused' },
   { value: 'replied', label: 'Replied', icon: 'reply-outline', color: colors.success.main, description: 'Waiting for customer response' },
@@ -61,8 +63,17 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const [currentStatus, setCurrentStatus] = useState(chat?.status || 'open');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Chat owner state
+  const [showOwnerPicker, setShowOwnerPicker] = useState(false);
+  const [chatOwner, setChatOwner] = useState(chat?.assignedToMember || null);
+  const [isUpdatingOwner, setIsUpdatingOwner] = useState(false);
+
   // Get chat status from Redux
   const { updateContactChatStatus } = useSelector((state) => state.inbox);
+
+  // Get team members from settings
+  const { settings } = useSelector((state) => state.settings);
+  const teamMembers = settings?.teamMembers?.items || [];
 
   // Mock orders data - In real app, this would come from API/Redux
   const [orders] = useState([
@@ -120,6 +131,65 @@ const ContactInfoScreen = ({ route, navigation }) => {
       setCurrentStatus(chat.status);
     }
   }, [chat?.status]);
+
+  // Sync chat owner from props and fetch team members
+  useEffect(() => {
+    if (chat?.assignedToMember) {
+      setChatOwner(chat.assignedToMember);
+    }
+    // Fetch team members if not already loaded
+    if (!settings?.teamMembers) {
+      dispatch(getSettings('teamMembers'));
+    }
+  }, [chat?.assignedToMember, settings?.teamMembers, dispatch]);
+
+  // Handle chat owner change
+  const handleOwnerChange = useCallback(async (member) => {
+    const newOwner = member === 'none' ? null : member;
+
+    if ((newOwner?._id || newOwner?.id) === (chatOwner?._id || chatOwner?.id)) {
+      setShowOwnerPicker(false);
+      return;
+    }
+
+    setIsUpdatingOwner(true);
+    try {
+      // Prepare payload matching web app format
+      let payload;
+      if (member === 'none') {
+        payload = 'none';
+      } else {
+        const { name, role, email, _id } = member;
+        payload = { name, email, role, id: _id };
+      }
+
+      const result = await dispatch(updateContactChat({
+        id: chatId,
+        status: currentStatus,
+        assignedToMember: payload,
+        hideNotification: chat?.hideNotification || false,
+      })).unwrap();
+
+      if (result.status === 'success' || result.response?.status === 'success') {
+        setChatOwner(member === 'none' ? null : payload);
+        // Update the chat in the list
+        dispatch(updateChatInList({
+          _id: chatId,
+          assignedToMember: payload,
+        }));
+        Alert.alert('Success', member === 'none'
+          ? 'Chat owner removed'
+          : `Chat assigned to ${member.name}`);
+      } else {
+        Alert.alert('Error', result.message || 'Failed to update chat owner');
+      }
+    } catch (error) {
+      Alert.alert('Error', error?.message || error || 'Failed to update chat owner');
+    } finally {
+      setIsUpdatingOwner(false);
+      setShowOwnerPicker(false);
+    }
+  }, [chatId, chat, currentStatus, chatOwner, dispatch]);
 
   // Handle chat status change
   const handleStatusChange = useCallback(async (newStatus) => {
@@ -447,6 +517,53 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
         <Text style={styles.statusDescription}>
           {getStatusConfig(currentStatus).description}
+        </Text>
+      </View>
+
+      {/* Chat Owner Section */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Icon name="account-check-outline" size={20} color={chatColors.primary} />
+          <Text style={styles.sectionTitle}>Chat Owner</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.statusSelector}
+          onPress={() => setShowOwnerPicker(true)}
+          activeOpacity={0.7}
+          disabled={isUpdatingOwner}
+        >
+          {isUpdatingOwner ? (
+            <View style={styles.statusSelectorContent}>
+              <ActivityIndicator size="small" color={chatColors.primary} />
+              <Text style={styles.statusSelectorText}>Updating...</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.statusSelectorContent}>
+                <View style={[styles.statusIconContainer, { backgroundColor: chatOwner ? `${chatColors.primary}15` : colors.grey[100] }]}>
+                  <Icon
+                    name={chatOwner ? 'account' : 'account-outline'}
+                    size={20}
+                    color={chatOwner ? chatColors.primary : colors.grey[500]}
+                  />
+                </View>
+                <View style={styles.statusTextContainer}>
+                  <Text style={styles.statusSelectorLabel}>Team Member</Text>
+                  <Text style={[styles.statusSelectorValue, { color: chatOwner ? chatColors.primary : colors.grey[500] }]}>
+                    {chatOwner?.name || 'Unassigned'}
+                  </Text>
+                </View>
+              </View>
+              <Icon name="chevron-right" size={24} color={colors.grey[400]} />
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.statusDescription}>
+          {chatOwner
+            ? `Team member ${chatOwner.name} is managing this chat.`
+            : 'Select a team member to manage this chat.'}
         </Text>
       </View>
 
@@ -898,6 +1015,115 @@ const ContactInfoScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={styles.statusPickerCancel}
               onPress={() => setShowStatusPicker(false)}
+            >
+              <Text style={styles.statusPickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: insets.bottom }} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Chat Owner Picker Modal */}
+      <Modal
+        visible={showOwnerPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowOwnerPicker(false)}
+      >
+        <View style={styles.statusPickerOverlay}>
+          <TouchableOpacity
+            style={styles.statusPickerBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowOwnerPicker(false)}
+          />
+          <View style={styles.statusPickerContainer}>
+            <View style={styles.statusPickerHandle} />
+            <Text style={styles.statusPickerTitle}>Assign Chat Owner</Text>
+            <Text style={styles.statusPickerSubtitle}>
+              Select a team member to manage this chat
+            </Text>
+
+            <ScrollView
+              style={styles.statusPickerList}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {/* Unassigned option */}
+              <TouchableOpacity
+                style={[
+                  styles.statusPickerOption,
+                  !chatOwner && styles.statusPickerOptionSelected,
+                ]}
+                onPress={() => handleOwnerChange('none')}
+                activeOpacity={0.7}
+                disabled={isUpdatingOwner}
+              >
+                <View style={[styles.statusPickerOptionIcon, { backgroundColor: colors.grey[100] }]}>
+                  <Icon name="account-off-outline" size={22} color={colors.grey[500]} />
+                </View>
+                <View style={styles.statusPickerOptionContent}>
+                  <Text style={[
+                    styles.statusPickerOptionLabel,
+                    !chatOwner && { color: chatColors.primary, fontWeight: '600' }
+                  ]}>
+                    Unassigned
+                  </Text>
+                  <Text style={styles.statusPickerOptionDescription}>
+                    No team member assigned
+                  </Text>
+                </View>
+                {!chatOwner && (
+                  <Icon name="check-circle" size={22} color={chatColors.primary} />
+                )}
+              </TouchableOpacity>
+
+              {/* Team members */}
+              {teamMembers.map((member) => {
+                const isSelected = (chatOwner?._id || chatOwner?.id) === member._id;
+                return (
+                  <TouchableOpacity
+                    key={member._id}
+                    style={[
+                      styles.statusPickerOption,
+                      isSelected && styles.statusPickerOptionSelected,
+                    ]}
+                    onPress={() => handleOwnerChange(member)}
+                    activeOpacity={0.7}
+                    disabled={isUpdatingOwner}
+                  >
+                    <View style={[styles.statusPickerOptionIcon, { backgroundColor: `${chatColors.primary}15` }]}>
+                      <Icon name="account" size={22} color={chatColors.primary} />
+                    </View>
+                    <View style={styles.statusPickerOptionContent}>
+                      <Text style={[
+                        styles.statusPickerOptionLabel,
+                        isSelected && { color: chatColors.primary, fontWeight: '600' }
+                      ]}>
+                        {member.name}
+                      </Text>
+                      <Text style={styles.statusPickerOptionDescription}>
+                        {member.email || member.role || 'Team Member'}
+                      </Text>
+                    </View>
+                    {isSelected && (
+                      <Icon name="check-circle" size={22} color={chatColors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+
+              {teamMembers.length === 0 && (
+                <View style={styles.emptySection}>
+                  <Icon name="account-group-outline" size={32} color={colors.grey[300]} />
+                  <Text style={styles.emptyText}>No team members available</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.statusPickerCancel}
+              onPress={() => setShowOwnerPicker(false)}
             >
               <Text style={styles.statusPickerCancelText}>Cancel</Text>
             </TouchableOpacity>

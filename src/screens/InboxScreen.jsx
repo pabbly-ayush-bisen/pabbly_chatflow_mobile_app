@@ -4,13 +4,14 @@ import { Text, ActivityIndicator, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { fetchChats, fetchMoreChats, resetUnreadCount, setActiveFilter, resetPagination } from '../redux/slices/inboxSlice';
+import { fetchChats, resetUnreadCount, setActiveFilter, resetPagination } from '../redux/slices/inboxSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
 import { colors, chatColors } from '../theme/colors';
 import ChatListItem from '../components/chat/ChatListItem';
 import InboxHeader from '../components/chat/InboxHeader';
 import FilterChips from '../components/chat/FilterChips';
+import { ConversationsListSkeleton } from '../components/common';
 
 export default function InboxScreen() {
   const navigation = useNavigation();
@@ -23,7 +24,6 @@ export default function InboxScreen() {
     error,
     selectedChatId,
     activeFilter,
-    hasMoreChats,
     isLoadingMore
   } = useSelector((state) => state.inbox);
   const { teamMemberStatus } = useSelector((state) => state.user);
@@ -34,16 +34,10 @@ export default function InboxScreen() {
   const isLoading = status === 'loading';
   const isRefreshing = status === 'loading' && chats.length > 0;
 
-  // Base chats: when logged in as team member, only show chats assigned to this member
+  // Show all chats without team member filtering
   const visibleChats = useMemo(() => {
-    if (!isTeamMemberLoggedIn) return chats;
-    const memberName = (teamMemberStatus?.name || '').trim();
-    if (!memberName) return chats;
-    return chats.filter((chat) => {
-      const assignedName = chat?.assignedToMember?.name || '';
-      return assignedName.trim() === memberName;
-    });
-  }, [chats, isTeamMemberLoggedIn, teamMemberStatus?.name]);
+    return chats;
+  }, [chats]);
 
   // Calculate total unread count
   const totalUnreadCount = useMemo(() => {
@@ -52,21 +46,18 @@ export default function InboxScreen() {
 
   useEffect(() => {
     loadChats();
-  }, [activeFilter, isTeamMemberLoggedIn]);
-
-  // Team-member mode: always enforce "assigned_to_me" (no team queue screen on mobile)
-  useEffect(() => {
-    if (isTeamMemberLoggedIn && activeFilter !== 'assigned_to_me') {
-      dispatch(setActiveFilter('assigned_to_me'));
-    }
-  }, [dispatch, isTeamMemberLoggedIn, activeFilter]);
+  }, [activeFilter]);
 
   const loadChats = useCallback(() => {
     dispatch(resetPagination());
-    const effectiveFilter = isTeamMemberLoggedIn ? 'assigned_to_me' : activeFilter;
-    const params = effectiveFilter !== 'all' ? { filter: effectiveFilter } : {};
+    // Fetch ALL chats without pagination (matching web app behavior)
+    // The 'all: true' param tells the API to return all chats in one request
+    const params = { all: true };
+    if (activeFilter !== 'all') {
+      params.filter = activeFilter;
+    }
     dispatch(fetchChats(params));
-  }, [dispatch, activeFilter, isTeamMemberLoggedIn]);
+  }, [dispatch, activeFilter]);
 
   const onRefresh = useCallback(() => {
     loadChats();
@@ -74,18 +65,20 @@ export default function InboxScreen() {
 
   // Handle filter change
   const handleFilterChange = useCallback((filter) => {
-    if (isTeamMemberLoggedIn) return; // locked in team-member mode
     if (filter !== activeFilter) {
       dispatch(setActiveFilter(filter));
     }
-  }, [dispatch, activeFilter, isTeamMemberLoggedIn]);
+  }, [dispatch, activeFilter]);
 
-  // Handle load more (pagination)
+  // Handle load more (pagination) - disabled since we now fetch all chats at once
+  // Keeping this for potential future use if pagination is re-enabled
   const handleLoadMore = useCallback(() => {
-    if (!isLoadingMore && hasMoreChats && !isLoading) {
-      dispatch(fetchMoreChats());
-    }
-  }, [dispatch, isLoadingMore, hasMoreChats, isLoading]);
+    // Pagination disabled - we fetch all chats with { all: true }
+    // If pagination needs to be re-enabled in the future, uncomment below:
+    // if (!isLoadingMore && hasMoreChats && !isLoading) {
+    //   dispatch(fetchMoreChats());
+    // }
+  }, []);
 
   // Render footer for pagination loading
   const renderFooter = useCallback(() => {
@@ -147,21 +140,33 @@ export default function InboxScreen() {
     />
   ), [handleChatPress, selectedChatId]);
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Icon name="message-text-outline" size={80} color={colors.grey[300]} />
-      <Text variant="headlineSmall" style={styles.emptyTitle}>
-        No conversations
-      </Text>
-      <Text variant="bodyMedium" style={styles.emptyText}>
-        Start a new conversation to see it here
-      </Text>
-      <TouchableOpacity style={styles.startChatButton} onPress={handleNewChat}>
-        <Icon name="plus" size={20} color={colors.common.white} />
-        <Text style={styles.startChatButtonText}>Start Chat</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderEmptyState = () => {
+    // Show skeleton while loading (not during refresh)
+    if (isLoading && !isRefreshing) {
+      return (
+        <View style={styles.skeletonInListContainer}>
+          <ConversationsListSkeleton count={10} />
+        </View>
+      );
+    }
+
+    // Show empty state only after loading completes with no results
+    return (
+      <View style={styles.emptyContainer}>
+        <Icon name="message-text-outline" size={80} color={colors.grey[300]} />
+        <Text variant="headlineSmall" style={styles.emptyTitle}>
+          No conversations
+        </Text>
+        <Text variant="bodyMedium" style={styles.emptyText}>
+          Start a new conversation to see it here
+        </Text>
+        <TouchableOpacity style={styles.startChatButton} onPress={handleNewChat}>
+          <Icon name="plus" size={20} color={colors.common.white} />
+          <Text style={styles.startChatButtonText}>Start Chat</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderError = () => (
     <View style={styles.errorContainer}>
@@ -183,11 +188,8 @@ export default function InboxScreen() {
           onSearchChange={handleSearchChange}
           connectionStatus={connectionStatus}
         />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={chatColors.primary} />
-          <Text variant="bodyLarge" style={styles.loadingText}>
-            Loading conversations...
-          </Text>
+        <View style={styles.skeletonContainer}>
+          <ConversationsListSkeleton count={10} />
         </View>
       </View>
     );
@@ -269,8 +271,18 @@ const styles = StyleSheet.create({
     marginTop: 16,
     color: colors.text.secondary,
   },
+  skeletonContainer: {
+    flex: 1,
+    backgroundColor: colors.common.white,
+  },
+  skeletonInListContainer: {
+    flex: 1,
+    backgroundColor: colors.common.white,
+    paddingTop: 8,
+  },
   listContent: {
     flexGrow: 1,
+    paddingBottom: 80,
   },
   emptyListContent: {
     flex: 1,
