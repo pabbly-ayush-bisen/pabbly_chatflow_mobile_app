@@ -45,6 +45,7 @@ import InitialLoadingScreen from '../screens/InitialLoadingScreen';
 // Components
 import AppHeader from '../components/AppHeader';
 import ChatflowLogo from '../components/ChatflowLogo';
+import LogoutOverlay from '../components/LogoutOverlay';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -62,6 +63,8 @@ function CustomDrawerContent(props) {
   const dispatch = useDispatch();
   const { navigation } = props;
   const [showWebFeatures, setShowWebFeatures] = useState(false);
+  const [showLogoutOverlay, setShowLogoutOverlay] = useState(false);
+  const [logoutStep, setLogoutStep] = useState(0);
   const { teamMemberStatus } = useSelector((state) => state.user);
   const isTeamMemberLoggedIn = !!teamMemberStatus?.loggedIn;
 
@@ -80,10 +83,30 @@ function CustomDrawerContent(props) {
   ].filter(feature => isTeamMemberLoggedIn ? feature.showForTeamMember : true);
 
   const handleLogout = async () => {
+    // Show logout overlay immediately
+    setShowLogoutOverlay(true);
+    setLogoutStep(0);
+    navigation.closeDrawer();
+
     try {
+      // Step 1: Saving data
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setLogoutStep(1);
+
+      // Step 2: Clearing session
+      await new Promise(resolve => setTimeout(resolve, 600));
+      setLogoutStep(2);
+
+      // Step 3: Actually perform logout
       await dispatch(logout()).unwrap();
+
+      // Small delay to show completing step
+      await new Promise(resolve => setTimeout(resolve, 400));
     } catch (error) {
-      // Error:('Logout error:', error);
+      // Error during logout - still hide overlay
+    } finally {
+      setShowLogoutOverlay(false);
+      setLogoutStep(0);
     }
   };
 
@@ -236,6 +259,9 @@ function CustomDrawerContent(props) {
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
       </SafeAreaView>
+
+      {/* Logout Overlay */}
+      <LogoutOverlay visible={showLogoutOverlay} currentStep={logoutStep} />
     </SafeAreaView>
   );
 }
@@ -636,7 +662,6 @@ export default function AppNavigator() {
   // Track when session check fails - this means user will see login screen
   React.useEffect(() => {
     if (checkSessionStatus === 'failed') {
-      // Log:('[AppNavigator] Session check failed - user will need to login');
       setSessionCheckFailed(true);
     }
   }, [checkSessionStatus]);
@@ -670,10 +695,6 @@ export default function AppNavigator() {
 
   // Determine if we should show the loading screen
   const isInitialLoading = authenticated && showLoadingScreen;
-
-  React.useEffect(() => {
-    // Log:('[AppNavigator] State - authenticated:', authenticated, 'checkSessionStatus:', checkSessionStatus, 'sessionCheckFailed:', sessionCheckFailed, 'showLoadingScreen:', showLoadingScreen);
-  }, [authenticated, checkSessionStatus, sessionCheckFailed, showLoadingScreen]);
 
   // Check if app was opened from a notification
   useEffect(() => {

@@ -48,7 +48,6 @@ class SessionManager {
       const session = await this.getStoredSession();
       this.cachedSession = session;
       this.isInitialized = true;
-
       return session;
     } catch (error) {
       return null;
@@ -177,13 +176,14 @@ class SessionManager {
         AsyncStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRES_AT),
       ]);
 
-      // No token = no session
-      if (!token) {
-        return null;
-      }
-
       const user = userStr ? JSON.parse(userStr) : null;
       const sessionMeta = sessionMetaStr ? JSON.parse(sessionMetaStr) : {};
+
+      // Return session if we have token OR user data
+      // User data without token means cookie-based session that needs verification
+      if (!token && !user) {
+        return null;
+      }
 
       return {
         token,

@@ -937,13 +937,15 @@ const userSlice = createSlice({
         // Store user in AsyncStorage for session persistence
         const userData = action.payload?.data?.user;
         if (userData) {
-          sessionManager.updateSession({
+          // IMPORTANT: If we have valid user data from checkSession but no token was stored,
+          // create a session marker so the app knows user is logged in on restart.
+          // The actual session is cookie-based, but we need something in AsyncStorage.
+          sessionManager.createSession({
+            token: 'session_cookie_auth', // Marker to indicate cookie-based session
             user: userData,
             settingId: userData.settingId,
             tokenExpiresAt: action.payload?.data?.tokenExpiresAt,
-            timezone: action.payload?.data?.timeZone,
-          });
-          // Log:('[checkSession] User stored via SessionManager');
+          }).catch(() => {});
         }
 
         // Set settingId and other data if user has a settingId
@@ -1008,7 +1010,7 @@ const userSlice = createSlice({
           }
         }
       })
-      .addCase(checkSession.rejected, (state) => {
+      .addCase(checkSession.rejected, (state, action) => {
         state.checkSessionStatus = 'failed';
         state.authenticated = false;
         state.teamMemberStatus = { loggedIn: false, name: '', email: '', role: '' };
