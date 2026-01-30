@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
-    "start:lan": "expo start --lan",
+    "start:lan": "cross-env REACT_NATIVE_PACKAGER_HOSTNAME=172.20.10.2 expo start --lan",
     "start:tunnel": "expo start --tunnel",
     "start:clear": "expo start -c",
     "android": "expo run:android",
@@ -15,6 +15,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-cookies/cookies": "^6.2.1",
+    "@react-native-google-signin/google-signin": "^16.1.1",
     "@react-native-picker/picker": "2.11.1",
     "@react-navigation/bottom-tabs": "^7.9.1",
     "@react-navigation/drawer": "^7.7.11",
@@ -55,5 +56,8 @@
     "react-redux": "^9.2.0",
     "socket.io-client": "^4.8.3"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "cross-env": "^10.1.0"
+  }
 }
