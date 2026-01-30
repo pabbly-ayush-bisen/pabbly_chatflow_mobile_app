@@ -14,11 +14,25 @@ const axiosInstance = axios.create({
 // Request interceptor
 axiosInstance.interceptors.request.use(
   async (config) => {
+    const requestId = Math.random().toString(36).substring(7);
+    config._requestId = requestId;
+    config._startTime = Date.now();
+
+    console.log('----------------------------------------');
+    console.log(`[Axios] REQUEST [${requestId}]`);
+    console.log(`[Axios] Timestamp: ${new Date().toISOString()}`);
+    console.log(`[Axios] Method: ${config.method?.toUpperCase()}`);
+    console.log(`[Axios] URL: ${config.baseURL}/${config.url}`);
+    console.log(`[Axios] Full URL: ${config.baseURL}/${config.url}`);
+
     try {
       // Add auth token
       const token = await AsyncStorage.getItem(APP_CONFIG.tokenKey);
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+        console.log(`[Axios] Auth Token: ${token.substring(0, 30)}...`);
+      } else {
+        console.log(`[Axios] Auth Token: NONE`);
       }
 
       // Add settingId header for non-auth endpoints
@@ -27,6 +41,7 @@ axiosInstance.interceptors.request.use(
         endpoints.auth.signIn,
         endpoints.auth.signUp,
         endpoints.auth.session,
+        endpoints.auth.tokenAuth,
         endpoints.dashboard.accesssettingId,
       ];
 
@@ -34,23 +49,66 @@ axiosInstance.interceptors.request.use(
         const settingId = await AsyncStorage.getItem('settingId');
         if (settingId) {
           config.headers.settingId = settingId;
+          console.log(`[Axios] Setting ID: ${settingId}`);
         }
       }
     } catch (error) {
-      // Error:('Error in request interceptor:', error);
+      console.log(`[Axios] Error in request interceptor: ${error.message}`);
     }
+
+    if (config.data) {
+      console.log(`[Axios] Request Body:`, JSON.stringify(config.data, null, 2));
+    }
+    if (config.params) {
+      console.log(`[Axios] Request Params:`, JSON.stringify(config.params, null, 2));
+    }
+    console.log('----------------------------------------');
+
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.log(`[Axios] REQUEST ERROR: ${error.message}`);
+    return Promise.reject(error);
+  }
 );
 
 // Response interceptor
 // IMPORTANT: Only clear session on explicit 401 Unauthorized with session-related messages
 // Do NOT clear on 400 errors or network errors - this would log out users incorrectly
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const requestId = response.config?._requestId || 'unknown';
+    const duration = response.config?._startTime ? Date.now() - response.config._startTime : 0;
+
+    console.log('----------------------------------------');
+    console.log(`[Axios] RESPONSE SUCCESS [${requestId}]`);
+    console.log(`[Axios] Timestamp: ${new Date().toISOString()}`);
+    console.log(`[Axios] Duration: ${duration}ms`);
+    console.log(`[Axios] Status: ${response.status} ${response.statusText}`);
+    console.log(`[Axios] URL: ${response.config?.url}`);
+    console.log(`[Axios] Response Data:`, JSON.stringify(response.data, null, 2));
+    console.log('----------------------------------------');
+
+    return response;
+  },
   async (error) => {
+    const requestId = error.config?._requestId || 'unknown';
+    const duration = error.config?._startTime ? Date.now() - error.config._startTime : 0;
     const status = error.response?.status;
+
+    console.log('========================================');
+    console.log(`[Axios] RESPONSE ERROR [${requestId}]`);
+    console.log('========================================');
+    console.log(`[Axios] Timestamp: ${new Date().toISOString()}`);
+    console.log(`[Axios] Duration: ${duration}ms`);
+    console.log(`[Axios] URL: ${error.config?.url}`);
+    console.log(`[Axios] Method: ${error.config?.method?.toUpperCase()}`);
+    console.log(`[Axios] Status: ${status || 'NO RESPONSE'}`);
+    console.log(`[Axios] Status Text: ${error.response?.statusText || 'N/A'}`);
+    console.log(`[Axios] Error Message: ${error.message}`);
+    console.log(`[Axios] Error Code: ${error.code}`);
+    console.log(`[Axios] Response Data:`, JSON.stringify(error.response?.data, null, 2));
+    console.log('========================================');
 
     // Only handle 401 Unauthorized - this means the session might be invalid
     if (status === 401) {
@@ -62,14 +120,16 @@ axiosInstance.interceptors.response.use(
       const isSessionInvalid = sessionInvalidKeywords.some((keyword) => errorMessage.includes(keyword));
 
       if (isSessionInvalid) {
-        // Log:('[Axios] Session invalidated by server:', error.response?.data?.message);
+        console.log(`[Axios] Session invalidated by server: ${error.response?.data?.message}`);
+        console.log(`[Axios] Clearing auth storage...`);
         // Clear storage only for genuine session invalidation
         await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
         await AsyncStorage.removeItem(APP_CONFIG.userKey);
         await AsyncStorage.removeItem('settingId');
         await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
+        console.log(`[Axios] Auth storage cleared`);
       } else {
-        // Log:('[Axios] 401 error but not session related:', error.response?.data?.message);
+        console.log(`[Axios] 401 error but not session related: ${error.response?.data?.message}`);
       }
     }
     // Note: 400 errors are NOT session related - don't clear storage
@@ -85,8 +145,20 @@ axiosInstance.interceptors.response.use(
  * Returns response in same format as frontend: { status, data, statusCode, ... }
  */
 export async function callApi(url, method, data = {}, customHeaders = {}) {
+  const callId = Math.random().toString(36).substring(7);
+
+  console.log('========================================');
+  console.log(`[callApi] API CALL INITIATED [${callId}]`);
+  console.log('========================================');
+  console.log(`[callApi] Timestamp: ${new Date().toISOString()}`);
+  console.log(`[callApi] URL: ${url}`);
+  console.log(`[callApi] Full URL: ${API_URL}/${url}`);
+  console.log(`[callApi] Method: ${method}`);
+  console.log(`[callApi] Data:`, JSON.stringify(data, null, 2));
+  console.log(`[callApi] Custom Headers:`, JSON.stringify(customHeaders, null, 2));
+
   if (!url) {
-    // Error:(`[API] URL is undefined or null: ${url}`);
+    console.log(`[callApi] ERROR: URL is undefined or null`);
     return {
       status: 'error',
       data: null,
@@ -114,22 +186,9 @@ export async function callApi(url, method, data = {}, customHeaders = {}) {
       params: normalizedMethod === 'GET' ? data : undefined,
     };
 
-    // Debug logging
-    // Log:('[API Request]', {
-    //   fullUrl: `${API_URL}/${url}`,
-    //   method: normalizedMethod,
-    //   data: normalizedMethod !== 'GET' ? data : undefined,
-    //   params: normalizedMethod === 'GET' ? data : undefined,
-    // });
+    console.log(`[callApi] Sending ${normalizedMethod} request to ${url}...`);
 
     const response = await axiosInstance(config);
-
-    // Debug logging
-    // Log:('[API Response]', {
-    //   url,
-    //   status: response.status,
-    //   data: response.data,
-    // });
 
     // Return in frontend-compatible format
     // Frontend expects: { status: 'success', data: {...}, statusCode }
@@ -139,7 +198,7 @@ export async function callApi(url, method, data = {}, customHeaders = {}) {
     //   - Some endpoints: { status, chats: [...], hasMoreChats: boolean }
     // We return both nested data AND top-level fields to handle all cases
     const responseBody = response.data || {};
-    return {
+    const result = {
       status: responseBody.status || 'success',
       data: responseBody.data,  // Nested data if present
       // Also spread top-level fields for endpoints that don't nest in 'data'
@@ -154,21 +213,22 @@ export async function callApi(url, method, data = {}, customHeaders = {}) {
       // Include raw response for debugging
       _raw: responseBody,
     };
-  } catch (error) {
-    // Enhanced error logging
-    // Error:('[API Error]', {
-    //   url: `${API_URL}/${url}`,
-    //   method,
-    //   status: error.response?.status,
-    //   statusText: error.response?.statusText,
-    //   data: error.response?.data,
-    //   message: error.message,
-    //   code: error.code,
-    // });
 
+    console.log(`[callApi] SUCCESS [${callId}]`);
+    console.log(`[callApi] Status Code: ${response.status}`);
+    console.log(`[callApi] Response Status: ${result.status}`);
+    console.log('========================================');
+
+    return result;
+  } catch (error) {
     // Handle specific error cases like frontend
     const statusCode = error.response?.status || 500;
     const errorMessage = error.response?.data?.message || error.message;
+
+    console.log(`[callApi] ERROR [${callId}]`);
+    console.log(`[callApi] Error Status: ${statusCode}`);
+    console.log(`[callApi] Error Message: ${errorMessage}`);
+    console.log('========================================');
 
     return {
       status: 'error',
@@ -213,6 +273,7 @@ export const endpoints = {
     signUp: 'auth/signup',
     logout: 'auth/logout',
     session: 'auth/verify-session',
+    tokenAuth: 'auth/tauth', // Pabbly Accounts JWT token authentication
     teamMemberLogin: 'teammember/access/inbox',
     teamMemberLogout: 'teammember/logout',
   },

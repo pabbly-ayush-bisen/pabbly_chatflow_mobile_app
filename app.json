@@ -1,11 +1,12 @@
 {
   "expo": {
-    "name": "chatflow_mobile_native",
+    "name": "Pabbly Chatflow",
     "slug": "chatflow_mobile_native",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "pabblychatflow",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -13,16 +14,24 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.chatflow.mobile",
+      "bundleIdentifier": "com.pabbly.chatflow",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "remote-notification"
         ]
+      },
+      "associatedDomains": [
+        "applinks:chatflow.pabbly.com"
+      ],
+      "config": {
+        "googleSignIn": {
+          "reservedClientId": "com.googleusercontent.apps.848504831060-dt3ve1h090q2979md9eoqq8epc1rd7tr"
+        }
       }
     },
     "android": {
-      "package": "com.chatflow.mobile",
+      "package": "com.pabbly.chatflow",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -31,7 +40,24 @@
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE"
       ],
-      "useNextNotificationsApi": true
+      "useNextNotificationsApi": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "chatflow.pabbly.com",
+              "pathPrefix": "/api/auth/tauth"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -48,7 +74,8 @@
           "mode": "production"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

@@ -4,9 +4,55 @@ export const APP_CONFIG = {
   appVersion: '1.0.0',
 
   // API Configuration
-  // Using the same API URL as the frontend web app
-  apiUrl: 'https://testchatflow.pabbly.com/api',
-  socketUrl: 'https://testchatflow.pabbly.com/',
+  // Using the same API URL as the frontend web app (Production)
+  apiUrl: 'https://chatflow.pabbly.com/api',
+  socketUrl: 'https://chatflow.pabbly.com/',
+
+  // Pabbly Accounts Configuration
+  pabblyAccountsUrl: 'https://accounts.pabbly.com',
+  pabblyAccountsBackendUrl: 'https://accounts.pabbly.com/backend',
+  pabblyProject: 'pcf', // Project code for Pabbly ChatFlow
+
+  // Google OAuth Configuration
+  // ============================================================================
+  // IMPORTANT: To enable native Google Sign-In, you need to:
+  //
+  // 1. Go to Google Cloud Console: https://console.cloud.google.com/apis/credentials
+  // 2. Create a new project or select existing
+  // 3. Enable "Google Sign-In API" in APIs & Services → Library
+  // 4. Create OAuth 2.0 Client IDs for each platform:
+  //
+  // FOR WEB (Expo Go development):
+  //   - Type: Web application
+  //   - Authorized JavaScript origins: https://auth.expo.io
+  //   - Authorized redirect URIs: https://auth.expo.io/@YOUR_EXPO_USERNAME/chatflow_mobile_native
+  //
+  // FOR ANDROID:
+  //   - Type: Android
+  //   - Package name: com.pabbly.chatflow
+  //   - SHA-1 fingerprint: Run 'keytool -list -v -keystore your-keystore.jks'
+  //     For debug: keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+  //
+  // FOR iOS:
+  //   - Type: iOS
+  //   - Bundle ID: com.pabbly.chatflow
+  //
+  // NOTE: The WebView-based Google Sign-In (via Pabbly Accounts) works without these credentials.
+  // Native credentials are optional but provide better UX with native account picker.
+  // ============================================================================
+  google: {
+    // Web Client ID (pcf web) - used for Expo Go development
+    webClientId: '848504831060-uen6psucq9c3ovguk3utheiidi4hpotc.apps.googleusercontent.com',
+    // Android Client ID (pcf android) - used for production Android app
+    androidClientId: '848504831060-p68o8ogq2lrfg7kg2tk42oosqfjnbodi.apps.googleusercontent.com',
+    // iOS Client ID (pcf iOS) - used for production iOS app
+    iosClientId: '848504831060-dt3ve1h090q2979md9eoqq8epc1rd7tr.apps.googleusercontent.com',
+    // Expo username - IMPORTANT: Must match your Expo account username exactly
+    // This is used for the auth.expo.io proxy redirect URI in Expo Go
+    expoUsername: 'ayush_bisen_pabbly',
+    // App slug from app.json - used for OAuth redirect URI
+    expoSlug: 'chatflow_mobile_native',
+  },
   apiTimeout: 30000,
 
   // Authentication
@@ -36,18 +82,18 @@ export const APP_CONFIG = {
 // Environment-specific configuration
 export const ENV = {
   development: {
-    apiUrl: 'https://testchatflow.pabbly.com/api',
-    socketUrl: 'https://testchatflow.pabbly.com/',
+    apiUrl: 'https://chatflow.pabbly.com/api',
+    socketUrl: 'https://chatflow.pabbly.com/',
     debug: true,
   },
   staging: {
-    apiUrl: 'https://testchatflow.pabbly.com/api',
-    socketUrl: 'https://testchatflow.pabbly.com/',
+    apiUrl: 'https://chatflow.pabbly.com/api',
+    socketUrl: 'https://chatflow.pabbly.com/',
     debug: true,
   },
   production: {
-    apiUrl: 'https://testchatflow.pabbly.com/api',
-    socketUrl: 'https://testchatflow.pabbly.com/',
+    apiUrl: 'https://chatflow.pabbly.com/api',
+    socketUrl: 'https://chatflow.pabbly.com/',
     debug: false,
   },
 };
