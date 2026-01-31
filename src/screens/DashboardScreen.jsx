@@ -31,6 +31,7 @@ import {
 } from '../redux/slices/userSlice';
 import { callApi, endpoints, httpMethods } from '../utils/axios';
 import { colors } from '../theme/colors';
+import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
 
 // Import reusable components
 import {
@@ -401,6 +402,31 @@ export default function DashboardScreen() {
     fetchWANumbers();
   }, [fetchWANumbers]);
 
+  // Auto-access the first WhatsApp number if no settingId is set
+  // This matches web app behavior where the first number is accessed by default
+  useEffect(() => {
+    // Skip if already have a settingId or if team member is logged in
+    if (settingId || isTeamMemberLoggedIn) return;
+    // Skip if WhatsApp numbers are still loading or empty
+    if (accountStatus === 'loading' || whatsappNumbers.length === 0) return;
+
+    // Find the first active WhatsApp number
+    const firstActiveNumber = whatsappNumbers.find(n => n?.account?.status === 'active');
+    const numberToAccess = firstActiveNumber || whatsappNumbers[0];
+
+    if (numberToAccess?._id) {
+      // Auto-access the first WhatsApp number silently (without navigation)
+      dispatch(accessBusinessAccount(numberToAccess._id))
+        .unwrap()
+        .then(() => {
+          dispatch(checkSession());
+        })
+        .catch(() => {
+          // Silently fail - user can manually click Access Inbox
+        });
+    }
+  }, [settingId, whatsappNumbers, accountStatus, isTeamMemberLoggedIn, dispatch]);
+
   const loadDashboardData = useCallback(() => {
     dispatch(getDashboardStats());
     dispatch(getFolders({ sort: -1 }));
@@ -469,6 +495,9 @@ export default function DashboardScreen() {
 
     setAccessingSharedId(id || `${row?.email}-${row?.settingId}`);
     try {
+      // Clear old inbox data immediately to prevent showing stale chats
+      dispatch(clearInboxData());
+
       const payload = {
         email: row.email,
         teamMemberId: row.teamMemberId,
@@ -492,6 +521,9 @@ export default function DashboardScreen() {
         // Fetch WhatsApp numbers
         fetchWANumbers();
 
+        // Fetch fresh inbox chats for the new account
+        dispatch(fetchChats({ all: true }));
+
         // Stay on dashboard - don't redirect to inbox
       }
     } catch (error) {
@@ -505,6 +537,9 @@ export default function DashboardScreen() {
     if (!isTeamMemberLoggedIn) return;
     setExitingTeamMember(true);
     try {
+      // Clear old inbox data immediately to prevent showing stale chats
+      dispatch(clearInboxData());
+
       await dispatch(logoutFromTeammember()).unwrap();
 
       // Refresh session to get updated user data (back to admin mode)
@@ -536,6 +571,9 @@ export default function DashboardScreen() {
 
       // Fetch WhatsApp numbers
       fetchWANumbers();
+
+      // Fetch fresh inbox chats for the admin account
+      dispatch(fetchChats({ all: true }));
 
       // Reload team member widgets (admin-only data)
       loadTeamMemberWidgets({ force: true });
@@ -677,21 +715,19 @@ export default function DashboardScreen() {
                   <Text style={styles.sharedNumber} numberOfLines={1}>
                     {displayNumber}
                   </Text>
-                  <View style={styles.sharedMetaRow}>
-                    <Text style={styles.sharedBy} numberOfLines={1}>
-                      {sharedByEmail}
-                    </Text>
-                    <View style={[
-                      styles.sharedPermissionPill,
-                      isReadOnly ? styles.sharedPermissionPillReadOnly : styles.sharedPermissionPillFull
+                  <Text style={styles.sharedBy} numberOfLines={1}>
+                    {sharedByEmail}
+                  </Text>
+                  <View style={[
+                    styles.sharedPermissionPill,
+                    isReadOnly ? styles.sharedPermissionPillReadOnly : styles.sharedPermissionPillFull
+                  ]}>
+                    <Text style={[
+                      styles.sharedPermissionPillText,
+                      isReadOnly ? styles.sharedPermissionPillTextReadOnly : styles.sharedPermissionPillTextFull
                     ]}>
-                      <Text style={[
-                        styles.sharedPermissionPillText,
-                        isReadOnly ? styles.sharedPermissionPillTextReadOnly : styles.sharedPermissionPillTextFull
-                      ]}>
-                        {isReadOnly ? 'VIEW' : 'FULL'}
-                      </Text>
-                    </View>
+                      {isReadOnly ? 'VIEW ONLY' : 'FULL ACCESS'}
+                    </Text>
                   </View>
                 </View>
 
@@ -716,12 +752,6 @@ export default function DashboardScreen() {
           );
         })}
 
-        {sharedAccounts.length > 5 && (
-          <TouchableOpacity style={styles.viewAllRow} activeOpacity={0.7}>
-            <Text style={styles.viewAllText}>View all shared accounts</Text>
-            <Icon name="chevron-right" size={18} color={colors.primary.main} />
-          </TouchableOpacity>
-        )}
       </View>
     );
   };
@@ -1521,27 +1551,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#0F172A',
-    marginBottom: 4,
-  },
-  sharedMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    marginBottom: 2,
   },
   sharedBy: {
     fontSize: 11,
     color: '#64748B',
+    marginBottom: 4,
   },
   sharedPermissionPill: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+    alignSelf: 'flex-start',
   },
   sharedPermissionPillReadOnly: {
     backgroundColor: '#FEF3C7',
   },
   sharedPermissionPillFull: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#E0F2FE',
   },
   sharedPermissionPillText: {
     fontSize: 9,
@@ -1552,7 +1579,7 @@ const styles = StyleSheet.create({
     color: '#D97706',
   },
   sharedPermissionPillTextFull: {
-    color: '#16A34A',
+    color: '#0284C7',
   },
   accessNowButton: {
     flexDirection: 'row',

@@ -1113,15 +1113,15 @@ const userSlice = createSlice({
       })
       .addCase(accessBusinessAccount.fulfilled, (state, action) => {
         state.loading = false;
-        // Web app stores selectedFolderId and then refreshes (calls checkSession)
-        // For immediate UI update, we can store the settingId from response
-        const data = action.payload.data || action.payload;
-        if (data?._id) {
-          state.settingId = data._id;
+        // Use the whatsappNumberId that was passed to the thunk
+        // This is the actual WhatsApp number ID, not the folder ID from response
+        const whatsappNumberId = action.payload.whatsappNumberId;
+        if (whatsappNumberId) {
+          state.settingId = whatsappNumberId;
           // Also store to AsyncStorage for services that need it (file upload, socket, etc.)
           // Store under both keys for compatibility with socketService
-          AsyncStorage.setItem('settingId', data._id);
-          AsyncStorage.setItem('@pabbly_chatflow_settingId', data._id);
+          AsyncStorage.setItem('settingId', whatsappNumberId);
+          AsyncStorage.setItem('@pabbly_chatflow_settingId', whatsappNumberId);
         }
         state.error = null;
       })

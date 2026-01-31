@@ -221,6 +221,30 @@ export default function GoogleAuthWebView({
     return `window.location.href = '${accessUrl}'; true;`;
   }, [accessUrl]);
 
+  // Script to auto-click Google sign-in button on Pabbly login page
+  const getAutoClickGoogleScript = useCallback(() => {
+    return `
+      (function() {
+        // Try to find and click the Google sign-in button
+        const googleButton = document.querySelector('[data-provider="google"]') ||
+                            document.querySelector('button[class*="google"]') ||
+                            document.querySelector('a[href*="google"]') ||
+                            document.querySelector('[class*="google-btn"]') ||
+                            document.querySelector('[class*="googleBtn"]') ||
+                            document.querySelector('button:has(img[src*="google"])') ||
+                            Array.from(document.querySelectorAll('button, a')).find(el =>
+                              el.textContent.toLowerCase().includes('google') ||
+                              el.innerHTML.toLowerCase().includes('google')
+                            );
+
+        if (googleButton) {
+          googleButton.click();
+        }
+      })();
+      true;
+    `;
+  }, []);
+
   // Handle token capture
   const handleTokenCapture = useCallback(async (url) => {
     if (authCompleted) return;
@@ -269,11 +293,14 @@ export default function GoogleAuthWebView({
         setShowWebView(true);
       }
     } else if (url.includes('/login') && !isLoading) {
-      // On Pabbly login page, show WebView for user to click Google button
-      setAuthStep(1);
-      if (!showWebView) {
-        setTimeout(() => setShowWebView(true), 500);
-      }
+      // On Pabbly login page, auto-click the Google button to skip this screen
+      setAuthStep(0); // Keep showing "Connecting" step
+      // Inject script to auto-click Google sign-in button
+      setTimeout(() => {
+        if (webViewRef.current && !authCompleted) {
+          webViewRef.current.injectJavaScript(getAutoClickGoogleScript());
+        }
+      }, 500);
     }
 
     // Check for token in URL
@@ -312,7 +339,7 @@ export default function GoogleAuthWebView({
         }
       }, 500);
     }
-  }, [authCompleted, hasNavigatedToAccess, handleTokenCapture, getAccessNavigationScript, showWebView]);
+  }, [authCompleted, hasNavigatedToAccess, handleTokenCapture, getAccessNavigationScript, getAutoClickGoogleScript, showWebView]);
 
   // Handle URL interception
   const handleShouldStartLoadWithRequest = useCallback((request) => {

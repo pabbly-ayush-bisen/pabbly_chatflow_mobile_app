@@ -10,34 +10,39 @@ import {
 import { Text, ActivityIndicator, Avatar } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigation } from '@react-navigation/native';
 import { colors, chatColors, getAvatarColor } from '../../theme/colors';
 import {
   deleteChat,
   toggleChatNotifications,
-  assignChatToMember,
-  fetchTeamMembers,
+  updateContactChat,
+  updateChatInList,
 } from '../../redux/slices/inboxSlice';
+import { getSettings } from '../../redux/slices/settingsSlice';
 
 const ChatOptionsMenu = ({
   visible,
   onClose,
   chat,
   chatId,
-  onOpenNotes,
-  onOpenContactInfo,
-  navigation,
 }) => {
   const dispatch = useDispatch();
-  const { teamMembers, teamMembersStatus } = useSelector((state) => state.inbox);
+  const navigation = useNavigation();
+
+  // Get team members from settings (same pattern as ContactInfoScreen)
+  const { settings } = useSelector((state) => state.settings);
+  const teamMembers = settings?.teamMembers?.items || [];
+
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
 
   // Fetch team members when showing assign modal
   useEffect(() => {
-    if (showAssignModal && teamMembersStatus === 'idle') {
-      dispatch(fetchTeamMembers());
+    if (showAssignModal && !settings?.teamMembers) {
+      dispatch(getSettings('teamMembers'));
     }
-  }, [showAssignModal, teamMembersStatus, dispatch]);
+  }, [showAssignModal, settings?.teamMembers, dispatch]);
 
   const isMuted = chat?.hideNotification || false;
 
@@ -81,29 +86,65 @@ const ChatOptionsMenu = ({
     );
   }, [chatId, dispatch, onClose, navigation]);
 
-  // Handle assign to member
-  const handleAssignToMember = useCallback(async (memberId) => {
-    try {
-      await dispatch(assignChatToMember({ chatId, memberId })).unwrap();
+  // Handle assign to member - using updateContactChat pattern like ContactInfoScreen
+  const handleAssignToMember = useCallback(async (member) => {
+    const currentOwner = chat?.assignedToMember;
+
+    // Check if already assigned to this member
+    if ((member?._id || member?.id) === (currentOwner?._id || currentOwner?.id)) {
       setShowAssignModal(false);
       onClose();
-      Alert.alert('Success', 'Chat assigned successfully');
-    } catch (error) {
-      Alert.alert('Error', error || 'Failed to assign chat');
+      return;
     }
-  }, [chatId, dispatch, onClose]);
 
-  // Handle open notes
-  const handleOpenNotes = useCallback(() => {
-    onClose();
-    onOpenNotes?.();
-  }, [onClose, onOpenNotes]);
+    setIsAssigning(true);
+    try {
+      // Prepare payload matching web app format (same as ContactInfoScreen)
+      let payload;
+      if (member === 'none') {
+        payload = 'none';
+      } else {
+        const { name, role, email, _id } = member;
+        payload = { name, email, role, id: _id };
+      }
 
-  // Handle view contact info
+      const result = await dispatch(updateContactChat({
+        id: chatId,
+        status: chat?.status || 'open',
+        assignedToMember: payload,
+        hideNotification: chat?.hideNotification || false,
+      })).unwrap();
+
+      if (result.status === 'success' || result.response?.status === 'success') {
+        // Update the chat in the list
+        dispatch(updateChatInList({
+          _id: chatId,
+          assignedToMember: payload,
+        }));
+        setShowAssignModal(false);
+        onClose();
+        Alert.alert('Success', member === 'none'
+          ? 'Chat owner removed'
+          : `Chat assigned to ${member.name}`);
+      } else {
+        Alert.alert('Error', result.message || 'Failed to assign chat');
+      }
+    } catch (error) {
+      Alert.alert('Error', error?.message || error || 'Failed to assign chat');
+    } finally {
+      setIsAssigning(false);
+    }
+  }, [chatId, chat, dispatch, onClose]);
+
+  // Handle view contact info - navigate to ContactInfoScreen
   const handleViewContactInfo = useCallback(() => {
     onClose();
-    onOpenContactInfo?.();
-  }, [onClose, onOpenContactInfo]);
+    navigation.navigate('ContactInfo', {
+      contact: chat?.contact,
+      chatId,
+      chat,
+    });
+  }, [onClose, navigation, chat, chatId]);
 
   const getInitials = (name) => {
     if (!name) return '?';
@@ -130,12 +171,6 @@ const ChatOptionsMenu = ({
       onPress: handleToggleMute,
     },
     {
-      icon: 'note-plus',
-      label: 'Add notes',
-      color: '#4CAF50',
-      onPress: handleOpenNotes,
-    },
-    {
       icon: 'delete',
       label: 'Delete chat',
       color: '#F44336',
@@ -144,28 +179,35 @@ const ChatOptionsMenu = ({
     },
   ];
 
+  // Get current chat owner
+  const chatOwner = chat?.assignedToMember;
+
   // Render team member item
-  const renderTeamMember = ({ item }) => (
-    <TouchableOpacity
-      style={styles.memberItem}
-      onPress={() => handleAssignToMember(item._id)}
-      activeOpacity={0.7}
-    >
-      <Avatar.Text
-        size={40}
-        label={getInitials(item.name)}
-        style={{ backgroundColor: getAvatarColor(item.name) }}
-        labelStyle={styles.memberAvatarLabel}
-      />
-      <View style={styles.memberInfo}>
-        <Text style={styles.memberName}>{item.name}</Text>
-        <Text style={styles.memberEmail}>{item.email}</Text>
-      </View>
-      {chat?.assignedToMember === item._id && (
-        <Icon name="check-circle" size={20} color={colors.success.main} />
-      )}
-    </TouchableOpacity>
-  );
+  const renderTeamMember = ({ item }) => {
+    const isSelected = (chatOwner?._id || chatOwner?.id) === item._id;
+    return (
+      <TouchableOpacity
+        style={[styles.memberItem, isSelected && styles.memberItemSelected]}
+        onPress={() => handleAssignToMember(item)}
+        activeOpacity={0.7}
+        disabled={isAssigning}
+      >
+        <Avatar.Text
+          size={40}
+          label={getInitials(item.name)}
+          style={{ backgroundColor: getAvatarColor(item.name) }}
+          labelStyle={styles.memberAvatarLabel}
+        />
+        <View style={styles.memberInfo}>
+          <Text style={styles.memberName}>{item.name}</Text>
+          <Text style={styles.memberEmail}>{item.email}</Text>
+        </View>
+        {isSelected && (
+          <Icon name="check-circle" size={20} color={colors.success.main} />
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   if (!visible) return null;
 
@@ -240,12 +282,33 @@ const ChatOptionsMenu = ({
               <Text style={styles.title}>Assign to Member</Text>
             </View>
 
-            {teamMembersStatus === 'loading' ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={chatColors.primary} />
-                <Text style={styles.loadingText}>Loading team members...</Text>
+            {isAssigning && (
+              <View style={styles.assigningOverlay}>
+                <ActivityIndicator size="small" color={chatColors.primary} />
+                <Text style={styles.assigningText}>Assigning...</Text>
               </View>
-            ) : teamMembers.length === 0 ? (
+            )}
+
+            {/* Unassigned option */}
+            <TouchableOpacity
+              style={[styles.memberItem, !chatOwner && styles.memberItemSelected]}
+              onPress={() => handleAssignToMember('none')}
+              activeOpacity={0.7}
+              disabled={isAssigning}
+            >
+              <View style={[styles.unassignedAvatar]}>
+                <Icon name="account-off-outline" size={22} color={colors.grey[500]} />
+              </View>
+              <View style={styles.memberInfo}>
+                <Text style={styles.memberName}>Unassigned</Text>
+                <Text style={styles.memberEmail}>Remove current assignment</Text>
+              </View>
+              {!chatOwner && (
+                <Icon name="check-circle" size={20} color={colors.success.main} />
+              )}
+            </TouchableOpacity>
+
+            {teamMembers.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Icon name="account-group-outline" size={48} color={colors.grey[300]} />
                 <Text style={styles.emptyText}>No team members found</Text>
@@ -341,7 +404,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 16,
     gap: 12,
+  },
+  memberItemSelected: {
+    backgroundColor: `${chatColors.primary}10`,
+    borderRadius: 12,
+  },
+  unassignedAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.grey[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  assigningOverlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 8,
+  },
+  assigningText: {
+    fontSize: 14,
+    color: chatColors.primary,
   },
   memberAvatarLabel: {
     fontSize: 14,

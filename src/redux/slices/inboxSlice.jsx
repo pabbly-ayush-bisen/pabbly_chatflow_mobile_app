@@ -637,7 +637,9 @@ const inboxSlice = createSlice({
     },
     updateChatInList: (state, action) => {
       const incoming = normalizeChatForList(action.payload);
-      const index = state.chats.findIndex(chat => chat._id === incoming?._id);
+      if (!incoming?._id) return; // Skip if no valid _id
+
+      const index = state.chats.findIndex(chat => chat._id === incoming._id);
       if (index !== -1) {
         // Update existing chat
         state.chats[index] = { ...state.chats[index], ...incoming };
@@ -647,8 +649,11 @@ const inboxSlice = createSlice({
           state.chats.unshift(chat);
         }
       } else {
-        // New chat, add to top
-        state.chats.unshift(incoming);
+        // New chat, add to top only if not already present
+        const alreadyExists = state.chats.some(chat => chat._id === incoming._id);
+        if (!alreadyExists) {
+          state.chats.unshift(incoming);
+        }
       }
       // Also update currentConversation if it matches
       if (state.currentConversation && state.currentConversation._id === incoming?._id) {
@@ -740,9 +745,10 @@ const inboxSlice = createSlice({
         }
 
         // Check if message already exists (by wamid or _id)
+        // Also check optimistic messages to prevent duplicates
         const messageExists = state.currentConversation.messages.some(
           m => (message.wamid && m.wamid === message.wamid) ||
-               (message._id && !m.isOptimistic && m._id === message._id)
+               (message._id && m._id === message._id)
         );
         if (!messageExists) {
           // Add new message to the end of the array
@@ -964,6 +970,37 @@ const inboxSlice = createSlice({
       state.isLoadingMoreMessages = false;
       state.loadMoreMessagesError = null;
     },
+    // Clear all inbox data (used when switching accounts/team members)
+    clearInboxData: (state) => {
+      state.chats = [];
+      state.currentConversation = null;
+      state.conversationCache = {};
+      state.status = 'idle';
+      state.conversationStatus = 'idle';
+      state.messagesSkip = 0;
+      state.hasMoreMessages = true;
+      state.isLoadingMoreMessages = false;
+      state.loadMoreMessagesError = null;
+      state.hasMoreChats = false;
+      state.selectedChatId = null;
+      state.conversationId = null;
+      state.aiAssistantStatus = false;
+      state.selectedAssistantId = null;
+      state.chatStatus = null;
+      state.templates = [];
+      state.templatesStatus = 'idle';
+      state.quickReplies = [];
+      state.quickRepliesStatus = 'idle';
+      state.activeFilter = 'all';
+      state.paginationCursor = null;
+      state.isLoadingMore = false;
+      state.notes = [];
+      state.notesStatus = 'idle';
+      state.teamMembers = [];
+      state.teamMembersStatus = 'idle';
+      state.error = null;
+      state.conversationError = null;
+    },
   },
   extraReducers: (builder) => {
     // Fetch Chats
@@ -981,8 +1018,17 @@ const inboxSlice = createSlice({
         // 3. payload._raw.chats (raw response fallback)
         const rawChats = payload.data?.chats || payload.chats || payload._raw?.chats || [];
 
+        // Deduplicate chats by _id to prevent duplicate key errors in FlatList
+        const normalizedChats = rawChats.map(normalizeChatForList);
+        const uniqueChatsMap = new Map();
+        normalizedChats.forEach(chat => {
+          if (chat._id && !uniqueChatsMap.has(chat._id)) {
+            uniqueChatsMap.set(chat._id, chat);
+          }
+        });
+        const chats = Array.from(uniqueChatsMap.values());
+
         // Sort chats by latest activity (lastMessage timestamp or updatedAt)
-        const chats = rawChats.map(normalizeChatForList);
         state.chats = chats.sort((a, b) => {
           const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
           const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
@@ -1430,6 +1476,8 @@ export const {
   addOptimisticMessage,
   updateOptimisticMessage,
   markOptimisticMessageFailed,
+  // Clear inbox data (for account switching)
+  clearInboxData,
 } = inboxSlice.actions;
 
 export default inboxSlice.reducer;

@@ -118,7 +118,13 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const contactAttributes = contactData.attributes || contactData.customAttributes || {};
   const lastActive = contactData.lastActive || chat?.lastActive;
   const createdAt = contactData.createdAt || chat?.createdAt;
-  const optInStatus = contactData.optIn?.status || 'unknown';
+  // Check multiple possible locations for opt-in status
+  // Web app uses 'optin' field directly as a boolean (true/false)
+  const optInValue = contactData.optin ?? contactData.optIn?.status
+    ?? contactData.optInStatus ?? chat?.contact?.optin ?? 'unknown';
+
+  // Check for incoming blocked status
+  const incomingBlocked = contactData.incomingBlocked ?? chat?.contact?.incomingBlocked;
 
   useEffect(() => {
     setEditName(contactName);
@@ -345,17 +351,48 @@ const ContactInfoScreen = ({ route, navigation }) => {
     }
   }, [contactEmail]);
 
-  const getOptInStatusConfig = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'opted_in':
-      case 'active':
-        return { color: colors.success.main, bg: colors.success.lighter, label: 'Opted In', icon: 'check-circle' };
-      case 'opted_out':
-      case 'inactive':
-        return { color: colors.error.main, bg: colors.error.lighter, label: 'Opted Out', icon: 'close-circle' };
-      default:
-        return { color: colors.warning.main, bg: colors.warning.lighter, label: 'Unknown', icon: 'help-circle' };
+  const getOptInStatusConfig = (optinValue) => {
+    // Handle boolean values (web app pattern)
+    if (optinValue === true) {
+      return { color: colors.success.main, bg: colors.success.lighter, label: 'Opted In', icon: 'check-circle' };
     }
+    if (optinValue === false) {
+      return { color: colors.error.main, bg: colors.error.lighter, label: 'Opted Out', icon: 'close-circle' };
+    }
+
+    // Handle string values
+    const statusLower = optinValue?.toString?.()?.toLowerCase?.() || '';
+
+    // Opted In states
+    if (statusLower === 'opt_in' || statusLower === 'optin' || statusLower === 'opted_in' ||
+        statusLower === 'active' || statusLower === 'true' || statusLower === 'yes') {
+      return { color: colors.success.main, bg: colors.success.lighter, label: 'Opted In', icon: 'check-circle' };
+    }
+
+    // Opted Out states
+    if (statusLower === 'opt_out' || statusLower === 'optout' || statusLower === 'opted_out' ||
+        statusLower === 'inactive' || statusLower === 'false' || statusLower === 'no') {
+      return { color: colors.error.main, bg: colors.error.lighter, label: 'Opted Out', icon: 'close-circle' };
+    }
+
+    // Pending state
+    if (statusLower === 'pending') {
+      return { color: colors.warning.main, bg: colors.warning.lighter, label: 'Pending', icon: 'clock-outline' };
+    }
+
+    // Default - Unknown
+    return { color: colors.grey[500], bg: colors.grey[100], label: 'Not Set', icon: 'help-circle-outline' };
+  };
+
+  // Get incoming blocked status config
+  const getIncomingBlockedConfig = (blocked) => {
+    if (blocked === true) {
+      return { color: colors.error.main, bg: colors.error.lighter, label: 'Blocked', icon: 'block-helper' };
+    }
+    if (blocked === false) {
+      return { color: colors.success.main, bg: colors.success.lighter, label: 'Allowed', icon: 'check-circle-outline' };
+    }
+    return { color: colors.grey[500], bg: colors.grey[100], label: 'Unknown', icon: 'help-circle-outline' };
   };
 
   const getOrderStatusConfig = (status) => {
@@ -376,7 +413,8 @@ const ContactInfoScreen = ({ route, navigation }) => {
     }
   };
 
-  const optInConfig = getOptInStatusConfig(optInStatus);
+  const optInConfig = getOptInStatusConfig(optInValue);
+  const incomingBlockedConfig = getIncomingBlockedConfig(incomingBlocked);
 
   // Header opacity animation
   const headerOpacity = scrollY.interpolate({
@@ -458,6 +496,21 @@ const ContactInfoScreen = ({ route, navigation }) => {
                 <Icon name={optInConfig.icon} size={12} color={optInConfig.color} />
                 <Text style={[styles.statusBadgeText, { color: optInConfig.color }]}>
                   {optInConfig.label}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.infoItem}>
+            <View style={styles.infoIconContainer}>
+              <Icon name="message-text-lock-outline" size={18} color={colors.grey[500]} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>Incoming Messages</Text>
+              <View style={[styles.statusBadge, { backgroundColor: incomingBlockedConfig.bg }]}>
+                <Icon name={incomingBlockedConfig.icon} size={12} color={incomingBlockedConfig.color} />
+                <Text style={[styles.statusBadgeText, { color: incomingBlockedConfig.color }]}>
+                  {incomingBlockedConfig.label}
                 </Text>
               </View>
             </View>
@@ -851,9 +904,8 @@ const ContactInfoScreen = ({ route, navigation }) => {
           <Text style={styles.headerTitle} numberOfLines={1}>{displayName}</Text>
         </Animated.View>
 
-        <TouchableOpacity style={styles.headerAction}>
-          <Icon name="dots-vertical" size={24} color={colors.common.white} />
-        </TouchableOpacity>
+        {/* Placeholder for header alignment */}
+        <View style={styles.headerAction} />
       </View>
 
       <Animated.ScrollView

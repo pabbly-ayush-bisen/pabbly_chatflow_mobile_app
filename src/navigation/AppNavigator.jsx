@@ -300,6 +300,12 @@ function ContactsWithHeader() {
 const CustomTabBar = ({ state, descriptors, navigation }) => {
   const insets = useSafeAreaInsets();
 
+  // Get unread count from inbox chats
+  const chats = useSelector((state) => state.inbox?.chats || []);
+  const totalUnreadCount = chats.reduce((count, chat) => {
+    return count + (chat.unreadCount || 0);
+  }, 0);
+
   // Tab configuration with colorful icons
   const tabConfig = {
     DashboardTab: {
@@ -382,6 +388,14 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
                   size={26}
                   color={isFocused ? config.color : '#9CA3AF'}
                 />
+                {/* Unread count badge for Inbox tab */}
+                {route.name === 'InboxTab' && totalUnreadCount > 0 && (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadBadgeText}>
+                      {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                    </Text>
+                  </View>
+                )}
               </View>
               <Text style={[
                 styles.tabLabel,
@@ -830,6 +844,25 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: 14,
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -4,
+    right: 2,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   tabLabel: {
     fontSize: Platform.OS === 'android' ? 11 : 10,

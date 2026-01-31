@@ -4,14 +4,13 @@ import { Text, ActivityIndicator, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { fetchChats, resetUnreadCount, setActiveFilter, resetPagination } from '../redux/slices/inboxSlice';
+import { fetchChats, resetUnreadCount, resetPagination } from '../redux/slices/inboxSlice';
 import { getAssistants, getFlows } from '../redux/slices/assistantSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
 import { colors, chatColors } from '../theme/colors';
 import ChatListItem from '../components/chat/ChatListItem';
 import InboxHeader from '../components/chat/InboxHeader';
-import FilterChips from '../components/chat/FilterChips';
 import { ConversationsListSkeleton } from '../components/common';
 
 export default function InboxScreen() {
@@ -24,7 +23,6 @@ export default function InboxScreen() {
     status,
     error,
     selectedChatId,
-    activeFilter,
     isLoadingMore
   } = useSelector((state) => state.inbox);
   const { teamMemberStatus } = useSelector((state) => state.user);
@@ -40,14 +38,9 @@ export default function InboxScreen() {
     return chats;
   }, [chats]);
 
-  // Calculate total unread count
-  const totalUnreadCount = useMemo(() => {
-    return visibleChats.reduce((acc, chat) => acc + (chat.unreadCount || 0), 0);
-  }, [visibleChats]);
-
   useEffect(() => {
     loadChats();
-  }, [activeFilter]);
+  }, []);
 
   // Load assistants and flows for sender name display in chat messages
   useEffect(() => {
@@ -59,23 +52,12 @@ export default function InboxScreen() {
     dispatch(resetPagination());
     // Fetch ALL chats without pagination (matching web app behavior)
     // The 'all: true' param tells the API to return all chats in one request
-    const params = { all: true };
-    if (activeFilter !== 'all') {
-      params.filter = activeFilter;
-    }
-    dispatch(fetchChats(params));
-  }, [dispatch, activeFilter]);
+    dispatch(fetchChats({ all: true }));
+  }, [dispatch]);
 
   const onRefresh = useCallback(() => {
     loadChats();
   }, [loadChats]);
-
-  // Handle filter change
-  const handleFilterChange = useCallback((filter) => {
-    if (filter !== activeFilter) {
-      dispatch(setActiveFilter(filter));
-    }
-  }, [dispatch, activeFilter]);
 
   // Handle load more (pagination) - disabled since we now fetch all chats at once
   // Keeping this for potential future use if pagination is re-enabled
@@ -209,15 +191,6 @@ export default function InboxScreen() {
         onSearchChange={handleSearchChange}
         connectionStatus={connectionStatus}
       />
-
-      {/* Filter Chips (hidden in team-member mode) */}
-      {!isTeamMemberLoggedIn && (
-        <FilterChips
-          activeFilter={activeFilter}
-          onFilterChange={handleFilterChange}
-          unreadCount={totalUnreadCount}
-        />
-      )}
 
       {error && !chats.length ? (
         renderError()

@@ -18,7 +18,7 @@ import {
   Checkbox,
   ActivityIndicator,
 } from 'react-native-paper';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
@@ -31,9 +31,25 @@ import GoogleAuthWebView from '../../components/GoogleAuthWebView';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// Responsive sizing based on screen height
+const isSmallScreen = SCREEN_HEIGHT < 700;
+
+// Dynamic sizes
+const LOGO_SIZE = isSmallScreen ? SCREEN_WIDTH * 0.25 : SCREEN_WIDTH * 0.3;
+const WELCOME_FONT_SIZE = isSmallScreen ? 24 : 28;
+const SUBTITLE_FONT_SIZE = isSmallScreen ? 13 : 15;
+const INPUT_HEIGHT = isSmallScreen ? 44 : 48;
+const BUTTON_HEIGHT = isSmallScreen ? 44 : 48;
+const SPACING = {
+  logoMargin: isSmallScreen ? 8 : 12,
+  welcomeMargin: isSmallScreen ? 12 : 16,
+  formPadding: isSmallScreen ? 16 : 20,
+  inputMargin: isSmallScreen ? 10 : 12,
+  buttonMargin: isSmallScreen ? 12 : 14,
+};
+
 export default function LoginScreen() {
   const dispatch = useDispatch();
-  const insets = useSafeAreaInsets();
   const { loading, error } = useSelector((state) => state.user);
 
   const [email, setEmail] = useState('');
@@ -190,12 +206,11 @@ export default function LoginScreen() {
           style={styles.keyboardView}
         >
           <ScrollView
-            contentContainerStyle={[
-              styles.scrollContent,
-              { minHeight: SCREEN_HEIGHT - insets.top - insets.bottom },
-            ]}
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            bounces={true}
+            overScrollMode="always"
           >
             {/* Logo Section with Animation */}
             <Animated.View
@@ -204,12 +219,13 @@ export default function LoginScreen() {
                 {
                   opacity: fadeAnim,
                   transform: [{ scale: logoScaleAnim }],
+                  marginBottom: SPACING.logoMargin,
                 },
               ]}
             >
               <View style={styles.logoContainer}>
-                <View style={styles.logoGlow} />
-                <ChatflowLogo width={SCREEN_WIDTH * 0.35} />
+                <View style={[styles.logoGlow, { width: LOGO_SIZE * 0.9, height: LOGO_SIZE * 0.9, borderRadius: LOGO_SIZE * 0.45 }]} />
+                <ChatflowLogo width={LOGO_SIZE} />
               </View>
             </Animated.View>
 
@@ -220,11 +236,12 @@ export default function LoginScreen() {
                 {
                   opacity: fadeAnim,
                   transform: [{ translateY: slideAnim }],
+                  marginBottom: SPACING.welcomeMargin,
                 },
               ]}
             >
-              <Text style={styles.welcomeText}>Welcome Back!</Text>
-              <Text style={styles.subtitleText}>
+              <Text style={[styles.welcomeText, { fontSize: WELCOME_FONT_SIZE }]}>Welcome</Text>
+              <Text style={[styles.subtitleText, { fontSize: SUBTITLE_FONT_SIZE }]}>
                 Sign in to manage your WhatsApp business
               </Text>
             </Animated.View>
@@ -236,11 +253,13 @@ export default function LoginScreen() {
                 {
                   opacity: formFadeAnim,
                   transform: [{ translateY: formSlideAnim }],
+                  padding: SPACING.formPadding,
+                  paddingTop: SPACING.formPadding + 4,
                 },
               ]}
             >
               {/* Email Input */}
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, { marginBottom: SPACING.inputMargin }]}>
                 <Text style={styles.inputLabel}>Email Address</Text>
                 <TextInput
                   value={email}
@@ -254,14 +273,15 @@ export default function LoginScreen() {
                   autoComplete="email"
                   placeholder="Enter your email"
                   placeholderTextColor={colors.grey[400]}
-                  left={<TextInput.Icon icon="email-outline" color={colors.grey[400]} />}
-                  style={styles.input}
+                  left={<TextInput.Icon icon="email-outline" color={colors.grey[400]} size={isSmallScreen ? 18 : 20} />}
+                  style={[styles.input, { height: INPUT_HEIGHT }]}
                   outlineStyle={[
                     styles.inputOutline,
                     errors.email && styles.inputOutlineError
                   ]}
                   error={!!errors.email}
                   disabled={loading}
+                  dense={isSmallScreen}
                   theme={{
                     colors: {
                       primary: colors.primary.main,
@@ -276,7 +296,7 @@ export default function LoginScreen() {
               </View>
 
               {/* Password Input */}
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, { marginBottom: SPACING.inputMargin }]}>
                 <Text style={styles.inputLabel}>Password</Text>
                 <TextInput
                   value={password}
@@ -288,21 +308,23 @@ export default function LoginScreen() {
                   secureTextEntry={!showPassword}
                   placeholder="Enter your password"
                   placeholderTextColor={colors.grey[400]}
-                  left={<TextInput.Icon icon="lock-outline" color={colors.grey[400]} />}
+                  left={<TextInput.Icon icon="lock-outline" color={colors.grey[400]} size={isSmallScreen ? 18 : 20} />}
                   right={
                     <TextInput.Icon
                       icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
                       onPress={() => setShowPassword(!showPassword)}
                       color={colors.grey[400]}
+                      size={isSmallScreen ? 18 : 20}
                     />
                   }
-                  style={styles.input}
+                  style={[styles.input, { height: INPUT_HEIGHT }]}
                   outlineStyle={[
                     styles.inputOutline,
                     errors.password && styles.inputOutlineError
                   ]}
                   error={!!errors.password}
                   disabled={loading}
+                  dense={isSmallScreen}
                   theme={{
                     colors: {
                       primary: colors.primary.main,
@@ -345,8 +367,8 @@ export default function LoginScreen() {
               <Button
                 mode="contained"
                 onPress={handleLogin}
-                style={styles.loginButton}
-                contentStyle={styles.loginButtonContent}
+                style={[styles.loginButton, { marginBottom: SPACING.buttonMargin }]}
+                contentStyle={[styles.loginButtonContent, { height: BUTTON_HEIGHT }]}
                 labelStyle={styles.loginButtonLabel}
                 disabled={loading}
                 buttonColor={colors.primary.main}
@@ -359,7 +381,7 @@ export default function LoginScreen() {
               </Button>
 
               {/* Divider */}
-              <View style={styles.dividerContainer}>
+              <View style={[styles.dividerContainer, { marginBottom: SPACING.buttonMargin }]}>
                 <View style={styles.divider} />
                 <Text style={styles.dividerText}>or continue with</Text>
                 <View style={styles.divider} />
@@ -369,8 +391,8 @@ export default function LoginScreen() {
               <Button
                 mode="outlined"
                 onPress={handleGoogleLogin}
-                style={styles.socialButton}
-                contentStyle={styles.socialButtonContent}
+                style={[styles.socialButton, { marginBottom: SPACING.inputMargin }]}
+                contentStyle={[styles.socialButtonContent, { height: BUTTON_HEIGHT }]}
                 labelStyle={styles.socialButtonLabel}
                 disabled={loading || googleLoading}
                 icon={() => (
@@ -407,22 +429,24 @@ export default function LoginScreen() {
               </View>
             </Animated.View>
 
-            {/* Footer with Animation */}
-            <Animated.View
-              style={[
-                styles.footer,
-                {
-                  opacity: formFadeAnim,
-                },
-              ]}
-            >
-              <Text style={styles.footerText}>
-                By signing in, you agree to our{' '}
-                <Text style={styles.linkText}>Terms of Service</Text>
-                {' '}and{' '}
-                <Text style={styles.linkText}>Privacy Policy</Text>
-              </Text>
-            </Animated.View>
+            {/* Footer with Animation - Only show on larger screens */}
+            {!isSmallScreen && (
+              <Animated.View
+                style={[
+                  styles.footer,
+                  {
+                    opacity: formFadeAnim,
+                  },
+                ]}
+              >
+                <Text style={styles.footerText}>
+                  By signing in, you agree to our{' '}
+                  <Text style={styles.linkText}>Terms of Service</Text>
+                  {' '}and{' '}
+                  <Text style={styles.linkText}>Privacy Policy</Text>
+                </Text>
+              </Animated.View>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -495,14 +519,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 20,
-    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 16 : 12,
+    paddingBottom: 16,
   },
   logoSection: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginTop: 4,
   },
   logoContainer: {
     alignItems: 'center',
@@ -511,48 +534,40 @@ const styles = StyleSheet.create({
   },
   logoGlow: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
     backgroundColor: 'rgba(32, 178, 118, 0.12)',
   },
   welcomeSection: {
     alignItems: 'center',
-    marginBottom: 24,
   },
   welcomeText: {
-    fontSize: 28,
     fontWeight: '800',
     color: colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 4,
     letterSpacing: -0.5,
   },
   subtitleText: {
-    fontSize: 15,
     color: colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 20,
   },
   formSection: {
     backgroundColor: colors.common.white,
-    borderRadius: 28,
-    padding: 24,
+    borderRadius: 24,
     shadowColor: colors.primary.main,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 8,
+    shadowRadius: 16,
+    elevation: 6,
     borderWidth: 1,
     borderColor: 'rgba(32, 178, 118, 0.08)',
   },
   inputContainer: {
-    marginBottom: 18,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.text.primary,
-    marginBottom: 10,
+    marginBottom: 6,
     marginLeft: 4,
   },
   input: {
@@ -560,7 +575,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   inputOutline: {
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: colors.grey[200],
   },
@@ -577,7 +592,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   rememberMe: {
     flexDirection: 'row',
@@ -592,16 +607,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   loginButton: {
-    borderRadius: 14,
-    marginBottom: 20,
+    borderRadius: 12,
     shadowColor: colors.primary.main,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   loginButtonContent: {
-    height: 52,
   },
   loginButtonLabel: {
     fontSize: 16,
@@ -611,7 +624,6 @@ const styles = StyleSheet.create({
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
   },
   divider: {
     flex: 1,
@@ -625,14 +637,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   socialButton: {
-    borderRadius: 14,
+    borderRadius: 12,
     borderColor: colors.grey[200],
     borderWidth: 1.5,
-    marginBottom: 20,
     backgroundColor: colors.common.white,
   },
   socialButtonContent: {
-    height: 50,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -659,7 +669,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 4,
+    paddingTop: 2,
   },
   signUpText: {
     fontSize: 14,
@@ -670,8 +680,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   footer: {
-    marginTop: 24,
-    paddingHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
   },
   footerText: {
     fontSize: 12,
