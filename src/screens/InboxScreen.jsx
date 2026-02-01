@@ -8,15 +8,18 @@ import { fetchChats, resetUnreadCount, resetPagination } from '../redux/slices/i
 import { getAssistants, getFlows } from '../redux/slices/assistantSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
+import { useNetwork } from '../contexts/NetworkContext';
 import { colors, chatColors } from '../theme/colors';
 import ChatListItem from '../components/chat/ChatListItem';
 import InboxHeader from '../components/chat/InboxHeader';
-import { ConversationsListSkeleton } from '../components/common';
+import { ConversationsListSkeleton, EmptyState } from '../components/common';
 
 export default function InboxScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch();
+  const { isOffline, isNetworkAvailable } = useNetwork();
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   const {
     chats,
@@ -30,8 +33,9 @@ export default function InboxScreen() {
 
   const isTeamMemberLoggedIn = !!teamMemberStatus?.loggedIn;
 
-  const isLoading = status === 'loading';
-  const isRefreshing = status === 'loading' && chats.length > 0;
+  // Only show loading if online and actually loading
+  const isLoading = isNetworkAvailable && status === 'loading';
+  const isRefreshing = isNetworkAvailable && status === 'loading' && chats.length > 0;
 
   // Show all chats without team member filtering
   const visibleChats = useMemo(() => {
@@ -39,25 +43,43 @@ export default function InboxScreen() {
   }, [chats]);
 
   useEffect(() => {
-    loadChats();
+    // Only fetch if online
+    if (isNetworkAvailable) {
+      loadChats();
+    }
   }, []);
+
+  // Fetch when network becomes available (if we haven't loaded yet)
+  useEffect(() => {
+    if (isNetworkAvailable && !hasLoadedOnce && chats.length === 0) {
+      loadChats();
+    }
+  }, [isNetworkAvailable, hasLoadedOnce, chats.length]);
 
   // Load assistants and flows for sender name display in chat messages
   useEffect(() => {
-    dispatch(getAssistants({ page: 1, limit: 50, fetchAll: true }));
-    dispatch(getFlows());
-  }, [dispatch]);
+    if (isNetworkAvailable) {
+      dispatch(getAssistants({ page: 1, limit: 50, fetchAll: true }));
+      dispatch(getFlows());
+    }
+  }, [dispatch, isNetworkAvailable]);
 
   const loadChats = useCallback(() => {
+    // Don't fetch if offline
+    if (isOffline) return;
+
     dispatch(resetPagination());
     // Fetch ALL chats without pagination (matching web app behavior)
     // The 'all: true' param tells the API to return all chats in one request
-    dispatch(fetchChats({ all: true }));
-  }, [dispatch]);
+    dispatch(fetchChats({ all: true }))
+      .then(() => setHasLoadedOnce(true));
+  }, [dispatch, isOffline]);
 
   const onRefresh = useCallback(() => {
+    // Don't refresh if offline
+    if (isOffline) return;
     loadChats();
-  }, [loadChats]);
+  }, [loadChats, isOffline]);
 
   // Handle load more (pagination) - disabled since we now fetch all chats at once
   // Keeping this for potential future use if pagination is re-enabled
@@ -130,11 +152,26 @@ export default function InboxScreen() {
   ), [handleChatPress, selectedChatId]);
 
   const renderEmptyState = () => {
-    // Show skeleton while loading (not during refresh)
-    if (isLoading && !isRefreshing) {
+    // Show skeleton while loading (not during refresh) - only if online
+    if (isLoading && !isRefreshing && isNetworkAvailable) {
       return (
         <View style={styles.skeletonInListContainer}>
           <ConversationsListSkeleton count={10} />
+        </View>
+      );
+    }
+
+    // Show offline state if offline and no chats
+    if (isOffline && chats.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Icon name="cloud-off-outline" size={80} color={colors.grey[300]} />
+          <Text variant="headlineSmall" style={styles.emptyTitle}>
+            You're Offline
+          </Text>
+          <Text variant="bodyMedium" style={styles.emptyText}>
+            Connect to the internet to load conversations.{'\n'}Previously loaded chats will appear here.
+          </Text>
         </View>
       );
     }

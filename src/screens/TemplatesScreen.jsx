@@ -19,6 +19,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { fetchAllTemplates, fetchTemplateStats, resetTemplates } from '../redux/slices/templateSlice';
 import { colors, chatColors } from '../theme/colors';
 import { EmptyState, TemplatesListSkeleton } from '../components/common';
+import { useNetwork } from '../contexts/NetworkContext';
 
 // Status configurations
 const STATUS_CONFIG = {
@@ -46,11 +47,13 @@ const FORMAT_CONFIG = {
 
 export default function TemplatesScreen() {
   const dispatch = useDispatch();
+  const { isOffline, isNetworkAvailable } = useNetwork();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [previewTemplate, setPreviewTemplate] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [page, setPage] = useState(0);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const PAGE_SIZE = 10;
   const searchDebounceRef = useRef(null);
 
@@ -67,11 +70,15 @@ export default function TemplatesScreen() {
     hasMoreTemplates,
   } = useSelector((state) => state.template);
 
-  const isLoading = templatesStatus === 'loading' || statsStatus === 'loading';
-  const isRefreshing = templatesStatus === 'loading' && templates.length > 0;
+  // Only show loading if online and actually loading, OR if never loaded before and online
+  const isLoading = isNetworkAvailable && (templatesStatus === 'loading' || statsStatus === 'loading');
+  const isRefreshing = isNetworkAvailable && templatesStatus === 'loading' && templates.length > 0;
 
   useEffect(() => {
-    loadTemplates({ reset: true });
+    // Only fetch if online
+    if (isNetworkAvailable) {
+      loadTemplates({ reset: true });
+    }
     // Cleanup debounce timer on unmount
     return () => {
       if (searchDebounceRef.current) {
@@ -80,7 +87,19 @@ export default function TemplatesScreen() {
     };
   }, []);
 
+  // Fetch when network becomes available (if we haven't loaded yet)
+  useEffect(() => {
+    if (isNetworkAvailable && !hasLoadedOnce && templates.length === 0) {
+      loadTemplates({ reset: true });
+    }
+  }, [isNetworkAvailable, hasLoadedOnce, templates.length]);
+
   const loadTemplates = useCallback(({ reset = true, append = false, search = '', status = 'all' } = {}) => {
+    // Don't fetch if offline
+    if (isOffline) {
+      return;
+    }
+
     // Build API params
     const apiParams = {
       limit: PAGE_SIZE,
@@ -101,15 +120,19 @@ export default function TemplatesScreen() {
       dispatch(resetTemplates());
       setPage(0);
       dispatch(fetchTemplateStats());
-      dispatch(fetchAllTemplates({ ...apiParams, page: 0, append: false }));
+      dispatch(fetchAllTemplates({ ...apiParams, page: 0, append: false }))
+        .then(() => setHasLoadedOnce(true));
       setPage(1);
     } else if (append) {
       dispatch(fetchAllTemplates({ ...apiParams, page, append: true }));
       setPage(prev => prev + 1);
     }
-  }, [dispatch, page, PAGE_SIZE]);
+  }, [dispatch, page, PAGE_SIZE, isOffline]);
 
   const onRefresh = () => {
+    // Don't refresh if offline
+    if (isOffline) return;
+
     setSearchQuery('');
     setSelectedStatus('all');
     loadTemplates({ reset: true, search: '', status: 'all' });
@@ -140,9 +163,11 @@ export default function TemplatesScreen() {
     // Don't load more if:
     // - Already loading
     // - No more templates from server
+    // - Offline
     if (
       templatesStatus === 'loading' ||
-      !hasMoreTemplates
+      !hasMoreTemplates ||
+      isOffline
     ) return;
     loadTemplates({ reset: false, append: true, search: searchQuery, status: selectedStatus });
   }, [templatesStatus, hasMoreTemplates, loadTemplates, searchQuery, selectedStatus]);
@@ -423,13 +448,26 @@ export default function TemplatesScreen() {
     );
   };
 
-  // Loading - show skeleton
-  if (isLoading && templates.length === 0) {
+  // Loading - show skeleton (only if online and loading)
+  if (isLoading && templates.length === 0 && isNetworkAvailable) {
     return (
       <View style={styles.container}>
         <View style={styles.skeletonContainer}>
           <TemplatesListSkeleton count={8} />
         </View>
+      </View>
+    );
+  }
+
+  // Offline with no data
+  if (isOffline && templates.length === 0) {
+    return (
+      <View style={styles.container}>
+        <EmptyState
+          icon="cloud-off-outline"
+          title="You're Offline"
+          message="Connect to the internet to load templates. Previously loaded templates will appear here."
+        />
       </View>
     );
   }
