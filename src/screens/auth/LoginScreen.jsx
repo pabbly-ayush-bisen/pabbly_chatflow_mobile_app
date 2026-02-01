@@ -4,7 +4,6 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ScrollView,
   Dimensions,
   Image,
@@ -22,12 +21,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
-import { checkSession, clearError } from '../../redux/slices/userSlice';
+import { clearError } from '../../redux/slices/userSlice';
 import { colors } from '../../theme';
 import ChatflowLogo from '../../components/ChatflowLogo';
 import { APP_CONFIG } from '../../config/app.config';
 import PabblyAuthWebView from '../../components/PabblyAuthWebView';
 import GoogleAuthWebView from '../../components/GoogleAuthWebView';
+import { showError, toastActions } from '../../utils/toast';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -35,13 +35,13 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const isSmallScreen = SCREEN_HEIGHT < 700;
 
 // Dynamic sizes
-const LOGO_SIZE = isSmallScreen ? SCREEN_WIDTH * 0.25 : SCREEN_WIDTH * 0.3;
+const LOGO_SIZE = isSmallScreen ? SCREEN_WIDTH * 0.35 : SCREEN_WIDTH * 0.4;
 const WELCOME_FONT_SIZE = isSmallScreen ? 24 : 28;
 const SUBTITLE_FONT_SIZE = isSmallScreen ? 13 : 15;
 const INPUT_HEIGHT = isSmallScreen ? 44 : 48;
 const BUTTON_HEIGHT = isSmallScreen ? 44 : 48;
 const SPACING = {
-  logoMargin: isSmallScreen ? 8 : 12,
+  logoMargin: isSmallScreen ? 20 : 28,
   welcomeMargin: isSmallScreen ? 12 : 16,
   formPadding: isSmallScreen ? 16 : 20,
   inputMargin: isSmallScreen ? 10 : 12,
@@ -112,7 +112,7 @@ export default function LoginScreen() {
   // Handle errors from Redux
   useEffect(() => {
     if (error) {
-      Alert.alert('Login Failed', error);
+      toastActions.loginFailed(error);
       dispatch(clearError());
     }
   }, [error, dispatch]);
@@ -152,7 +152,7 @@ export default function LoginScreen() {
   const handleGoogleAuthError = (errorMessage) => {
     setShowGoogleAuthWebView(false);
     setGoogleLoading(false);
-    Alert.alert('Login Failed', errorMessage || 'Google authentication failed');
+    showError(errorMessage || 'Google authentication failed', 'Login Failed');
   };
 
   // Handle Google auth close
@@ -177,7 +177,7 @@ export default function LoginScreen() {
   // Handle authentication error from WebView
   const handleAuthError = useCallback((errorMessage) => {
     setShowAuthWebView(false);
-    Alert.alert('Login Failed', errorMessage || 'Authentication failed. Please try again.');
+    showError(errorMessage || 'Authentication failed. Please try again.', 'Login Failed');
   }, []);
 
   // Handle WebView close
@@ -519,9 +519,9 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 16 : 12,
-    paddingBottom: 16,
+    paddingVertical: 16,
   },
   logoSection: {
     alignItems: 'center',

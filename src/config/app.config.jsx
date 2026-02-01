@@ -1,68 +1,60 @@
-// App configuration
+import Constants from 'expo-constants';
+
+// Get environment variables from EAS build or fallback to defaults
+const getEnvVar = (key, defaultValue) => {
+  // Check process.env first (EAS build time)
+  if (process.env[key]) {
+    return process.env[key];
+  }
+  // Check expo-constants extra (runtime)
+  if (Constants.expoConfig?.extra?.[key]) {
+    return Constants.expoConfig.extra[key];
+  }
+  // Return default value
+  return defaultValue;
+};
+
+// Environment detection
+const APP_ENV = getEnvVar('APP_ENV', 'development');
+const isProduction = APP_ENV === 'production';
+const isPreview = APP_ENV === 'preview';
+const isDevelopment = APP_ENV === 'development';
+
+// App configuration using environment variables
 export const APP_CONFIG = {
   appName: 'Pabbly Chatflow',
   appVersion: '1.0.0',
+  appEnv: APP_ENV,
 
-  // API Configuration
-  // Using the same API URL as the frontend web app (Production)
-  apiUrl: 'https://chatflow.pabbly.com/api',
-  socketUrl: 'https://chatflow.pabbly.com/',
+  // API Configuration - from environment variables
+  apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
+  socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
 
-  // Pabbly Accounts Configuration
-  pabblyAccountsUrl: 'https://accounts.pabbly.com',
-  pabblyAccountsBackendUrl: 'https://accounts.pabbly.com/backend',
-  pabblyProject: 'pcf', // Project code for Pabbly ChatFlow
+  // Pabbly Accounts Configuration - from environment variables
+  pabblyAccountsUrl: getEnvVar('PABBLY_ACCOUNTS_URL', 'https://accounts.pabbly.com'),
+  pabblyAccountsBackendUrl: getEnvVar('PABBLY_ACCOUNTS_BACKEND_URL', 'https://accounts.pabbly.com/backend'),
+  pabblyProject: getEnvVar('PABBLY_PROJECT', 'pcf'),
 
-  // Google OAuth Configuration
-  // ============================================================================
-  // IMPORTANT: To enable native Google Sign-In, you need to:
-  //
-  // 1. Go to Google Cloud Console: https://console.cloud.google.com/apis/credentials
-  // 2. Create a new project or select existing
-  // 3. Enable "Google Sign-In API" in APIs & Services → Library
-  // 4. Create OAuth 2.0 Client IDs for each platform:
-  //
-  // FOR WEB (Expo Go development):
-  //   - Type: Web application
-  //   - Authorized JavaScript origins: https://auth.expo.io
-  //   - Authorized redirect URIs: https://auth.expo.io/@YOUR_EXPO_USERNAME/chatflow_mobile_native
-  //
-  // FOR ANDROID:
-  //   - Type: Android
-  //   - Package name: com.pabbly.chatflow
-  //   - SHA-1 fingerprint: Run 'keytool -list -v -keystore your-keystore.jks'
-  //     For debug: keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
-  //
-  // FOR iOS:
-  //   - Type: iOS
-  //   - Bundle ID: com.pabbly.chatflow
-  //
-  // NOTE: The WebView-based Google Sign-In (via Pabbly Accounts) works without these credentials.
-  // Native credentials are optional but provide better UX with native account picker.
-  // ============================================================================
+  // Google OAuth Configuration - from environment variables
+  // These should be set as EAS secrets for production builds
   google: {
-    // Web Client ID (pcf web) - used for Expo Go development
-    webClientId: '848504831060-uen6psucq9c3ovguk3utheiidi4hpotc.apps.googleusercontent.com',
-    // Android Client ID (pcf android) - used for production Android app
-    androidClientId: '848504831060-p68o8ogq2lrfg7kg2tk42oosqfjnbodi.apps.googleusercontent.com',
-    // iOS Client ID (pcf iOS) - used for production iOS app
-    iosClientId: '848504831060-dt3ve1h090q2979md9eoqq8epc1rd7tr.apps.googleusercontent.com',
-    // Expo username - IMPORTANT: Must match your Expo account username exactly
-    // This is used for the auth.expo.io proxy redirect URI in Expo Go
-    expoUsername: 'ayush_bisen_pabbly',
-    // App slug from app.json - used for OAuth redirect URI
-    expoSlug: 'chatflow_mobile_native',
+    webClientId: getEnvVar('GOOGLE_WEB_CLIENT_ID', '848504831060-uen6psucq9c3ovguk3utheiidi4hpotc.apps.googleusercontent.com'),
+    androidClientId: getEnvVar('GOOGLE_ANDROID_CLIENT_ID', '848504831060-p68o8ogq2lrfg7kg2tk42oosqfjnbodi.apps.googleusercontent.com'),
+    iosClientId: getEnvVar('GOOGLE_IOS_CLIENT_ID', '848504831060-dt3ve1h090q2979md9eoqq8epc1rd7tr.apps.googleusercontent.com'),
+    expoUsername: getEnvVar('EXPO_USERNAME', 'ayush_bisen_pabbly'),
+    expoSlug: getEnvVar('EXPO_SLUG', 'chatflow_mobile_native'),
   },
+
   apiTimeout: 30000,
 
   // Authentication
   tokenKey: '@pabbly_chatflow_token',
   userKey: '@pabbly_chatflow_user',
 
-  // Features
-  enablePushNotifications: true,
-  enableBiometricAuth: false,
-  enableDarkMode: true,
+  // Features - from environment variables
+  enablePushNotifications: getEnvVar('ENABLE_PUSH_NOTIFICATIONS', 'true') === 'true',
+  enableBiometricAuth: getEnvVar('ENABLE_BIOMETRIC_AUTH', 'false') === 'true',
+  enableDarkMode: getEnvVar('ENABLE_DARK_MODE', 'true') === 'true',
 
   // Pagination
   itemsPerPage: 20,
@@ -82,24 +74,36 @@ export const APP_CONFIG = {
 // Environment-specific configuration
 export const ENV = {
   development: {
-    apiUrl: 'https://chatflow.pabbly.com/api',
-    socketUrl: 'https://chatflow.pabbly.com/',
+    apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
+    socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
     debug: true,
   },
-  staging: {
-    apiUrl: 'https://chatflow.pabbly.com/api',
-    socketUrl: 'https://chatflow.pabbly.com/',
-    debug: true,
+  preview: {
+    apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
+    socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
+    debug: false,
   },
   production: {
-    apiUrl: 'https://chatflow.pabbly.com/api',
-    socketUrl: 'https://chatflow.pabbly.com/',
+    apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
+    socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
     debug: false,
   },
 };
 
 // Get current environment config
 export const getCurrentEnv = () => {
-  const env = process.env.NODE_ENV || 'development';
-  return ENV[env] || ENV.development;
+  const debugMode = getEnvVar('DEBUG_MODE', 'false') === 'true';
+
+  return {
+    apiUrl: APP_CONFIG.apiUrl,
+    socketUrl: APP_CONFIG.socketUrl,
+    debug: debugMode || isDevelopment,
+    isProduction,
+    isPreview,
+    isDevelopment,
+    appEnv: APP_ENV,
+  };
 };
+
+// Export environment helpers
+export { isProduction, isPreview, isDevelopment, APP_ENV };

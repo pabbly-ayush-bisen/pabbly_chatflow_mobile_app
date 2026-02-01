@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, TextInput, Button, Surface, HelperText } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { createContact, gotoChat } from '../redux/slices/contactSlice';
 import { sendMessageViaSocket } from '../services/socketService';
 import { colors } from '../theme/colors';
+import { showWarning } from '../utils/toast';
 
 export default function AddContactScreen({ navigation }) {
   const dispatch = useDispatch();
@@ -141,10 +142,9 @@ export default function AddContactScreen({ navigation }) {
             navigation.goBack();
           }
         } catch (gotoError) {
-          // Error:('Failed to open chat from contact:', gotoError);
-          Alert.alert(
-            'Contact Saved',
-            'The contact was saved, but we could not open the chat. Please try from the Inbox.'
+          showWarning(
+            'The contact was saved, but we could not open the chat. Please try from the Inbox.',
+            'Contact Saved'
           );
           navigation.goBack();
         }

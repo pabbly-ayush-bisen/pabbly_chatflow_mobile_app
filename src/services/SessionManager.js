@@ -222,14 +222,14 @@ class SessionManager {
         return false;
       }
 
-      // Check token expiry (optional - server will validate anyway)
+      // Check token expiry - enforce locally for security
       const tokenExpiresAt = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRES_AT);
       if (tokenExpiresAt) {
         const expiryTime = parseInt(tokenExpiresAt, 10) * 1000; // Convert to ms
         if (Date.now() > expiryTime) {
-          // Token expired locally
-          // Don't invalidate - let server decide
-          // Server might have extended the session
+          // Token expired - clear session for security
+          await this.destroySession();
+          return false;
         }
       }
 

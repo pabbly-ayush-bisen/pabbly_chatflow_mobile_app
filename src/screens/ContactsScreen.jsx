@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
 import { Text, ActivityIndicator, Searchbar, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
@@ -10,6 +10,7 @@ import { formatDistanceToNow } from 'date-fns';
 import ContactBottomSheet from '../components/contacts/ContactBottomSheet';
 import AddContactBottomSheet from '../components/contacts/AddContactBottomSheet';
 import { ContactsListSkeleton } from '../components/common';
+import { showError } from '../utils/toast';
 
 export default function ContactsScreen() {
   const navigation = useNavigation();
@@ -119,13 +120,12 @@ export default function ContactsScreen() {
       if (chatId) {
         navigation.navigate('ChatDetails', { chatId, chat });
       } else {
-        Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
+        showError('We could not find a chat for this contact.', 'Unable to Open Chat');
       }
     } catch (error) {
-      // Error:('Failed to open chat from contacts:', error);
-      Alert.alert(
-        'Unable to open chat',
-        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'
+      showError(
+        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.',
+        'Unable to Open Chat'
       );
     } finally {
       setOpeningChatId(null);
@@ -381,13 +381,12 @@ export default function ContactsScreen() {
         setSelectedContact(null);
         navigation.navigate('ChatDetails', { chatId, chat });
       } else {
-        Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
+        showError('We could not find a chat for this contact.', 'Unable to Open Chat');
       }
     } catch (error) {
-      // Error:('Failed to open chat from bottom sheet:', error);
-      Alert.alert(
-        'Unable to open chat',
-        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'
+      showError(
+        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.',
+        'Unable to Open Chat'
       );
     } finally {
       setOpeningChatId(null);

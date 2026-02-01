@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Alert, Modal, ScrollView } from 'react-native';
+import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { showError, showSuccess, showWarning, toastActions } from '../utils/toast';
 import {
   fetchConversation,
   resetUnreadCount,
@@ -129,22 +130,16 @@ export default function ChatDetailsScreen({ route, navigation }) {
     }
   }, [sendMessageStatus]);
 
-  // Display socket send message errors as Alert
+  // Display socket send message errors as toast
   useEffect(() => {
     if (sendMessageError) {
       setIsSending(false);
-      Alert.alert(
-        'Message Failed',
-        typeof sendMessageError === 'string' ? sendMessageError : 'Failed to send message. Please try again.',
-        [{
-          text: 'OK',
-          onPress: () => {
-            dispatch(clearInboxError());
-            // Refresh templates in case the error was due to stale template data
-            dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
-          }
-        }]
+      toastActions.messageFailed(
+        typeof sendMessageError === 'string' ? sendMessageError : 'Failed to send message. Please try again.'
       );
+      dispatch(clearInboxError());
+      // Refresh templates in case the error was due to stale template data
+      dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
     }
   }, [sendMessageError, dispatch]);
 
@@ -246,7 +241,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         if (file.fileSize) {
           const validation = validateFileSize(file.fileSize, file.fileType);
           if (!validation.valid) {
-            Alert.alert('File Too Large', validation.message);
+            showError(validation.message, 'File Too Large');
             setIsSending(false);
             return;
           }
@@ -384,7 +379,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
           tempId,
           error: 'Could not send message. Please check your connection.',
         }));
-        Alert.alert('Send Failed', 'Could not send message. Please check your connection.');
+        toastActions.messageFailed('Could not send message. Please check your connection.');
         setIsSending(false);
       }
     } catch (error) {
@@ -394,7 +389,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         tempId,
         error: error.message || 'Failed to send message',
       }));
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      toastActions.messageFailed(error.message || 'Failed to send message. Please try again.');
       setIsSending(false);
     }
   }, [chatId, contactPhoneNumber, isSending, replyingTo, dispatch, addUpload, updateProgress, completeUpload, failUpload, getAbortController]);
@@ -592,7 +587,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
           error: 'Failed to send carousel template. Please try again.',
         }));
         setIsSending(false);
-        Alert.alert('Error', 'Failed to send carousel template. Please try again.');
+        showError('Failed to send carousel template. Please try again.');
       }
       return;
     }
@@ -714,7 +709,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         error: 'Failed to send template. Please try again.',
       }));
       setIsSending(false);
-      Alert.alert('Error', 'Failed to send template. Please try again.');
+      showError('Failed to send template. Please try again.');
     }
   }, [chatId, contactPhoneNumber, isSending, replyingTo, dispatch]);
 
@@ -728,9 +723,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
       // Update local state
       dispatch(setChatStatus('intervened'));
-      Alert.alert('Success', 'You have taken over this conversation. AI and automation are now disabled.');
+      showSuccess('You have taken over this conversation. AI and automation are now disabled.', 'Intervened');
     } catch (error) {
-      Alert.alert('Error', error || 'Failed to intervene. Please try again.');
+      showError(error || 'Failed to intervene. Please try again.');
     }
   }, [chatId, dispatch]);
 
@@ -755,9 +750,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
       })).unwrap();
 
       dispatch(setChatStatus('intervened'));
-      Alert.alert('Success', 'AI Assistant has been stopped for this conversation.');
+      showSuccess('AI Assistant has been stopped for this conversation.', 'AI Stopped');
     } catch (error) {
-      Alert.alert('Error', error || 'Failed to stop AI Assistant. Please try again.');
+      showError(error || 'Failed to stop AI Assistant. Please try again.');
     }
   }, [chatId, currentConversation, dispatch]);
 
@@ -793,7 +788,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         break;
       case 'forward':
         // TODO: Implement forward functionality
-        Alert.alert('Forward', 'Forward functionality coming soon');
+        showWarning('Forward functionality coming soon', 'Coming Soon');
         break;
       default:
         break;
@@ -810,7 +805,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         emoji,
       })).unwrap();
     } catch (error) {
-      Alert.alert('Error', 'Failed to send reaction');
+      showError('Failed to send reaction');
     }
   }, [chatId, dispatch]);
 

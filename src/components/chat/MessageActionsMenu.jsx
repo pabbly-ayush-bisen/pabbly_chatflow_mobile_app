@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   Clipboard,
   Share,
-  Alert,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, chatColors } from '../../theme/colors';
 import { getMessageText, getMessageCaption } from '../../utils/messageHelpers';
+import { toastActions, showWarning } from '../../utils/toast';
 
 const REACTION_EMOJIS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
 
@@ -38,11 +38,9 @@ const MessageActionsMenu = ({
       Clipboard.setString(text);
       onClose();
       // Show brief feedback
-      Alert.alert('Copied', 'Message copied to clipboard', [
-        { text: 'OK', style: 'default' },
-      ]);
+      toastActions.copiedToClipboard();
     } else {
-      Alert.alert('Cannot Copy', 'This message type cannot be copied');
+      showWarning('This message type cannot be copied', 'Cannot Copy');
     }
   }, [getTextToCopy, onClose]);
 

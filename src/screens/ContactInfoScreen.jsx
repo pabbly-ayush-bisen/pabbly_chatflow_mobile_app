@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   StatusBar,
   Animated,
   Dimensions,
@@ -23,6 +22,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { updateContactChat, setChatStatus, updateChatInList } from '../redux/slices/inboxSlice';
 import { updateContact } from '../redux/slices/contactSlice';
 import { getSettings } from '../redux/slices/settingsSlice';
+import { showSuccess, showError } from '../utils/toast';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -183,14 +183,14 @@ const ContactInfoScreen = ({ route, navigation }) => {
           _id: chatId,
           assignedToMember: payload,
         }));
-        Alert.alert('Success', member === 'none'
+        showSuccess( member === 'none'
           ? 'Chat owner removed'
           : `Chat assigned to ${member.name}`);
       } else {
-        Alert.alert('Error', result.message || 'Failed to update chat owner');
+        showError( result.message || 'Failed to update chat owner');
       }
     } catch (error) {
-      Alert.alert('Error', error?.message || error || 'Failed to update chat owner');
+      showError( error?.message || error || 'Failed to update chat owner');
     } finally {
       setIsUpdatingOwner(false);
       setShowOwnerPicker(false);
@@ -216,12 +216,12 @@ const ContactInfoScreen = ({ route, navigation }) => {
       if (result.status === 'success' || result.response?.status === 'success') {
         setCurrentStatus(newStatus);
         dispatch(setChatStatus(newStatus));
-        Alert.alert('Success', `Chat status updated to ${getStatusLabel(newStatus)}`);
+        showSuccess( `Chat status updated to ${getStatusLabel(newStatus)}`);
       } else {
-        Alert.alert('Error', result.message || 'Failed to update chat status');
+        showError( result.message || 'Failed to update chat status');
       }
     } catch (error) {
-      Alert.alert('Error', error?.message || error || 'Failed to update chat status');
+      showError( error?.message || error || 'Failed to update chat status');
     } finally {
       setIsUpdatingStatus(false);
       setShowStatusPicker(false);
@@ -287,7 +287,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
     const contactId = contactData._id || contact?._id;
     if (!contactId) {
-      Alert.alert('Error', 'Contact ID not found. Cannot update name.');
+      showError( 'Contact ID not found. Cannot update name.');
       setIsEditing(false);
       return;
     }
@@ -313,14 +313,14 @@ const ContactInfoScreen = ({ route, navigation }) => {
             },
           }));
         }
-        Alert.alert('Success', 'Contact name updated successfully');
+        showSuccess( 'Contact name updated successfully');
         setIsEditing(false);
       } else {
-        Alert.alert('Error', result.message || 'Failed to update contact name');
+        showError( result.message || 'Failed to update contact name');
       }
     } catch (error) {
       const errorMessage = typeof error === 'string' ? error : error?.message || 'Failed to update contact name';
-      Alert.alert('Error', errorMessage);
+      showError( errorMessage);
     } finally {
       setIsSaving(false);
     }

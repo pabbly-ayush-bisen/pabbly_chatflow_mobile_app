@@ -16,6 +16,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { colors, chatColors } from '../../theme/colors';
+import { showError, showWarning } from '../../utils/toast';
 import EmojiPicker from './EmojiPicker';
 import QuickRepliesDialog from './QuickRepliesDialog';
 import TemplatePickerDialog from './TemplatePickerDialog';
@@ -395,7 +396,7 @@ const ChatInput = ({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Permission to access gallery is required');
+        showWarning('Permission to access gallery is required', 'Permission Required');
         return;
       }
 
@@ -430,7 +431,7 @@ const ChatInput = ({
       }
     } catch (error) {
       // Error:('Error picking image:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+      showError('Failed to select image. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);
@@ -440,7 +441,7 @@ const ChatInput = ({
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Permission to access camera is required');
+        showWarning('Permission to access camera is required', 'Permission Required');
         return;
       }
 
@@ -472,7 +473,7 @@ const ChatInput = ({
       }
     } catch (error) {
       // Error:('Error taking photo:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
+      showError('Failed to take photo. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);
@@ -482,7 +483,7 @@ const ChatInput = ({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Permission to access gallery is required');
+        showWarning('Permission to access gallery is required', 'Permission Required');
         return;
       }
 
@@ -515,7 +516,7 @@ const ChatInput = ({
       }
     } catch (error) {
       // Error:('Error picking video:', error);
-      Alert.alert('Error', 'Failed to select video. Please try again.');
+      showError('Failed to select video. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);
@@ -551,7 +552,7 @@ const ChatInput = ({
       }
     } catch (error) {
       // Error:('Error picking document:', error);
-      Alert.alert('Error', 'Failed to select document. Please try again.');
+      showError('Failed to select document. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);

@@ -4,6 +4,7 @@ import { PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider, useDispatch } from 'react-redux';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { lightTheme } from './src/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import store from './src/redux/store';
@@ -11,6 +12,8 @@ import { setUser, setSettingId, checkSession } from './src/redux/slices/userSlic
 import { SocketProvider } from './src/contexts/SocketContext';
 import { CacheProvider } from './src/contexts/CacheContext';
 import { sessionManager } from './src/services/SessionManager';
+import ErrorBoundary from './src/components/ErrorBoundary';
+import toastConfig from './src/components/ToastConfig';
 
 function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
@@ -130,8 +133,11 @@ export default function App() {
     <Provider store={store}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <PaperProvider theme={lightTheme}>
-          <StatusBar style="auto" />
-          <AppContent />
+          <ErrorBoundary>
+            <StatusBar style="auto" />
+            <AppContent />
+            <Toast config={toastConfig} />
+          </ErrorBoundary>
         </PaperProvider>
       </GestureHandlerRootView>
     </Provider>

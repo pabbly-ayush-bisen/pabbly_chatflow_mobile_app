@@ -15,7 +15,14 @@
         "simulator": false
       },
       "env": {
-        "NODE_ENV": "development"
+        "NODE_ENV": "development",
+        "APP_ENV": "development",
+        "API_URL": "https://chatflow.pabbly.com/api",
+        "SOCKET_URL": "https://chatflow.pabbly.com/",
+        "PABBLY_ACCOUNTS_URL": "https://accounts.pabbly.com",
+        "PABBLY_ACCOUNTS_BACKEND_URL": "https://accounts.pabbly.com/backend",
+        "PABBLY_PROJECT": "pcf",
+        "DEBUG_MODE": "true"
       }
     },
     "preview": {
@@ -23,8 +30,18 @@
       "android": {
         "buildType": "apk"
       },
+      "ios": {
+        "simulator": false
+      },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "APP_ENV": "preview",
+        "API_URL": "https://chatflow.pabbly.com/api",
+        "SOCKET_URL": "https://chatflow.pabbly.com/",
+        "PABBLY_ACCOUNTS_URL": "https://accounts.pabbly.com",
+        "PABBLY_ACCOUNTS_BACKEND_URL": "https://accounts.pabbly.com/backend",
+        "PABBLY_PROJECT": "pcf",
+        "DEBUG_MODE": "false"
       }
     },
     "production": {
@@ -35,7 +52,14 @@
         "autoIncrement": true
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "APP_ENV": "production",
+        "API_URL": "https://chatflow.pabbly.com/api",
+        "SOCKET_URL": "https://chatflow.pabbly.com/",
+        "PABBLY_ACCOUNTS_URL": "https://accounts.pabbly.com",
+        "PABBLY_ACCOUNTS_BACKEND_URL": "https://accounts.pabbly.com/backend",
+        "PABBLY_PROJECT": "pcf",
+        "DEBUG_MODE": "false"
       }
     }
   },

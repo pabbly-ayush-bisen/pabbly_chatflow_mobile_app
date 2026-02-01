@@ -6,8 +6,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { colors, chatColors } from '../theme/colors';
 import ChatListItem from '../components/chat/ChatListItem';
-import { fetchChats, setActiveFilter } from '../redux/slices/inboxSlice';
+import { fetchChats, setActiveFilter, clearInboxError } from '../redux/slices/inboxSlice';
 import FilterChips from '../components/chat/FilterChips';
+import { toastActions } from '../utils/toast';
 
 export default function ChatsScreen() {
   const dispatch = useDispatch();
@@ -21,6 +22,7 @@ export default function ChatsScreen() {
     chats,
     status,
     activeFilter,
+    error,
   } = useSelector((state) => state.inbox);
 
   const isLoading = status === 'loading';
@@ -33,6 +35,14 @@ export default function ChatsScreen() {
       dispatch(fetchChats({ all: true }));
     }
   }, [dispatch]);
+
+  // Handle errors from Redux
+  useEffect(() => {
+    if (error) {
+      toastActions.loadFailed(error);
+      dispatch(clearInboxError());
+    }
+  }, [error, dispatch]);
 
   // Filter chats based on search query
   const filteredChats = useMemo(() => {
@@ -52,9 +62,17 @@ export default function ChatsScreen() {
 
   // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-    await dispatch(fetchChats({ all: true }));
-    setIsRefreshing(false);
+    try {
+      setIsRefreshing(true);
+      const result = await dispatch(fetchChats({ all: true })).unwrap();
+      if (result?.status === 'error') {
+        toastActions.loadFailed(result?.message || 'Failed to refresh chats');
+      }
+    } catch (err) {
+      toastActions.loadFailed(err?.message || 'Failed to refresh chats');
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [dispatch]);
 
 

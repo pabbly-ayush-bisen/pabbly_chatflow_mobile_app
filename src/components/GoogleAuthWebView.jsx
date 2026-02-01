@@ -44,8 +44,9 @@ export default function GoogleAuthWebView({
   const [authCompleted, setAuthCompleted] = useState(false);
   const [hasNavigatedToAccess, setHasNavigatedToAccess] = useState(false);
   const [webViewKey, setWebViewKey] = useState(Date.now());
-  const [showWebView, setShowWebView] = useState(false); // Start with loading, show WebView when ready
+  const [showWebView, setShowWebView] = useState(false); // Start hidden, auto-click Google button first
   const [authStep, setAuthStep] = useState(0); // 0-3 for steps
+  const [hasAutoClicked, setHasAutoClicked] = useState(false); // Track if auto-click was attempted
 
   // Pabbly URLs
   const pabblyLoginUrl = `${APP_CONFIG.pabblyAccountsUrl}/login`;
@@ -71,7 +72,8 @@ export default function GoogleAuthWebView({
       setAuthCompleted(false);
       setCurrentUrl('');
       setHasNavigatedToAccess(false);
-      setShowWebView(false);
+      setShowWebView(false); // Start hidden for auto-click
+      setHasAutoClicked(false);
 
       // Reset animations
       fadeAnim.setValue(0);
@@ -225,7 +227,7 @@ export default function GoogleAuthWebView({
   const getAutoClickGoogleScript = useCallback(() => {
     return `
       (function() {
-        // Try to find and click the Google sign-in button
+        // Try multiple selectors to find the Google sign-in button
         const googleButton = document.querySelector('[data-provider="google"]') ||
                             document.querySelector('button[class*="google"]') ||
                             document.querySelector('a[href*="google"]') ||
@@ -236,12 +238,12 @@ export default function GoogleAuthWebView({
                               el.textContent.toLowerCase().includes('google') ||
                               el.innerHTML.toLowerCase().includes('google')
                             );
-
         if (googleButton) {
           googleButton.click();
+          return true;
         }
+        return false;
       })();
-      true;
     `;
   }, []);
 
@@ -289,24 +291,27 @@ export default function GoogleAuthWebView({
     // Update auth step based on URL
     if (url.includes('google.com') || url.includes('accounts.google.com')) {
       setAuthStep(1); // Google step
-      if (!showWebView) {
-        setShowWebView(true);
-      }
-    } else if (url.includes('/login') && !isLoading) {
-      // On Pabbly login page, auto-click the Google button to skip this screen
-      setAuthStep(0); // Keep showing "Connecting" step
-      // Inject script to auto-click Google sign-in button
-      setTimeout(() => {
-        if (webViewRef.current && !authCompleted) {
-          webViewRef.current.injectJavaScript(getAutoClickGoogleScript());
-        }
-      }, 500);
+      // Show WebView for Google authentication interaction
+      setShowWebView(true);
+    } else if (url.includes('/login')) {
+      setAuthStep(0); // Login step
     }
 
     // Check for token in URL
     if (url.includes('token=') || url.includes('token%3D')) {
       handleTokenCapture(url);
       return;
+    }
+
+    // Auto-click Google button when on Pabbly login page
+    if (!hasAutoClicked && !isLoading && url.includes('accounts.pabbly.com') && url.includes('/login')) {
+      setHasAutoClicked(true);
+      // Small delay to ensure page is fully loaded
+      setTimeout(() => {
+        if (webViewRef.current && !authCompleted) {
+          webViewRef.current.injectJavaScript(getAutoClickGoogleScript());
+        }
+      }, 800);
     }
 
     // After Google auth, when on Pabbly dashboard/apps page, navigate to access URL
@@ -317,8 +322,8 @@ export default function GoogleAuthWebView({
 
       if (isOnDashboard) {
         setHasNavigatedToAccess(true);
-        setShowWebView(false);
         setAuthStep(2); // Verifying step
+        setShowWebView(false); // Hide WebView during verification
 
         setTimeout(() => {
           if (webViewRef.current && !authCompleted) {
@@ -331,15 +336,15 @@ export default function GoogleAuthWebView({
 
     // If we landed on ChatFlow without token, try to get token
     if (url.includes('chatflow.pabbly.com') && !url.includes('token') && !isLoading) {
-      setShowWebView(false);
       setAuthStep(3); // Completing step
+      setShowWebView(false); // Hide WebView during completion
       setTimeout(() => {
         if (webViewRef.current && !authCompleted) {
           webViewRef.current.injectJavaScript(getAccessNavigationScript());
         }
       }, 500);
     }
-  }, [authCompleted, hasNavigatedToAccess, handleTokenCapture, getAccessNavigationScript, getAutoClickGoogleScript, showWebView]);
+  }, [authCompleted, hasNavigatedToAccess, hasAutoClicked, handleTokenCapture, getAccessNavigationScript, getAutoClickGoogleScript]);
 
   // Handle URL interception
   const handleShouldStartLoadWithRequest = useCallback((request) => {
@@ -562,11 +567,11 @@ export default function GoogleAuthWebView({
                 ios: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
                 android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
               })}
-              originWhitelist={['*']}
+              originWhitelist={['https://*', 'http://*', 'pabblychatflow://*']}
               setSupportMultipleWindows={false}
               allowsInlineMediaPlayback={true}
               mediaPlaybackRequiresUserAction={false}
-              mixedContentMode="always"
+              mixedContentMode="compatibility"
               allowsBackForwardNavigationGestures={true}
             />
           </Animated.View>

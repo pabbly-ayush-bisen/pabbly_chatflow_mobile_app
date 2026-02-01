@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { colors, chatColors } from '../../theme/colors';
 import { uploadFile, validateFileSize } from '../../services/fileUploadService';
+import { showError, showWarning } from '../../utils/toast';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -116,7 +117,7 @@ const EditQuickReplyModal = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow access to your photo library to upload images.');
+        showWarning('Please allow access to your photo library to upload images.', 'Permission Required');
         return;
       }
 
@@ -134,7 +135,7 @@ const EditQuickReplyModal = ({
         if (asset.fileSize) {
           const validation = validateFileSize(asset.fileSize, 'image');
           if (!validation.valid) {
-            Alert.alert('File Too Large', validation.message);
+            showWarning(validation.message, 'File Too Large');
             return;
           }
         }
@@ -173,14 +174,14 @@ const EditQuickReplyModal = ({
           });
         } catch (uploadError) {
           // Error:('Failed to upload image:', uploadError);
-          Alert.alert('Upload Failed', 'Failed to upload image to server. Please try again.');
+          showError('Failed to upload image to server. Please try again.', 'Upload Failed');
           handleClearFile();
         } finally {
           setIsUploading(false);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      showError('Failed to pick image. Please try again.');
       // Error:('Image picker error:', error);
     }
   }, []);
@@ -190,7 +191,7 @@ const EditQuickReplyModal = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow access to your photo library to upload videos.');
+        showWarning('Please allow access to your photo library to upload videos.', 'Permission Required');
         return;
       }
 
@@ -208,7 +209,7 @@ const EditQuickReplyModal = ({
         if (asset.fileSize) {
           const validation = validateFileSize(asset.fileSize, 'video');
           if (!validation.valid) {
-            Alert.alert('File Too Large', validation.message);
+            showWarning(validation.message, 'File Too Large');
             return;
           }
         }
@@ -247,14 +248,14 @@ const EditQuickReplyModal = ({
           });
         } catch (uploadError) {
           // Error:('Failed to upload video:', uploadError);
-          Alert.alert('Upload Failed', 'Failed to upload video to server. Please try again.');
+          showError('Failed to upload video to server. Please try again.', 'Upload Failed');
           handleClearFile();
         } finally {
           setIsUploading(false);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick video. Please try again.');
+      showError('Failed to pick video. Please try again.');
       // Error:('Video picker error:', error);
     }
   }, []);
@@ -274,7 +275,7 @@ const EditQuickReplyModal = ({
         if (doc.size) {
           const validation = validateFileSize(doc.size, 'audio');
           if (!validation.valid) {
-            Alert.alert('File Too Large', validation.message);
+            showWarning(validation.message, 'File Too Large');
             return;
           }
         }
@@ -313,14 +314,14 @@ const EditQuickReplyModal = ({
           });
         } catch (uploadError) {
           // Error:('Failed to upload audio:', uploadError);
-          Alert.alert('Upload Failed', 'Failed to upload audio to server. Please try again.');
+          showError('Failed to upload audio to server. Please try again.', 'Upload Failed');
           handleClearFile();
         } finally {
           setIsUploading(false);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick audio. Please try again.');
+      showError('Failed to pick audio. Please try again.');
       // Error:('Audio picker error:', error);
     }
   }, []);
@@ -346,7 +347,7 @@ const EditQuickReplyModal = ({
         if (doc.size) {
           const validation = validateFileSize(doc.size, 'document');
           if (!validation.valid) {
-            Alert.alert('File Too Large', validation.message);
+            showWarning(validation.message, 'File Too Large');
             return;
           }
         }
@@ -385,14 +386,14 @@ const EditQuickReplyModal = ({
           });
         } catch (uploadError) {
           // Error:('Failed to upload document:', uploadError);
-          Alert.alert('Upload Failed', 'Failed to upload document to server. Please try again.');
+          showError('Failed to upload document to server. Please try again.', 'Upload Failed');
           handleClearFile();
         } finally {
           setIsUploading(false);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick document. Please try again.');
+      showError('Failed to pick document. Please try again.');
       // Error:('Document picker error:', error);
     }
   }, []);

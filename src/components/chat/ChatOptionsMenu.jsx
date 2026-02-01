@@ -12,6 +12,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { colors, chatColors, getAvatarColor } from '../../theme/colors';
+import { showError, showSuccess } from '../../utils/toast';
 import {
   deleteChat,
   toggleChatNotifications,
@@ -55,7 +56,7 @@ const ChatOptionsMenu = ({
       })).unwrap();
       onClose();
     } catch (error) {
-      Alert.alert('Error', error || 'Failed to update notification settings');
+      showError(error || 'Failed to update notification settings');
     }
   }, [chatId, isMuted, dispatch, onClose]);
 
@@ -76,7 +77,7 @@ const ChatOptionsMenu = ({
               onClose();
               navigation?.goBack();
             } catch (error) {
-              Alert.alert('Error', error || 'Failed to delete chat');
+              showError(error || 'Failed to delete chat');
             } finally {
               setIsDeleting(false);
             }
@@ -123,14 +124,14 @@ const ChatOptionsMenu = ({
         }));
         setShowAssignModal(false);
         onClose();
-        Alert.alert('Success', member === 'none'
+        showSuccess(member === 'none'
           ? 'Chat owner removed'
-          : `Chat assigned to ${member.name}`);
+          : `Chat assigned to ${member.name}`, 'Success');
       } else {
-        Alert.alert('Error', result.message || 'Failed to assign chat');
+        showError(result.message || 'Failed to assign chat');
       }
     } catch (error) {
-      Alert.alert('Error', error?.message || error || 'Failed to assign chat');
+      showError(error?.message || error || 'Failed to assign chat');
     } finally {
       setIsAssigning(false);
     }
