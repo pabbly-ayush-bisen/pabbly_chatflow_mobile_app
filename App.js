@@ -137,7 +137,7 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <PaperProvider theme={lightTheme}>
           <ErrorBoundary>
-            <StatusBar style="auto" />
+            <StatusBar style="dark" />
             <AppContent />
             <Toast config={toastConfig} />
           </ErrorBoundary>
