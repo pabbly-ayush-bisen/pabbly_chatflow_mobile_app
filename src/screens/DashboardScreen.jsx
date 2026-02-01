@@ -21,7 +21,8 @@ import {
   getWANumbers,
   getFolders,
   setFolderFilter,
-  syncWhatsAppBusinessInfo
+  syncWhatsAppBusinessInfo,
+  clearDashboardError
 } from '../redux/slices/dashboardSlice';
 import {
   accessBusinessAccount,
@@ -329,16 +330,17 @@ export default function DashboardScreen() {
   // Clear errors and re-fetch data when network becomes available
   useEffect(() => {
     if (isNetworkAvailable) {
-      // Clear any existing errors
+      // Clear any existing errors (both local state and Redux)
       setTeamMembersError(null);
       setSharedAccountsError(null);
+      dispatch(clearDashboardError());
 
       // Re-fetch data if we have errors or empty data
       if (!isTeamMemberLoggedIn && (teamMembers.length === 0 || sharedAccounts.length === 0)) {
         loadTeamMemberWidgets();
       }
     }
-  }, [isNetworkAvailable, isTeamMemberLoggedIn, teamMembers.length, sharedAccounts.length, loadTeamMemberWidgets]);
+  }, [isNetworkAvailable, isTeamMemberLoggedIn, teamMembers.length, sharedAccounts.length, loadTeamMemberWidgets, dispatch]);
 
   // Set default folder when folders are loaded:
   // - Prefer the persisted folder (selectedFolderId) from "Access Inbox"
@@ -1032,8 +1034,8 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Error Message */}
-        {errorMessage && (
+        {/* Error Message - Don't show when offline (offline banner is already visible) */}
+        {errorMessage && !isOffline && (
           <View style={styles.errorBox}>
             <Icon name="alert-circle-outline" size={20} color="#DC2626" />
             <Text style={styles.errorText}>{errorMessage}</Text>
