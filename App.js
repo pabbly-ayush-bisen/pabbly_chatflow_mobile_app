@@ -11,6 +11,7 @@ import store from './src/redux/store';
 import { setUser, setSettingId, checkSession } from './src/redux/slices/userSlice';
 import { SocketProvider } from './src/contexts/SocketContext';
 import { CacheProvider } from './src/contexts/CacheContext';
+import { NetworkProvider } from './src/contexts/NetworkContext';
 import { sessionManager } from './src/services/SessionManager';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import toastConfig from './src/components/ToastConfig';
@@ -111,11 +112,13 @@ function AppContent() {
   }
 
   return (
-    <CacheProvider>
-      <SocketProvider>
-        <AppNavigator />
-      </SocketProvider>
-    </CacheProvider>
+    <NetworkProvider>
+      <CacheProvider>
+        <SocketProvider>
+          <AppNavigator />
+        </SocketProvider>
+      </CacheProvider>
+    </NetworkProvider>
   );
 }
 

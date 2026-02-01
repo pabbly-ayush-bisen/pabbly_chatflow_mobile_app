@@ -28,6 +28,8 @@ import { APP_CONFIG } from '../../config/app.config';
 import PabblyAuthWebView from '../../components/PabblyAuthWebView';
 import GoogleAuthWebView from '../../components/GoogleAuthWebView';
 import { showError, toastActions } from '../../utils/toast';
+import { useNetwork } from '../../contexts/NetworkContext';
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -51,6 +53,7 @@ const SPACING = {
 export default function LoginScreen() {
   const dispatch = useDispatch();
   const { loading, error } = useSelector((state) => state.user);
+  const { isOffline } = useNetwork();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -201,6 +204,16 @@ export default function LoginScreen() {
       <View style={styles.decorativeCircle3} />
 
       <SafeAreaView style={styles.safeArea}>
+        {/* Offline Banner */}
+        {isOffline && (
+          <View style={styles.offlineBanner}>
+            <Icon name="wifi-off" size={18} color="#fff" />
+            <Text style={styles.offlineBannerText}>
+              You are offline. Please check your internet connection.
+            </Text>
+          </View>
+        )}
+
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
@@ -476,6 +489,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+  },
+  offlineBanner: {
+    backgroundColor: '#EF4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  offlineBannerText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
   },
   gradientBackground: {
     position: 'absolute',

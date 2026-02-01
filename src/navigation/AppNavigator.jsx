@@ -46,6 +46,7 @@ import InitialLoadingScreen from '../screens/InitialLoadingScreen';
 import AppHeader from '../components/AppHeader';
 import ChatflowLogo from '../components/ChatflowLogo';
 import LogoutOverlay from '../components/LogoutOverlay';
+import { NetworkAwareWrapper } from '../components/NetworkAwareWrapper';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -635,20 +636,22 @@ function MainTabs() {
 // Drawer Navigator wrapping the tabs - simplified since screens are now in tab stacks
 function DrawerNavigator() {
   return (
-    <Drawer.Navigator
-      drawerContent={(props) => <CustomDrawerContent {...props} />}
-      screenOptions={{
-        headerShown: false,
-        drawerStyle: {
-          backgroundColor: colors.common.white,
-          width: 300,
-        },
-        drawerType: 'front',
-        overlayColor: 'rgba(0, 0, 0, 0.5)',
-      }}
-    >
-      <Drawer.Screen name="MainTabs" component={MainTabs} />
-    </Drawer.Navigator>
+    <NetworkAwareWrapper>
+      <Drawer.Navigator
+        drawerContent={(props) => <CustomDrawerContent {...props} />}
+        screenOptions={{
+          headerShown: false,
+          drawerStyle: {
+            backgroundColor: colors.common.white,
+            width: 300,
+          },
+          drawerType: 'front',
+          overlayColor: 'rgba(0, 0, 0, 0.5)',
+        }}
+      >
+        <Drawer.Screen name="MainTabs" component={MainTabs} />
+      </Drawer.Navigator>
+    </NetworkAwareWrapper>
   );
 }
 

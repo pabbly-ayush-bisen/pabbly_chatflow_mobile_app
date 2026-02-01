@@ -11,16 +11,19 @@ import ContactBottomSheet from '../components/contacts/ContactBottomSheet';
 import AddContactBottomSheet from '../components/contacts/AddContactBottomSheet';
 import { ContactsListSkeleton } from '../components/common';
 import { showError } from '../utils/toast';
+import { useNetwork } from '../contexts/NetworkContext';
 
 export default function ContactsScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch();
+  const { isOffline, isNetworkAvailable } = useNetwork();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedList, setSelectedList] = useState(null);
   const [openingChatId, setOpeningChatId] = useState(null);
   const [selectedContact, setSelectedContact] = useState(null);
   const [bottomSheetVisible, setBottomSheetVisible] = useState(false);
   const [addContactVisible, setAddContactVisible] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const PAGE_SIZE = 10;
 
   const {
@@ -34,17 +37,28 @@ export default function ContactsScreen() {
     totalCount,
   } = useSelector((state) => state.contact);
 
-  const isLoadingLists = contactListStatus === 'loading';
-  const isLoadingContacts = contactsStatus === 'loading';
-  const isRefreshing = isLoadingLists && contactListData.length > 0;
-  const isInitialContactsLoading = isLoadingContacts && contacts.length === 0;
+  const isLoadingLists = isNetworkAvailable && contactListStatus === 'loading';
+  const isLoadingContacts = isNetworkAvailable && contactsStatus === 'loading';
+  const isRefreshing = isNetworkAvailable && isLoadingLists && contactListData.length > 0;
+  const isInitialContactsLoading = isNetworkAvailable && isLoadingContacts && contacts.length === 0;
 
   useEffect(() => {
-    loadContactLists();
-    loadContacts(true, null);
+    if (isNetworkAvailable) {
+      loadContactLists();
+      loadContacts(true, null);
+    }
   }, []);
 
+  // Fetch when network becomes available (if we haven't loaded yet)
+  useEffect(() => {
+    if (isNetworkAvailable && !hasLoadedOnce && contacts.length === 0) {
+      loadContactLists();
+      loadContacts(true, null);
+    }
+  }, [isNetworkAvailable, hasLoadedOnce, contacts.length]);
+
   const loadContactLists = () => {
+    if (isOffline) return;
     dispatch(getContactList({ skip: 1, limit: 50 }));
   };
 
@@ -60,12 +74,15 @@ export default function ContactsScreen() {
   };
 
   const loadContacts = (reset = false, listName = selectedList, search = searchQuery) => {
+    if (isOffline) return;
     const skip = reset ? 0 : contacts.length;
     const queries = buildContactsQuery(skip, PAGE_SIZE, listName, search);
-    dispatch(getContacts(queries));
+    dispatch(getContacts(queries))
+      .then(() => setHasLoadedOnce(true));
   };
 
   const onRefresh = () => {
+    if (isOffline) return;
     loadContactLists();
     loadContacts(true);
   };
@@ -292,11 +309,26 @@ export default function ContactsScreen() {
 
   // Empty State
   const renderEmptyState = () => {
-    // Show skeleton while loading (not during refresh)
-    if (isLoadingContacts && !isRefreshing) {
+    // Show skeleton while loading (not during refresh) - only if online
+    if (isLoadingContacts && !isRefreshing && isNetworkAvailable) {
       return (
         <View style={styles.skeletonInListContainer}>
           <ContactsListSkeleton count={10} />
+        </View>
+      );
+    }
+
+    // Show offline state if offline and no contacts
+    if (isOffline && contacts.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconContainer}>
+            <Icon name="cloud-off-outline" size={64} color={colors.grey[300]} />
+          </View>
+          <Text style={styles.emptyTitle}>You're Offline</Text>
+          <Text style={styles.emptySubtitle}>
+            Connect to the internet to load contacts.{'\n'}Previously loaded contacts will appear here.
+          </Text>
         </View>
       );
     }

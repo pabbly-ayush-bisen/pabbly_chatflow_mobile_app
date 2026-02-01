@@ -32,6 +32,7 @@ import {
 import { callApi, endpoints, httpMethods } from '../utils/axios';
 import { colors } from '../theme/colors';
 import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
+import { useNetwork } from '../contexts/NetworkContext';
 
 // Import reusable components
 import {
@@ -53,6 +54,7 @@ import { WhatsAppNumberCard } from '../components/dashboard';
 export default function DashboardScreen() {
   const dispatch = useDispatch();
   const navigation = useNavigation();
+  const { isOffline, isNetworkAvailable } = useNetwork();
   const [accessingId, setAccessingId] = useState(null);
   const [syncingId, setSyncingId] = useState(null);
   const [accessingSharedId, setAccessingSharedId] = useState(null);
@@ -250,11 +252,13 @@ export default function DashboardScreen() {
     return all.find((f) => f?._id === folderId) || null;
   }, [flattenFolders]);
 
-  // Load initial data
+  // Load initial data (only if online)
   useEffect(() => {
-    dispatch(getDashboardStats());
-    dispatch(getFolders({ sort: -1 }));
-  }, [dispatch]);
+    if (isNetworkAvailable) {
+      dispatch(getDashboardStats());
+      dispatch(getFolders({ sort: -1 }));
+    }
+  }, [dispatch, isNetworkAvailable]);
 
   const loadTeamMemberWidgets = useCallback(async ({ force = false } = {}) => {
     // When logged in as a team member, these admin endpoints are not allowed.
@@ -264,6 +268,13 @@ export default function DashboardScreen() {
       setSharedAccountsLoading(false);
       setTeamMembersError(null);
       setSharedAccountsError(null);
+      return;
+    }
+
+    // Don't fetch if offline - skip silently without setting errors
+    if (isOffline) {
+      setTeamMembersLoading(false);
+      setSharedAccountsLoading(false);
       return;
     }
 
@@ -297,20 +308,37 @@ export default function DashboardScreen() {
         setSharedAccountsError(sharedRes?.error || sharedRes?.message || 'Failed to load shared accounts');
       }
     } catch (e) {
-      setTeamMembersError(e?.message || 'Failed to load team members');
-      setSharedAccountsError(e?.message || 'Failed to load shared accounts');
+      // Only set errors if not offline (network errors during offline mode should be silent)
+      if (!isOffline) {
+        setTeamMembersError(e?.message || 'Failed to load team members');
+        setSharedAccountsError(e?.message || 'Failed to load shared accounts');
+      }
     } finally {
       setTeamMembersLoading(false);
       setSharedAccountsLoading(false);
     }
-  }, [isTeamMemberLoggedIn]);
+  }, [isTeamMemberLoggedIn, isOffline]);
 
-  // Load team-member widgets only when admin user is active
+  // Load team-member widgets only when admin user is active and online
   useEffect(() => {
-    if (!isTeamMemberLoggedIn) {
+    if (!isTeamMemberLoggedIn && isNetworkAvailable) {
       loadTeamMemberWidgets();
     }
-  }, [isTeamMemberLoggedIn, loadTeamMemberWidgets]);
+  }, [isTeamMemberLoggedIn, loadTeamMemberWidgets, isNetworkAvailable]);
+
+  // Clear errors and re-fetch data when network becomes available
+  useEffect(() => {
+    if (isNetworkAvailable) {
+      // Clear any existing errors
+      setTeamMembersError(null);
+      setSharedAccountsError(null);
+
+      // Re-fetch data if we have errors or empty data
+      if (!isTeamMemberLoggedIn && (teamMembers.length === 0 || sharedAccounts.length === 0)) {
+        loadTeamMemberWidgets();
+      }
+    }
+  }, [isNetworkAvailable, isTeamMemberLoggedIn, teamMembers.length, sharedAccounts.length, loadTeamMemberWidgets]);
 
   // Set default folder when folders are loaded:
   // - Prefer the persisted folder (selectedFolderId) from "Access Inbox"
@@ -428,15 +456,22 @@ export default function DashboardScreen() {
   }, [settingId, whatsappNumbers, accountStatus, isTeamMemberLoggedIn, dispatch]);
 
   const loadDashboardData = useCallback(() => {
+    // Don't fetch if offline
+    if (isOffline) return;
+
     dispatch(getDashboardStats());
     dispatch(getFolders({ sort: -1 }));
     fetchWANumbers();
     if (!isTeamMemberLoggedIn) {
       loadTeamMemberWidgets();
     }
-  }, [dispatch, fetchWANumbers, isTeamMemberLoggedIn, loadTeamMemberWidgets]);
+  }, [dispatch, fetchWANumbers, isTeamMemberLoggedIn, loadTeamMemberWidgets, isOffline]);
 
-  const onRefresh = () => loadDashboardData();
+  const onRefresh = () => {
+    // Don't refresh if offline
+    if (isOffline) return;
+    loadDashboardData();
+  };
 
   // Handlers - Same as web app's handleSettingId
   const handleAccessInbox = async (numberId) => {
