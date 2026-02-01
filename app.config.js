@@ -90,6 +90,16 @@ export default ({ config }) => {
       'expo-web-browser',
       '@react-native-google-signin/google-signin',
     ],
+    // EAS Update configuration for OTA updates
+    updates: {
+      url: 'https://u.expo.dev/b49e424a-9ca4-4577-a11a-0b5161d62953',
+      enabled: true,
+      fallbackToCacheTimeout: 0,
+      checkAutomatically: 'ON_LOAD',
+    },
+    runtimeVersion: {
+      policy: 'appVersion',
+    },
     extra: {
       // EAS project configuration
       eas: {
