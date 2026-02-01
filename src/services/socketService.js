@@ -19,7 +19,7 @@ const eventListeners = new Map();
  */
 export const initializeSocket = async (onConnect, onDisconnect, onError) => {
   if (socket?.connected) {
-    console.log('Socket already connected, reusing existing connection');
+    // Log:('Socket already connected, reusing existing connection');
     return socket;
   }
 
@@ -34,7 +34,7 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
   if (!settingId) {
     settingId = await AsyncStorage.getItem('settingId');
   }
-  console.log('[SocketService] Initializing with settingId:', settingId);
+  // Log:('[SocketService] Initializing with settingId:', settingId);
 
   socket = io(APP_CONFIG.socketUrl, {
     transports: ['websocket', 'polling'],
@@ -55,31 +55,31 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
 
   // Connection events
   socket.on('connect', () => {
-    console.log('Socket connected successfully');
+    // Log:('Socket connected successfully');
     socketId = socket.id;
     reconnectAttempts = 0;
     onConnect?.();
   });
 
   socket.on('connect_error', (error) => {
-    console.error('Socket connection error:', error.message);
+    // Error:('Socket connection error:', error.message);
     onError?.('Connection failed. Retrying...');
     socket.disconnect();
   });
 
   socket.on('error', (error) => {
-    console.error('Socket error:', error);
+    // Error:('Socket error:', error);
     onError?.('Connection error occurred');
   });
 
   socket.on('disconnect', (reason) => {
-    console.log('Socket disconnected:', reason);
+    // Log:('Socket disconnected:', reason);
     onDisconnect?.(reason);
 
     if (reason === 'io server disconnect' || reason === 'transport close') {
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts += 1;
-        console.log(`Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+        // Log:(`Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
 
         setTimeout(() => {
           if (socket && !socket.connected) {
@@ -87,7 +87,7 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
           }
         }, RECONNECT_INTERVAL);
       } else {
-        console.log('Max reconnection attempts reached');
+        // Log:('Max reconnection attempts reached');
         onError?.('Connection lost. Please restart the app.');
         socket.disconnect();
         socket = null;
@@ -99,7 +99,7 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
   try {
     socket.connect();
   } catch (error) {
-    console.error('Initial connection error:', error);
+    // Error:('Initial connection error:', error);
     onError?.('Failed to connect');
   }
 
@@ -139,7 +139,7 @@ export const emitSocketEvent = (eventName, data) => {
     socket.emit(eventName, data);
     return true;
   }
-  console.warn('Socket not connected, cannot emit:', eventName);
+  // Warn:('Socket not connected, cannot emit:', eventName);
   return false;
 };
 
@@ -229,7 +229,7 @@ export const sendTemplateViaSocket = (templateData) => {
       : Object.values(templateData.headerParams || {}),
   };
 
-  console.log('[SocketService] Sending template payload:', payload);
+  // Log:('[SocketService] Sending template payload:', payload);
   return emitSocketEvent('sendMessage', payload);
 };
 

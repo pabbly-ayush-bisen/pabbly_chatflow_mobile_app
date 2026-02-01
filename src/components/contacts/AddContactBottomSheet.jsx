@@ -245,7 +245,7 @@ const AddContactBottomSheet = ({
             return;
           }
         } catch (chatError) {
-          console.error('Failed to open chat:', chatError);
+          // Error:('Failed to open chat:', chatError);
           // Even if chat fails, close the modal and show success for contact creation
           onClose();
           onSuccess && onSuccess(createdContact);
@@ -256,7 +256,7 @@ const AddContactBottomSheet = ({
       onClose();
       onSuccess && onSuccess(createdContact);
     } catch (error) {
-      console.error('Failed to create contact:', error);
+      // Error:('Failed to create contact:', error);
       setErrors((prev) => ({
         ...prev,
         phoneNumber:

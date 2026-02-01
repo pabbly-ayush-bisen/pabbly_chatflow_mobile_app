@@ -7,13 +7,13 @@ import {
   Image,
   Dimensions,
   Share,
-  Alert,
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { showError } from '../../utils/toast';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -64,7 +64,7 @@ const ImageLightbox = ({ visible, imageUrl, onClose }) => {
         message: 'Check out this image',
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to share image');
+      showError('Failed to share image');
     }
   }, [imageUrl]);
 

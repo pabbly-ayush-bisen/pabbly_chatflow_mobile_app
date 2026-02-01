@@ -56,9 +56,9 @@ export default function FlowsScreen() {
       </Card.Content>
 
       <Card.Actions>
-        <IconButton icon="pencil" size={20} onPress={() => console.log('Edit')} />
-        <IconButton icon="eye" size={20} onPress={() => console.log('View')} />
-        <IconButton icon="delete" size={20} onPress={() => console.log('Delete')} />
+        <IconButton icon="pencil" size={20} onPress={() => { /* Log:('Edit') */ }} />
+        <IconButton icon="eye" size={20} onPress={() => { /* Log:('View') */ }} />
+        <IconButton icon="delete" size={20} onPress={() => { /* Log:('Delete') */ }} />
       </Card.Actions>
     </Card>
   );
@@ -84,7 +84,7 @@ export default function FlowsScreen() {
       <FAB
         icon="plus"
         style={styles.fab}
-        onPress={() => console.log('Create new flow')}
+        onPress={() => { /* Log:('Create new flow') */ }}
         label="New Flow"
       />
     </SafeAreaView>

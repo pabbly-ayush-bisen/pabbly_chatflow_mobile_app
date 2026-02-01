@@ -4,13 +4,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Alert,
   Platform,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { colors, chatColors } from '../../theme/colors';
+import { showError, showWarning } from '../../utils/toast';
 
 const AudioRecorder = ({ onSend, onCancel, visible }) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -29,14 +29,10 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
         const { status } = await Audio.requestPermissionsAsync();
         setHasPermission(status === 'granted');
         if (status !== 'granted') {
-          Alert.alert(
-            'Permission Required',
-            'Please enable microphone access in settings to record audio messages.',
-            [{ text: 'OK' }]
-          );
+          showWarning('Please enable microphone access in settings to record audio messages.', 'Permission Required');
         }
       } catch (error) {
-        console.error('Permission request failed:', error);
+        // Error:('Permission request failed:', error);
         setHasPermission(false);
       }
     };
@@ -82,7 +78,7 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
   // Start recording
   const startRecording = useCallback(async () => {
     if (!hasPermission) {
-      Alert.alert('Permission Required', 'Microphone access is required to record audio.');
+      showWarning('Microphone access is required to record audio.', 'Permission Required');
       return;
     }
 
@@ -110,8 +106,8 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } catch (error) {
-      console.error('Failed to start recording:', error);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
+      // Error:('Failed to start recording:', error);
+      showError('Failed to start recording. Please try again.');
     }
   }, [hasPermission]);
 
@@ -151,8 +147,8 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
       setRecording(null);
       setRecordingDuration(0);
     } catch (error) {
-      console.error('Failed to stop recording:', error);
-      Alert.alert('Error', 'Failed to process recording. Please try again.');
+      // Error:('Failed to stop recording:', error);
+      showError('Failed to process recording. Please try again.');
     }
   }, [recording, recordingDuration, onSend]);
 
@@ -185,7 +181,7 @@ const AudioRecorder = ({ onSend, onCancel, visible }) => {
       setRecordingDuration(0);
       onCancel?.();
     } catch (error) {
-      console.error('Failed to cancel recording:', error);
+      // Error:('Failed to cancel recording:', error);
       setRecording(null);
       setRecordingDuration(0);
       onCancel?.();

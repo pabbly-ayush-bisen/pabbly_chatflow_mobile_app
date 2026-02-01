@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
 import { Text, ActivityIndicator, Searchbar, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
@@ -9,6 +9,8 @@ import { colors, getAvatarColor } from '../theme/colors';
 import { formatDistanceToNow } from 'date-fns';
 import ContactBottomSheet from '../components/contacts/ContactBottomSheet';
 import AddContactBottomSheet from '../components/contacts/AddContactBottomSheet';
+import { ContactsListSkeleton } from '../components/common';
+import { showError } from '../utils/toast';
 
 export default function ContactsScreen() {
   const navigation = useNavigation();
@@ -118,13 +120,12 @@ export default function ContactsScreen() {
       if (chatId) {
         navigation.navigate('ChatDetails', { chatId, chat });
       } else {
-        Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
+        showError('We could not find a chat for this contact.', 'Unable to Open Chat');
       }
     } catch (error) {
-      console.error('Failed to open chat from contacts:', error);
-      Alert.alert(
-        'Unable to open chat',
-        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'
+      showError(
+        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.',
+        'Unable to Open Chat'
       );
     } finally {
       setOpeningChatId(null);
@@ -290,25 +291,37 @@ export default function ContactsScreen() {
   };
 
   // Empty State
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <View style={styles.emptyIconContainer}>
-        <Icon name="account-group-outline" size={64} color={colors.grey[300]} />
+  const renderEmptyState = () => {
+    // Show skeleton while loading (not during refresh)
+    if (isLoadingContacts && !isRefreshing) {
+      return (
+        <View style={styles.skeletonInListContainer}>
+          <ContactsListSkeleton count={10} />
+        </View>
+      );
+    }
+
+    // Show empty state only after loading completes with no results
+    return (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconContainer}>
+          <Icon name="account-group-outline" size={64} color={colors.grey[300]} />
+        </View>
+        <Text style={styles.emptyTitle}>No contacts yet</Text>
+        <Text style={styles.emptySubtitle}>
+          {selectedList
+            ? `No contacts found in "${selectedList}"`
+            : 'Add your first contact to get started'}
+        </Text>
+        {!selectedList && (
+          <TouchableOpacity style={styles.emptyButton} onPress={handleAddContact} activeOpacity={0.8}>
+            <Icon name="plus" size={18} color={colors.common.white} />
+            <Text style={styles.emptyButtonText}>Add Contact</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      <Text style={styles.emptyTitle}>No contacts yet</Text>
-      <Text style={styles.emptySubtitle}>
-        {selectedList
-          ? `No contacts found in "${selectedList}"`
-          : 'Add your first contact to get started'}
-      </Text>
-      {!selectedList && (
-        <TouchableOpacity style={styles.emptyButton} onPress={handleAddContact} activeOpacity={0.8}>
-          <Icon name="plus" size={18} color={colors.common.white} />
-          <Text style={styles.emptyButtonText}>Add Contact</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
+    );
+  };
 
   // Error State
   const renderError = () => {
@@ -323,13 +336,21 @@ export default function ContactsScreen() {
     );
   };
 
-  // Loading State
+  // Loading State - Show skeleton
   if (isLoadingLists && !isRefreshing && contactListData.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading contacts...</Text>
+        <View style={styles.header}>
+          <Searchbar
+            placeholder="Search by name, phone or email..."
+            value=""
+            style={styles.searchbar}
+            inputStyle={styles.searchInput}
+            editable={false}
+          />
+        </View>
+        <View style={styles.skeletonContainer}>
+          <ContactsListSkeleton count={12} />
         </View>
       </View>
     );
@@ -360,13 +381,12 @@ export default function ContactsScreen() {
         setSelectedContact(null);
         navigation.navigate('ChatDetails', { chatId, chat });
       } else {
-        Alert.alert('Unable to open chat', 'We could not find a chat for this contact.');
+        showError('We could not find a chat for this contact.', 'Unable to Open Chat');
       }
     } catch (error) {
-      console.error('Failed to open chat from bottom sheet:', error);
-      Alert.alert(
-        'Unable to open chat',
-        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.'
+      showError(
+        typeof error === 'string' ? error : error?.message || 'Something went wrong. Please try again.',
+        'Unable to Open Chat'
       );
     } finally {
       setOpeningChatId(null);
@@ -419,8 +439,8 @@ export default function ContactsScreen() {
 
       {/* Contacts List */}
       {isInitialContactsLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
+        <View style={styles.skeletonContainer}>
+          <ContactsListSkeleton count={10} />
         </View>
       ) : (
         <FlatList
@@ -496,6 +516,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: colors.text.secondary,
+  },
+  skeletonContainer: {
+    flex: 1,
+    backgroundColor: colors.background.default,
+  },
+  skeletonInListContainer: {
+    flex: 1,
+    backgroundColor: colors.background.default,
+    paddingTop: 8,
+    paddingHorizontal: 16,
   },
 
   // Header
@@ -590,7 +620,7 @@ const styles = StyleSheet.create({
   // Contacts List
   contactsList: {
     paddingHorizontal: 16,
-    paddingBottom: 100,
+    paddingBottom: 80,
   },
   separator: {
     height: 1,
@@ -754,11 +784,11 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
   },
 
-  // FAB
+  // FAB - positioned above tab bar
   fab: {
     position: 'absolute',
     right: 16,
-    bottom: 16,
+    bottom: 70,
     backgroundColor: colors.primary.main,
     borderRadius: 28,
   },

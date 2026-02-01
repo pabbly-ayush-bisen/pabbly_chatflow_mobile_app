@@ -18,6 +18,7 @@ import {
   handleTeamMemberLogout,
   handleUpdateChatOnContactUpdate,
   handleUpdateTemplateStatus,
+  handleNewMessagesBulk,
 } from '../services/socketHandlers';
 import { fetchChats } from '../redux/slices/inboxSlice';
 import {
@@ -28,7 +29,7 @@ import {
   addNotificationResponseListener,
   addNotificationReceivedListener,
 } from '../services/notificationService';
-import { navigate } from '../navigation/AppNavigator';
+import { navigate } from '../navigation/navigationUtils';
 
 const SocketContext = createContext(null);
 
@@ -54,34 +55,24 @@ export const SocketProvider = ({ children }) => {
   const previousSettingIdRef = useRef(null); // Track previous settingId for reconnection
 
   const handleConnect = useCallback(() => {
-    console.log('Socket connected - fetching chats');
     setConnectionStatus('connected');
     setError(null);
-    dispatch(fetchChats());
+    // Fetch ALL chats without pagination (matching web app behavior)
+    dispatch(fetchChats({ all: true }));
   }, [dispatch]);
 
   const handleDisconnect = useCallback((reason) => {
-    console.log('Socket disconnected:', reason);
     setConnectionStatus('disconnected');
   }, []);
 
   const handleError = useCallback((errorMessage) => {
-    console.error('Socket error:', errorMessage);
     setError(errorMessage);
     setConnectionStatus('error');
   }, []);
 
   const setupEventListeners = useCallback(() => {
-    console.log('[SocketContext] Setting up event listeners');
-
     // New message event
     subscribeToEvent('newMessage', async (newChat) => {
-      console.log('[SocketContext] newMessage event received:', {
-        chatId: newChat._id,
-        currentChatId: currentChatIdRef.current,
-        appState: appState.current,
-      });
-
       handleNewMessage(dispatch, newChat);
 
       // Show notification if app is in background or chat is not currently open
@@ -94,8 +85,6 @@ export const SocketProvider = ({ children }) => {
         // Check if the app is in background or the chat is not open
         const isInBackground = appState.current !== 'active';
         const isChatOpen = currentChatIdRef.current === newChat._id;
-
-        console.log('[SocketContext] Notification check:', { isInBackground, isChatOpen });
 
         if (isInBackground || !isChatOpen) {
           // Show local notification
@@ -114,7 +103,7 @@ export const SocketProvider = ({ children }) => {
             // Add 1 for the new unread message (since state might not be updated yet)
             await setBadgeCount(totalUnread + 1);
           } catch (badgeError) {
-            console.warn('[SocketContext] Error updating badge count:', badgeError);
+            // Error updating badge count
           }
         }
       }
@@ -142,7 +131,6 @@ export const SocketProvider = ({ children }) => {
 
     // Send message error
     subscribeToEvent('sendMessageError', (errorMsg) => {
-      console.error('[SocketContext] sendMessageError received:', errorMsg);
       handleSendMessageError(dispatch, errorMsg);
     });
 
@@ -153,14 +141,17 @@ export const SocketProvider = ({ children }) => {
 
     // Chat update on contact update (when contact details change)
     subscribeToEvent('updateChatOnContactUpdate', async (response) => {
-      console.log('[SocketContext] updateChatOnContactUpdate received');
       handleUpdateChatOnContactUpdate(dispatch, response);
     });
 
     // Template status update (for real-time template approval notifications)
     subscribeToEvent('updateTemplateStatus', (template) => {
-      console.log('[SocketContext] updateTemplateStatus received');
       handleUpdateTemplateStatus(dispatch, template);
+    });
+
+    // Bulk new messages (matching web app behavior)
+    subscribeToEvent('newMessagesBulk', (newChats) => {
+      handleNewMessagesBulk(dispatch, newChats, store.getState);
     });
   }, [dispatch, store]);
 
@@ -174,11 +165,11 @@ export const SocketProvider = ({ children }) => {
     unsubscribeFromEvent('teamMemberLogout');
     unsubscribeFromEvent('updateChatOnContactUpdate');
     unsubscribeFromEvent('updateTemplateStatus');
+    unsubscribeFromEvent('newMessagesBulk');
   }, []);
 
   const connect = useCallback(async () => {
     if (!authenticated) {
-      console.log('Not authenticated, skipping socket connection');
       return;
     }
 
@@ -198,19 +189,16 @@ export const SocketProvider = ({ children }) => {
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         // App has come to foreground
-        console.log('[SocketContext] App came to foreground');
-
         // Clear badge count and notifications when app becomes active
         try {
           await setBadgeCount(0);
           await clearAllNotifications();
         } catch (badgeError) {
-          console.warn('[SocketContext] Error clearing badge:', badgeError);
+          // Error clearing badge
         }
 
         // Reconnect socket if needed
         if (authenticated && !isSocketConnected()) {
-          console.log('[SocketContext] Reconnecting socket');
           connect();
         }
 
@@ -220,10 +208,9 @@ export const SocketProvider = ({ children }) => {
             const token = await registerForPushNotifications();
             if (token && token !== pushToken) {
               setPushToken(token);
-              console.log('[SocketContext] Push token updated:', token);
             }
           } catch (tokenError) {
-            console.warn('[SocketContext] Error re-registering push token:', tokenError);
+            // Error re-registering push token
           }
         }
       }
@@ -243,17 +230,14 @@ export const SocketProvider = ({ children }) => {
         const token = await registerForPushNotifications();
         if (token) {
           setPushToken(token);
-          console.log('Push notification token registered:', token);
         }
 
         // Listen for notification interactions (when user taps notification)
         responseListenerRef.current = addNotificationResponseListener((response) => {
           const data = response.notification.request.content.data;
-          console.log('Notification tapped:', data);
 
           // Handle navigation to chat when notification is tapped
           if (data?.chatId) {
-            console.log('Navigating to chat:', data.chatId);
             // Navigate to the chat
             navigate('ChatDetails', { chatId: data.chatId });
           }
@@ -261,7 +245,7 @@ export const SocketProvider = ({ children }) => {
 
         // Listen for notifications received while app is in foreground
         notificationListenerRef.current = addNotificationReceivedListener((notification) => {
-          console.log('Notification received in foreground:', notification);
+          // Notification received in foreground
         });
       }
     };
@@ -302,12 +286,6 @@ export const SocketProvider = ({ children }) => {
 
     // Check if settingId has changed (team member login/logout)
     if (previousSettingIdRef.current && previousSettingIdRef.current !== settingId) {
-      console.log('[SocketContext] settingId changed, reconnecting socket:', {
-        previous: previousSettingIdRef.current,
-        current: settingId,
-        isTeamMember: teamMemberStatus?.loggedIn,
-      });
-
       // Disconnect and reconnect with new credentials
       // This ensures the socket sends messages with the correct settingId
       disconnect();

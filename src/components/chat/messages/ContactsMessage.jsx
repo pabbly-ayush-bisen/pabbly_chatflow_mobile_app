@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, chatColors, getAvatarColor } from '../../../theme/colors';
@@ -19,7 +19,7 @@ const ContactsMessage = ({ message, isOutgoing }) => {
   if (!contacts || contacts.length === 0) {
     return (
       <View style={styles.errorContainer}>
-        <Icon name="account-off" size={24} color={colors.grey[400]} />
+        <Icon name="account-off" size={24} color={colors.grey[400]} style={styles.errorIcon} />
         <Text style={styles.errorText}>Contact not available</Text>
       </View>
     );
@@ -69,6 +69,7 @@ const ContactsMessage = ({ message, isOutgoing }) => {
                 >
                   <Text
                     style={[styles.contactPhone, isOutgoing && styles.contactPhoneOutgoing]}
+                    numberOfLines={1}
                   >
                     {phone.phone || 'N/A'}
                   </Text>
@@ -84,11 +85,11 @@ const ContactsMessage = ({ message, isOutgoing }) => {
           {/* Call button */}
           {contact.phones.length > 0 && (
             <TouchableOpacity
-              style={styles.callButton}
+              style={[styles.callButton, isOutgoing && styles.callButtonOutgoing]}
               onPress={() => handleCall(contact.phones[0]?.phone)}
               activeOpacity={0.7}
             >
-              <Icon name="phone" size={20} color={chatColors.primary} />
+              <Icon name="phone" size={20} color={isOutgoing ? colors.common.white : chatColors.primary} />
             </TouchableOpacity>
           )}
         </View>
@@ -168,6 +169,7 @@ const ContactsMessage = ({ message, isOutgoing }) => {
                   {contact.phones.length > 0 ? (
                     <Text
                       style={[styles.expandedContactPhone, isOutgoing && styles.expandedContactPhoneOutgoing]}
+                      numberOfLines={1}
                     >
                       {contact.phones[0]?.phone || 'N/A'}
                     </Text>
@@ -181,8 +183,9 @@ const ContactsMessage = ({ message, isOutgoing }) => {
                   <TouchableOpacity
                     onPress={() => handleCall(contact.phones[0]?.phone)}
                     activeOpacity={0.7}
+                    style={styles.expandedCallButton}
                   >
-                    <Icon name="phone" size={18} color={chatColors.primary} />
+                    <Icon name="phone" size={18} color={isOutgoing ? 'rgba(255,255,255,0.8)' : chatColors.primary} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -195,69 +198,85 @@ const ContactsMessage = ({ message, isOutgoing }) => {
 };
 
 const styles = StyleSheet.create({
+  // Container - flexible width for proper bubble sizing
   container: {
-    minWidth: 200,
-    maxWidth: 280,
+    paddingVertical: 2,
+    flexShrink: 1,
+    minWidth: 180,
   },
   singleContactContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   avatarText: {
     color: colors.common.white,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   contactInfo: {
     flex: 1,
+    marginRight: 8,
   },
   contactName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: colors.text.primary,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   contactNameOutgoing: {
     color: colors.common.white,
   },
   contactPhone: {
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: '400',
     color: chatColors.primary,
     marginTop: 2,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   contactPhoneOutgoing: {
     color: 'rgba(255,255,255,0.8)',
   },
   callButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: colors.grey[100],
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+  },
+  callButtonOutgoing: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   multiContactHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
   },
   avatarGroup: {
     flexDirection: 'row',
-    marginRight: 12,
+    marginRight: 10,
   },
   groupAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -265,16 +284,26 @@ const styles = StyleSheet.create({
   },
   groupAvatarText: {
     color: colors.common.white,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   multiContactInfo: {
     flex: 1,
+    marginRight: 8,
   },
   contactCount: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '400',
     color: colors.text.secondary,
     marginTop: 2,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   contactCountOutgoing: {
     color: 'rgba(255,255,255,0.7)',
@@ -288,41 +317,58 @@ const styles = StyleSheet.create({
   expandedContact: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.05)',
   },
   smallAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
+    marginRight: 8,
   },
   smallAvatarText: {
     color: colors.common.white,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   expandedContactInfo: {
     flex: 1,
+    marginRight: 8,
   },
   expandedContactName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: colors.text.primary,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   expandedContactNameOutgoing: {
     color: colors.common.white,
   },
   expandedContactPhone: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '400',
     color: colors.text.secondary,
     marginTop: 1,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   expandedContactPhoneOutgoing: {
     color: 'rgba(255,255,255,0.7)',
+  },
+  expandedCallButton: {
+    padding: 4,
   },
   errorContainer: {
     flexDirection: 'row',
@@ -330,11 +376,19 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: colors.grey[100],
     borderRadius: 8,
-    gap: 8,
+  },
+  errorIcon: {
+    marginRight: 8,
   },
   errorText: {
     fontSize: 13,
+    fontWeight: '400',
     color: colors.text.secondary,
+    flex: 1,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
 });
 

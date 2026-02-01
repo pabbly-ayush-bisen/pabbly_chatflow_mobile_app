@@ -3,14 +3,17 @@ import { StatusBar } from 'expo-status-bar';
 import { PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider, useDispatch } from 'react-redux';
-import { ActivityIndicator, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { lightTheme } from './src/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import store from './src/redux/store';
 import { setUser, setSettingId, checkSession } from './src/redux/slices/userSlice';
-import { APP_CONFIG } from './src/config/app.config';
 import { SocketProvider } from './src/contexts/SocketContext';
+import { CacheProvider } from './src/contexts/CacheContext';
+import { sessionManager } from './src/services/SessionManager';
+import ErrorBoundary from './src/components/ErrorBoundary';
+import toastConfig from './src/components/ToastConfig';
 
 function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
@@ -34,57 +37,63 @@ function AppContent() {
   useEffect(() => {
     if (!isRuntimeReady) return;
 
-    // Restore session from storage on app start
+    // Restore session from storage on app start using SessionManager
     const restoreSession = async () => {
       try {
-        console.log('[App] Checking for existing session...');
+        // Use SessionManager for session restoration
+        const session = await sessionManager.initialize();
 
-        const token = await AsyncStorage.getItem(APP_CONFIG.tokenKey);
-        const userString = await AsyncStorage.getItem(APP_CONFIG.userKey);
-        const settingId = await AsyncStorage.getItem('settingId');
-        const shouldCheckSession = await AsyncStorage.getItem('shouldCheckSession');
+        // Check if we have session data (token OR user)
+        // Token indicates explicit session, user without token indicates cookie-based session
+        const hasToken = session && session.token;
+        const hasUser = session && session.user;
 
-        console.log('[App] Session data found:', {
-          hasToken: !!token,
-          hasUser: !!userString,
-          hasSettingId: !!settingId,
-          shouldCheckSession: !!shouldCheckSession,
-        });
-
-        if (token && userString) {
-          const user = JSON.parse(userString);
-
-          // Restore user and settingId from storage immediately
-          dispatch(setUser(user));
-          if (settingId) {
-            dispatch(setSettingId(settingId));
+        if (hasToken && hasUser) {
+          // Best case: we have both token and user cached
+          dispatch(setUser(session.user));
+          if (session.settingId) {
+            dispatch(setSettingId(session.settingId));
           }
 
-          // Verify session with server - Same as web app's checkSession
-          // If server says session is invalid, the API calls will handle logout
+          // Background verify session with server
+          const shouldVerify = await sessionManager.shouldVerifyWithServer();
+          if (shouldVerify) {
+            dispatch(checkSession())
+              .then(() => {
+                sessionManager.markSessionVerified();
+              })
+              .catch(() => {});
+          }
+        } else if (hasUser && !hasToken) {
+          // User cached but no token - likely cookie-based session
+          // Try to verify with server using cookies
+
+          // First restore user for instant UI
+          dispatch(setUser(session.user));
+          if (session.settingId) {
+            dispatch(setSettingId(session.settingId));
+          }
+
           try {
-            const sessionCheck = JSON.parse(shouldCheckSession || '{}');
-            // Only verify if it's been more than 1 hour since last check
-            const oneHour = 60 * 60 * 1000;
-            if (!sessionCheck.timestamp || Date.now() - sessionCheck.timestamp > oneHour) {
-              console.log('[App] Verifying session with server...');
-              dispatch(checkSession());
-              // Update the check timestamp
-              await AsyncStorage.setItem(
-                'shouldCheckSession',
-                JSON.stringify({ status: true, timestamp: Date.now() })
-              );
-            }
-          } catch (verifyError) {
-            console.log('[App] Session verification skipped:', verifyError.message);
+            await dispatch(checkSession()).unwrap();
+            sessionManager.markSessionVerified();
+          } catch (err) {
+            // Session is invalid - clear it
+            dispatch(setUser(null));
+            await sessionManager.destroySession();
           }
-
-          console.log('[App] Session restored successfully');
-        } else {
-          console.log('[App] No existing session found');
+        } else if (hasToken && !hasUser) {
+          // Token exists but no cached user - verify session to get user data
+          try {
+            await dispatch(checkSession()).unwrap();
+            sessionManager.markSessionVerified();
+          } catch (err) {
+            await sessionManager.destroySession();
+          }
         }
+        // else: No existing session found - showing login
       } catch (error) {
-        console.error('[App] Error restoring session:', error);
+        // Don't crash - just show login screen
       } finally {
         setIsLoading(false);
       }
@@ -95,26 +104,40 @@ function AppContent() {
 
   if (isLoading || !isRuntimeReady) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#20B276" />
       </View>
     );
   }
 
   return (
-    <SocketProvider>
-      <AppNavigator />
-    </SocketProvider>
+    <CacheProvider>
+      <SocketProvider>
+        <AppNavigator />
+      </SocketProvider>
+    </CacheProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+});
 
 export default function App() {
   return (
     <Provider store={store}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <PaperProvider theme={lightTheme}>
-          <StatusBar style="auto" />
-          <AppContent />
+          <ErrorBoundary>
+            <StatusBar style="auto" />
+            <AppContent />
+            <Toast config={toastConfig} />
+          </ErrorBoundary>
         </PaperProvider>
       </GestureHandlerRootView>
     </Provider>

@@ -28,16 +28,8 @@ export const handleNewMessage = async (dispatch, newChat) => {
       settingId = await AsyncStorage.getItem('settingId');
     }
 
-    console.log('[SocketHandler] Received newMessage event:', {
-      chatId: newChat._id,
-      incomingSettingId: newChat.settingId,
-      storedSettingId: settingId,
-      messagesCount: newChat.messages?.length,
-    });
-
     // Only process messages for current setting
     if (newChat.settingId !== settingId) {
-      console.log('[SocketHandler] Message not for current setting, ignoring. Incoming:', newChat.settingId, 'Stored:', settingId);
       return;
     }
 
@@ -46,19 +38,8 @@ export const handleNewMessage = async (dispatch, newChat) => {
       ? newChat.messages[newChat.messages.length - 1]
       : null;
 
-    console.log('[SocketHandler] Last message:', {
-      hasLastMessage: !!lastMessage,
-      messageType: lastMessage?.type,
-      messageId: lastMessage?.wamid || lastMessage?._id,
-    });
-
     // Handle reaction messages - update the original message's reactions instead of adding new message
     if (lastMessage?.type === 'reaction') {
-      console.log('[SocketHandler] Handling reaction message:', {
-        emoji: lastMessage?.reaction?.emoji || lastMessage?.message?.emoji,
-        reactedToMessageId: lastMessage?.reaction?.message_id || lastMessage?.message?.message_id || lastMessage?.context?.id,
-      });
-
       const emoji = lastMessage?.reaction?.emoji || lastMessage?.message?.emoji || '';
       const reactedToMessageId = lastMessage?.reaction?.message_id || lastMessage?.message?.message_id || lastMessage?.context?.id;
 
@@ -80,7 +61,6 @@ export const handleNewMessage = async (dispatch, newChat) => {
         };
         dispatch(updateChatInList(chatForList));
 
-        console.log('[SocketHandler] Reaction handling complete');
         return;
       }
     }
@@ -96,12 +76,10 @@ export const handleNewMessage = async (dispatch, newChat) => {
     };
 
     // Update chat list - move to top if not system message
-    console.log('[SocketHandler] Dispatching updateChatInList');
     dispatch(updateChatInList(chatForList));
 
     // If we have the current conversation open, add message to it
     if (lastMessage) {
-      console.log('[SocketHandler] Dispatching addMessageToCurrentConversation');
       dispatch(addMessageToCurrentConversation({
         chatId: newChat._id,
         message: lastMessage,
@@ -114,10 +92,8 @@ export const handleNewMessage = async (dispatch, newChat) => {
     fetchTimeObj[settingId] = new Date().toISOString();
     await AsyncStorage.setItem('@pabbly_chatflow_lastFetchTime', JSON.stringify(fetchTimeObj));
 
-    console.log('[SocketHandler] Message handling complete');
-
   } catch (error) {
-    console.error('[SocketHandler] Error handling new message:', error);
+    // Error handling new message
   }
 };
 
@@ -145,7 +121,7 @@ export const handleMessageStatus = async (dispatch, data) => {
     }));
 
   } catch (error) {
-    console.error('Error handling message status:', error);
+    // Error handling message status
   }
 };
 
@@ -164,7 +140,6 @@ export const handleResetUnreadCount = (dispatch, chatId) => {
  * @param {string} id - Conversation ID
  */
 export const handleContactCreated = (dispatch, id) => {
-  console.log('Contact created successfully:', id);
   dispatch(setConversationId(id));
 };
 
@@ -174,7 +149,6 @@ export const handleContactCreated = (dispatch, id) => {
  * @param {string} errorMsg - Error message
  */
 export const handleContactCreateError = (dispatch, errorMsg) => {
-  console.error('Contact create error:', errorMsg);
   dispatch(setContactCreateError(errorMsg));
 };
 
@@ -184,7 +158,6 @@ export const handleContactCreateError = (dispatch, errorMsg) => {
  * @param {string} errorMsg - Error message
  */
 export const handleSendMessageError = (dispatch, errorMsg) => {
-  console.error('Send message error:', errorMsg);
   dispatch(setSendMessageError(errorMsg));
 };
 
@@ -202,13 +175,12 @@ export const handleTeamMemberLogout = async (dispatch, emailsToLogout, getState)
 
     for (const member of emailsToLogout) {
       if (user.email === member.email) {
-        console.log('Team member logout triggered for:', member.email);
         dispatch(logout());
         break;
       }
     }
   } catch (error) {
-    console.error('Error handling team member logout:', error);
+    // Error handling team member logout
   }
 };
 
@@ -219,23 +191,21 @@ export const handleTeamMemberLogout = async (dispatch, emailsToLogout, getState)
  */
 export const handleUpdateChatOnContactUpdate = async (dispatch, response) => {
   try {
-    console.log('[SocketHandler] updateChatOnContactUpdate received:', response);
-
     if (response?.contactIds && Array.isArray(response.contactIds) && response.contactIds.length > 0) {
       // Fetch updated chats for the specific contact IDs
       const updatedChatsResponse = await dispatch(fetchChatsByContacts(response.contactIds));
 
-      if (updatedChatsResponse.payload?.data?.chats || updatedChatsResponse.payload?.chats) {
-        const chats = updatedChatsResponse.payload?.data?.chats || updatedChatsResponse.payload?.chats;
+      const payload = updatedChatsResponse.payload || {};
+      const chats = payload.data?.chats || payload.chats || payload._raw?.chats || [];
+      if (chats.length > 0) {
         // Merge with existing chats - this will be handled in the slice
         for (const chat of chats) {
           dispatch(updateChatInList(chat));
         }
-        console.log('[SocketHandler] Updated chats for contacts:', chats.length);
       }
     }
   } catch (error) {
-    console.error('[SocketHandler] Error updating chats for contact IDs:', error);
+    // Error updating chats for contact IDs
   }
 };
 
@@ -245,9 +215,76 @@ export const handleUpdateChatOnContactUpdate = async (dispatch, response) => {
  * @param {Object} template - Updated template data
  */
 export const handleUpdateTemplateStatus = (dispatch, template) => {
-  console.log('[SocketHandler] updateTemplateStatus received:', template);
   if (template && template._id) {
     dispatch(setUpdatedTemplate(template));
+  }
+};
+
+/**
+ * Handle bulk new messages from socket (matching web app behavior)
+ * @param {Function} dispatch - Redux dispatch
+ * @param {Array} newChats - Array of new chat objects with messages
+ * @param {Function} getState - Redux getState function
+ */
+export const handleNewMessagesBulk = async (dispatch, newChats, getState) => {
+  try {
+    if (!Array.isArray(newChats) || newChats.length === 0) return;
+
+    // Try both possible keys for settingId
+    let settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+    if (!settingId) {
+      settingId = await AsyncStorage.getItem('settingId');
+    }
+
+    // Filter chats that belong to current setting
+    const relevantChats = newChats.filter(chat => chat.settingId === settingId);
+    if (relevantChats.length === 0) {
+      return;
+    }
+
+    // Get current chats from Redux store
+    const state = getState();
+    const currentChats = state.inbox?.chats || [];
+
+    // Create a map of existing chats for quick lookup
+    const existingChatsMap = new Map(currentChats.map(chat => [chat._id, chat]));
+
+    // Process bulk chats - update existing or add new
+    const updatedChatsMap = new Map(existingChatsMap);
+
+    relevantChats.forEach(newChat => {
+      const lastMessage = newChat.messages && newChat.messages.length > 0
+        ? newChat.messages[newChat.messages.length - 1]
+        : null;
+
+      const processedChat = {
+        ...newChat,
+        messages: undefined,
+        lastMessage,
+        lastMessageTime: lastMessage?.timestamp || lastMessage?.createdAt || newChat?.updatedAt,
+        unreadCount: existingChatsMap.get(newChat._id)?.unreadCount || 0,
+      };
+      updatedChatsMap.set(newChat._id, processedChat);
+    });
+
+    // Convert map back to array and sort by lastMessageTime
+    const updatedChats = Array.from(updatedChatsMap.values()).sort(
+      (a, b) => {
+        const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
+        return bTime - aTime; // Descending order (newest first)
+      }
+    );
+
+    dispatch(setChats(updatedChats));
+
+    // Update last fetch time
+    const lastFetchTime = await AsyncStorage.getItem('@pabbly_chatflow_lastFetchTime');
+    const fetchTimeObj = lastFetchTime ? JSON.parse(lastFetchTime) : {};
+    fetchTimeObj[settingId] = new Date().toISOString();
+    await AsyncStorage.setItem('@pabbly_chatflow_lastFetchTime', JSON.stringify(fetchTimeObj));
+  } catch (error) {
+    // Error handling bulk messages
   }
 };
 
@@ -261,4 +298,5 @@ export default {
   handleTeamMemberLogout,
   handleUpdateChatOnContactUpdate,
   handleUpdateTemplateStatus,
+  handleNewMessagesBulk,
 };

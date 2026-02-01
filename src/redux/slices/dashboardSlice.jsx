@@ -272,8 +272,8 @@ const dashboardSlice = createSlice({
         const data = action.payload.data || action.payload;
 
         // Debug: Log the raw folder data from API
-        console.log('[Redux getFolders] Raw payload:', JSON.stringify(action.payload, null, 2));
-        console.log('[Redux getFolders] Extracted data:', JSON.stringify(data, null, 2));
+        // Log:('[Redux getFolders] Raw payload:', JSON.stringify(action.payload, null, 2));
+        // Log:('[Redux getFolders] Extracted data:', JSON.stringify(data, null, 2));
 
         state.folders = data.folders || {};
         state.foldersCount = data.totalCount || 0;

@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Alert, Modal, ScrollView } from 'react-native';
+import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { showError, showSuccess, showWarning, toastActions } from '../utils/toast';
 import {
   fetchConversation,
   resetUnreadCount,
@@ -93,14 +94,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
     chat?.phoneNumber || chat?.phone_number || '';
   const contactName = contact.name || contactPhoneNumber || 'Unknown';
 
-  // Debug log to see what phone number we're getting
-  console.log('[ChatDetails] Contact phone number:', {
-    mobile: contact.mobile,
-    phoneNumber: contact.phoneNumber,
-    phone_number: contact.phone_number,
-    resolved: contactPhoneNumber,
-  });
-
   // Get chat status and AI assistant status from conversation or redux
   const chatStatus = currentConversation?.status || reduxChatStatus || chat?.status || 'open';
   const aiAssistantStatus = currentConversation?.aiAssistant?.isActive || reduxAiAssistantStatus || false;
@@ -137,22 +130,16 @@ export default function ChatDetailsScreen({ route, navigation }) {
     }
   }, [sendMessageStatus]);
 
-  // Display socket send message errors as Alert
+  // Display socket send message errors as toast
   useEffect(() => {
     if (sendMessageError) {
       setIsSending(false);
-      Alert.alert(
-        'Message Failed',
-        typeof sendMessageError === 'string' ? sendMessageError : 'Failed to send message. Please try again.',
-        [{
-          text: 'OK',
-          onPress: () => {
-            dispatch(clearInboxError());
-            // Refresh templates in case the error was due to stale template data
-            dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
-          }
-        }]
+      toastActions.messageFailed(
+        typeof sendMessageError === 'string' ? sendMessageError : 'Failed to send message. Please try again.'
       );
+      dispatch(clearInboxError());
+      // Refresh templates in case the error was due to stale template data
+      dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
     }
   }, [sendMessageError, dispatch]);
 
@@ -228,17 +215,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
 
   const handleSendMessage = useCallback(async (messageData) => {
-    console.log('[ChatDetails] handleSendMessage called with:', messageData);
-
     // Handle both string (old) and object (new) message format
     const text = typeof messageData === 'string' ? messageData : messageData?.text;
     const file = typeof messageData === 'object' ? messageData?.file : null;
     const replyTo = typeof messageData === 'object' ? messageData?.replyTo : replyingTo?.wamid;
 
-    console.log('[ChatDetails] Parsed values:', { text, file, replyTo, isSending });
-
     if ((!text?.trim() && !file) || isSending) {
-      console.log('[ChatDetails] Returning early:', { noTextAndNoFile: !text?.trim() && !file, isSending });
       return;
     }
 
@@ -259,7 +241,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         if (file.fileSize) {
           const validation = validateFileSize(file.fileSize, file.fileType);
           if (!validation.valid) {
-            Alert.alert('File Too Large', validation.message);
+            showError(validation.message, 'File Too Large');
             setIsSending(false);
             return;
           }
@@ -278,14 +260,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
         } else {
           // Upload local file with progress tracking (WhatsApp-style UI)
           try {
-            console.log('[ChatDetails] Uploading file with progress...', {
-              fileName: file.fileName,
-              fileUrl: file.fileUrl,
-              fileType: file.fileType,
-              fileSize: file.fileSize,
-              mimeType: file.mimeType,
-            });
-
             // Add upload to state for UI display
             uploadTempId = addUpload({
               ...file,
@@ -307,15 +281,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
             if (uploadResult.success && uploadResult.url) {
               uploadedFileUrl = uploadResult.url;
               uploadedFileName = uploadResult.fileName || file.fileName;
-              console.log('[ChatDetails] File uploaded successfully:', uploadedFileUrl);
               // Complete the upload (remove from UI state)
               completeUpload(uploadTempId);
             } else {
-              console.error('[ChatDetails] Upload response missing URL:', uploadResult);
               throw new Error('Upload succeeded but no URL was returned');
             }
           } catch (uploadError) {
-            console.error('[ChatDetails] File upload error:', uploadError);
 
             // Check if it was cancelled
             if (uploadError.message === 'Upload cancelled') {
@@ -370,7 +341,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
       };
 
       // Immediately add optimistic message to UI
-      console.log('[ChatDetails] Adding optimistic message:', optimisticMessage);
       dispatch(addOptimisticMessage({
         chatId,
         message: optimisticMessage,
@@ -396,11 +366,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
         }),
       };
 
-      console.log('[ChatDetails] Sending message via socket:', socketData);
       const sent = sendMessageViaSocket(socketData);
       if (sent) {
         // Message was sent successfully via socket
-        console.log('[ChatDetails] Message sent successfully via socket');
         setIsSending(false);
         // Don't refresh conversation - socket handlers will update the message status
         // The optimistic message is already in the UI with pending status
@@ -411,18 +379,17 @@ export default function ChatDetailsScreen({ route, navigation }) {
           tempId,
           error: 'Could not send message. Please check your connection.',
         }));
-        Alert.alert('Send Failed', 'Could not send message. Please check your connection.');
+        toastActions.messageFailed('Could not send message. Please check your connection.');
         setIsSending(false);
       }
     } catch (error) {
-      console.error('[ChatDetails] Send message error:', error);
       // Mark the optimistic message as failed
       dispatch(markOptimisticMessageFailed({
         chatId,
         tempId,
         error: error.message || 'Failed to send message',
       }));
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      toastActions.messageFailed(error.message || 'Failed to send message. Please try again.');
       setIsSending(false);
     }
   }, [chatId, contactPhoneNumber, isSending, replyingTo, dispatch, addUpload, updateProgress, completeUpload, failUpload, getAbortController]);
@@ -528,13 +495,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
   // Handle template send - receives payload from ChatInput with templateName, bodyParams, headerParams, etc.
   const handleSendTemplate = useCallback(async (templatePayload) => {
-    console.log('[ChatDetails] handleSendTemplate received:', {
-      templatePayload,
-      bodyParams: templatePayload?.bodyParams,
-      headerParams: templatePayload?.headerParams,
-      templateName: templatePayload?.templateName,
-    });
-
     if (!templatePayload || isSending) return;
 
     setIsSending(true);
@@ -553,15 +513,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
     const bodyParams = templatePayload.bodyParams || [];
     const headerParams = templatePayload.headerParams || [];
     const media = templatePayload.media;
-
-    console.log('[ChatDetails] Extracted template values:', {
-      templateName,
-      languageCode,
-      templateType,
-      bodyParams,
-      headerParams,
-      hasTemplate: !!template,
-    });
 
     // Check if this is a carousel template
     const isCarouselTemplate = templatePayload.isCarousel || templateType?.toUpperCase() === 'CAROUSEL';
@@ -594,7 +545,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
       };
 
       // Add optimistic message to UI
-      console.log('[ChatDetails] Adding optimistic carousel template message:', carouselOptimisticMessage);
       dispatch(addOptimisticMessage({
         chatId,
         message: carouselOptimisticMessage,
@@ -624,8 +574,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
         ...(replyingTo && { replyToWamid: replyingTo.wamid }),
       };
 
-      console.log('[ChatDetails] Sending carousel template:', carouselTemplateData);
-
       // Use sendMessageViaSocket (no transformation) like web app does
       // Web app: socket.emit('sendMessage', action.payload) - direct, no transformation
       const sent = sendMessageViaSocket(carouselTemplateData);
@@ -639,7 +587,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
           error: 'Failed to send carousel template. Please try again.',
         }));
         setIsSending(false);
-        Alert.alert('Error', 'Failed to send carousel template. Please try again.');
+        showError('Failed to send carousel template. Please try again.');
       }
       return;
     }
@@ -657,20 +605,11 @@ export default function ChatDetailsScreen({ route, navigation }) {
     const bodyComponent = template.components?.find(c => c.type?.toUpperCase() === 'BODY');
     let bodyText = bodyComponent?.text || templateName || 'Template message';
 
-    console.log('[ChatDetails] Body text substitution:', {
-      originalBodyText: bodyText,
-      bodyParams,
-      bodyParamsLength: bodyParams?.length,
-    });
-
     // Replace placeholders with params
     bodyParams.forEach((param, index) => {
       const placeholder = `{{${index + 1}}}`;
-      console.log(`[ChatDetails] Replacing ${placeholder} with "${param}"`);
       bodyText = bodyText.replace(placeholder, param);
     });
-
-    console.log('[ChatDetails] Final bodyText:', bodyText);
 
     // Get media link for optimistic message (needed for immediate rendering)
     const mediaLink = media?.fileUrl || media?.uri || templatePayload.fileUrl || null;
@@ -705,7 +644,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
     };
 
     // Immediately add optimistic message to UI
-    console.log('[ChatDetails] Adding optimistic template message:', optimisticMessage);
     dispatch(addOptimisticMessage({
       chatId,
       message: optimisticMessage,
@@ -742,18 +680,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
     // Check both hasMediaHeader and isMediaTemplate to cover all cases
     const needsMedia = hasMediaHeader || isMediaTemplate;
 
-    console.log('[ChatDetails] Media check:', {
-      hasMediaHeader,
-      isMediaTemplate,
-      needsMedia,
-      hasMedia: !!media,
-      mediaFileUrl: media?.fileUrl,
-      mediaUri: media?.uri,
-      mediaId: media?.mediaId,
-      payloadFileUrl: templatePayload.fileUrl,
-      payloadMediaId: templatePayload.mediaId,
-    });
-
     if (needsMedia && media) {
       templateData.link = media.fileUrl || media.uri;
       templateData.filename = media.fileName;
@@ -769,13 +695,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
       }
     }
 
-    // Final validation: if this is a media template and we have no link/mediaId, warn
-    if (needsMedia && !templateData.link && !templateData.mediaId) {
-      console.warn('[ChatDetails] WARNING: Media template being sent without link or mediaId!');
-    }
-
-    console.log('[ChatDetails] Sending template:', templateData);
-
     // Use specialized template socket method
     const sent = sendTemplateViaSocket(templateData);
 
@@ -790,7 +709,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         error: 'Failed to send template. Please try again.',
       }));
       setIsSending(false);
-      Alert.alert('Error', 'Failed to send template. Please try again.');
+      showError('Failed to send template. Please try again.');
     }
   }, [chatId, contactPhoneNumber, isSending, replyingTo, dispatch]);
 
@@ -804,9 +723,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
       // Update local state
       dispatch(setChatStatus('intervened'));
-      Alert.alert('Success', 'You have taken over this conversation. AI and automation are now disabled.');
+      showSuccess('You have taken over this conversation. AI and automation are now disabled.', 'Intervened');
     } catch (error) {
-      Alert.alert('Error', error || 'Failed to intervene. Please try again.');
+      showError(error || 'Failed to intervene. Please try again.');
     }
   }, [chatId, dispatch]);
 
@@ -831,14 +750,13 @@ export default function ChatDetailsScreen({ route, navigation }) {
       })).unwrap();
 
       dispatch(setChatStatus('intervened'));
-      Alert.alert('Success', 'AI Assistant has been stopped for this conversation.');
+      showSuccess('AI Assistant has been stopped for this conversation.', 'AI Stopped');
     } catch (error) {
-      Alert.alert('Error', error || 'Failed to stop AI Assistant. Please try again.');
+      showError(error || 'Failed to stop AI Assistant. Please try again.');
     }
   }, [chatId, currentConversation, dispatch]);
 
   const handleAttachmentSelect = useCallback((type) => {
-    console.log('Attachment selected:', type);
     // TODO: Implement attachment handling
   }, []);
 
@@ -870,7 +788,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         break;
       case 'forward':
         // TODO: Implement forward functionality
-        Alert.alert('Forward', 'Forward functionality coming soon');
+        showWarning('Forward functionality coming soon', 'Coming Soon');
         break;
       default:
         break;
@@ -887,7 +805,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         emoji,
       })).unwrap();
     } catch (error) {
-      Alert.alert('Error', 'Failed to send reaction');
+      showError('Failed to send reaction');
     }
   }, [chatId, dispatch]);
 
@@ -943,7 +861,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
       const invertedIndex = groupedMessages.length - 1 - baseIndex;
       flatListRef.current.scrollToIndex({ index: invertedIndex, animated: true });
     } catch (e) {
-      console.warn('[ChatDetails] scrollToMessage error', e);
+      // Scroll error, ignore
     }
   }, [groupedMessages]);
 

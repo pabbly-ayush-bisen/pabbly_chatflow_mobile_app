@@ -1,7 +1,8 @@
 import React, { memo, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
 import { colors, chatColors } from '../../theme/colors';
 import {
   isOutgoingMessage,
@@ -10,6 +11,7 @@ import {
   getMessageText,
   getMessageCaption,
   getInteractiveData,
+  getSenderInfo,
 } from '../../utils/messageHelpers';
 
 // Import individual message components
@@ -25,6 +27,48 @@ import TemplateMessage from './messages/TemplateMessage';
 import OrderMessage from './messages/OrderMessage';
 import UnsupportedMessage from './messages/UnsupportedMessage';
 import { InteractiveMessage } from './messages/interactive';
+
+// List of supported message types - anything else is unsupported
+const SUPPORTED_MESSAGE_TYPES = [
+  'text',
+  'image',
+  'video',
+  'audio',
+  'document',
+  'file',
+  'sticker',
+  'location',
+  'contact',
+  'contacts',
+  'template',
+  'interactive',
+  'order',
+  'reaction',
+  'system',
+];
+
+/**
+ * Check if a message type is unsupported
+ * Returns true if the message should be rendered as unsupported
+ */
+const isUnsupportedMessage = (message, messageType) => {
+  // Explicit unsupported types
+  if (['unsupported', 'unknown', 'fallback'].includes(messageType)) {
+    return true;
+  }
+
+  // Any type not in our supported list is unsupported
+  if (messageType && !SUPPORTED_MESSAGE_TYPES.includes(messageType)) {
+    return true;
+  }
+
+  // Messages with errors from WhatsApp API
+  if (message?.message?.error || message?.waResponse?.errors?.length > 0) {
+    return true;
+  }
+
+  return false;
+};
 
 /**
  * ChatMessageItem Component
@@ -55,6 +99,10 @@ const ChatMessageItem = ({
   scrollToMessage,
   originalMessage, // The message being replied to (for reply preview)
 }) => {
+  // Get assistants and flows from Redux for sender name lookup
+  const assistants = useSelector((state) => state.assistant?.assistants || []);
+  const flows = useSelector((state) => state.assistant?.flows || []);
+
   const isOutgoing = isOutgoingMessage(message);
   const messageType = message?.type || 'text';
   const status = getMessageStatus(message);
@@ -125,6 +173,34 @@ const ChatMessageItem = ({
     }
   };
 
+  // Get sender info for outgoing messages (team member, AI assistant, flow, broadcast, etc.)
+  // Pass assistants and flows for name lookup (like web app)
+  const senderInfo = useMemo(
+    () => getSenderInfo(message, { assistants, flows }),
+    [message, assistants, flows]
+  );
+
+  // Render sender badge with icon and name
+  const renderSenderBadge = () => {
+    if (!senderInfo || !isOutgoing) return null;
+
+    // Determine icon color based on message type (for media with no caption, use white)
+    const iconColor = isOutgoing ? 'rgba(255,255,255,0.8)' : colors.text.secondary;
+    const textColor = isOutgoing ? 'rgba(255,255,255,0.8)' : colors.text.secondary;
+
+    return (
+      <View style={styles.senderBadge}>
+        <Icon name={senderInfo.icon} size={12} color={iconColor} />
+        <Text
+          style={[styles.senderName, { color: textColor }]}
+          numberOfLines={1}
+        >
+          {senderInfo.name}
+        </Text>
+      </View>
+    );
+  };
+
   // Render reply reference card
   const renderReplyReference = () => {
     if (!message?.replyToWamid && !message?.context?.id) return null;
@@ -171,6 +247,12 @@ const ChatMessageItem = ({
 
   // Render message content based on type
   const renderMessageContent = () => {
+    // FIRST: Check if message is unsupported (before any other checks)
+    // This matches web app behavior - show unsupported for any unknown type
+    if (isUnsupportedMessage(message, messageType)) {
+      return <UnsupportedMessage message={message} isOutgoing={isOutgoing} />;
+    }
+
     // Handle reaction messages
     if (messageType === 'reaction') {
       const emoji = message?.message?.emoji || message?.reaction?.emoji || '👍';
@@ -240,15 +322,12 @@ const ChatMessageItem = ({
       case 'order':
         return <OrderMessage message={message} isOutgoing={isOutgoing} />;
 
-      case 'unsupported':
-        return <UnsupportedMessage message={message} isOutgoing={isOutgoing} />;
-
       case 'system':
         return null; // System messages rendered differently
 
       default:
-        // Fallback to text message for unknown types
-        return <TextMessage message={message} isOutgoing={isOutgoing} />;
+        // If we reach here, it's an unknown type - show as unsupported
+        return <UnsupportedMessage message={message} isOutgoing={isOutgoing} />;
     }
   };
 
@@ -306,13 +385,19 @@ const ChatMessageItem = ({
           </View>
         )}
 
-        {/* Timestamp and status (not shown for stickers) */}
+        {/* Sender info, timestamp and status (not shown for stickers) */}
         {!isStickerMessage && (
-          <View style={styles.metaContainer}>
-            <Text style={[styles.timestamp, isOutgoing && styles.outgoingTimestamp]}>
-              {formatTime(timestamp)}
-            </Text>
-            {renderStatusIcon()}
+          <View style={[
+            styles.metaContainer,
+            senderInfo && isOutgoing && styles.metaContainerWithSender,
+          ]}>
+            {renderSenderBadge()}
+            <View style={styles.timestampContainer}>
+              <Text style={[styles.timestamp, isOutgoing && styles.outgoingTimestamp]}>
+                {formatTime(timestamp)}
+              </Text>
+              {renderStatusIcon()}
+            </View>
           </View>
         )}
       </View>
@@ -374,11 +459,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     marginTop: 4,
+    gap: 8,
+    flexShrink: 0,
+  },
+  metaContainerWithSender: {
+    justifyContent: 'space-between',
+  },
+  senderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
+    flexShrink: 1,
+    maxWidth: '60%',
+  },
+  senderName: {
+    fontSize: 10,
+    fontWeight: '400',
+    flexShrink: 1,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
+  },
+  timestampContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
   },
   timestamp: {
     fontSize: 11,
+    fontWeight: '400',
     color: colors.text.secondary,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   outgoingTimestamp: {
     color: 'rgba(255,255,255,0.7)',
@@ -394,7 +510,12 @@ const styles = StyleSheet.create({
   },
   stickerTimestamp: {
     fontSize: 11,
+    fontWeight: '400',
     color: colors.text.secondary,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
 
   // Reply reference styles
@@ -432,6 +553,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 2,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   replyAuthorIncoming: {
     color: chatColors.primary,
@@ -441,6 +566,11 @@ const styles = StyleSheet.create({
   },
   replyText: {
     fontSize: 12,
+    fontWeight: '400',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   replyTextIncoming: {
     color: colors.text.secondary,
@@ -458,8 +588,13 @@ const styles = StyleSheet.create({
   },
   errorBannerText: {
     fontSize: 10,
+    fontWeight: '400',
     color: colors.error.main,
     flex: 1,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
 
   // System message styles
@@ -477,8 +612,13 @@ const styles = StyleSheet.create({
   },
   systemMessageText: {
     fontSize: 12,
+    fontWeight: '400',
     color: colors.text.secondary,
     textAlign: 'center',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
 
   // Reaction message styles
@@ -492,7 +632,12 @@ const styles = StyleSheet.create({
   },
   reactionText: {
     fontSize: 12,
+    fontWeight: '400',
     color: colors.text.secondary,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      ios: {},
+    }),
   },
   reactionTextOutgoing: {
     color: 'rgba(255, 255, 255, 0.8)',

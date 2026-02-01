@@ -4,13 +4,25 @@ import { callApi, endpoints, httpMethods } from '../../utils/axios';
 // Async thunks
 export const getAssistants = createAsyncThunk(
   'assistant/getAssistants',
-  async ({ page = 1, limit = 10, fetchAll, status, name }, { rejectWithValue }) => {
+  async ({ page = 1, limit = 50, fetchAll = true, status, name }, { rejectWithValue }) => {
     try {
-      const fetchAllParam = fetchAll ? `&fetchAll=${fetchAll}` : '';
-      const statusParam = status && status !== 'all' ? `&status=${status}` : '';
-      const nameParam = name ? `&name=${encodeURIComponent(name)}` : '';
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('page', page.toString());
+      params.append('limit', limit.toString());
 
-      const url = `${endpoints.assistants.getAssistants}?page=${page}&limit=${limit}${fetchAllParam}${statusParam}${nameParam}`;
+      // Always include fetchAll=true to get actual assistant data
+      params.append('fetchAll', 'true');
+
+      if (status && status !== 'all') {
+        params.append('status', status);
+      }
+      if (name) {
+        params.append('name', name);
+      }
+
+      const url = `${endpoints.assistants.getAssistants}?${params.toString()}`;
+
       const response = await callApi(url, httpMethods.GET);
 
       if (response.status === 'error') {
@@ -56,6 +68,24 @@ export const getAssistantStats = createAsyncThunk(
   }
 );
 
+// Fetch all flows (for sender name lookup in chat messages)
+export const getFlows = createAsyncThunk(
+  'assistant/getFlows',
+  async (_, { rejectWithValue }) => {
+    try {
+      const url = `${endpoints.flows.getAllFlows}?all=true`;
+      const response = await callApi(url, httpMethods.GET);
+
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to fetch flows');
+      }
+      return response;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 // Initial state
 const initialState = {
   assistants: [],
@@ -70,6 +100,10 @@ const initialState = {
   activeAssistants: 0,
   inactiveAssistants: 0,
   totalResults: 0,
+  // Flows state (for sender name lookup in chat messages)
+  flows: [],
+  flowsStatus: 'idle',
+  flowsError: null,
 };
 
 // Slice
@@ -84,6 +118,7 @@ const assistantSlice = createSlice({
       state.assistantsError = null;
       state.assistantError = null;
       state.statsError = null;
+      state.flowsError = null;
     },
   },
   extraReducers: (builder) => {
@@ -95,9 +130,39 @@ const assistantSlice = createSlice({
       })
       .addCase(getAssistants.fulfilled, (state, action) => {
         state.assistantsStatus = 'succeeded';
-        const data = action.payload.data || action.payload;
-        state.assistants = data.assistants || [];
-        state.totalResults = data.totalResults || 0;
+        const payload = action.payload;
+
+        // Handle multiple possible response structures
+        // The API might return assistants in different locations
+        let assistantsList = [];
+        const raw = payload?._raw || {};
+
+        // Check all possible locations for the assistants array (priority order)
+        if (Array.isArray(payload?.assistants)) {
+          // Direct from callApi spreading: { assistants: [...] }
+          assistantsList = payload.assistants;
+        } else if (Array.isArray(raw?.assistants)) {
+          // From raw response: { _raw: { assistants: [...] } }
+          assistantsList = raw.assistants;
+        } else if (Array.isArray(payload?.data?.assistants)) {
+          // Nested in data: { data: { assistants: [...] } }
+          assistantsList = payload.data.assistants;
+        } else if (Array.isArray(raw?.data?.assistants)) {
+          // Nested in raw.data: { _raw: { data: { assistants: [...] } } }
+          assistantsList = raw.data.assistants;
+        } else if (Array.isArray(payload?.data)) {
+          // Data is array: { data: [...] }
+          assistantsList = payload.data;
+        } else if (Array.isArray(raw?.data)) {
+          // Raw data is array: { _raw: { data: [...] } }
+          assistantsList = raw.data;
+        } else if (Array.isArray(payload)) {
+          // Payload is array: [...]
+          assistantsList = payload;
+        }
+
+        state.assistants = assistantsList;
+        state.totalResults = payload?.pagination?.totalItems || raw?.pagination?.totalItems || payload?.data?.pagination?.totalItems || assistantsList.length;
       })
       .addCase(getAssistants.rejected, (state, action) => {
         state.assistantsStatus = 'failed';
@@ -135,6 +200,44 @@ const assistantSlice = createSlice({
       .addCase(getAssistantStats.rejected, (state, action) => {
         state.statsStatus = 'failed';
         state.statsError = action.payload;
+      });
+
+    // Get Flows
+    builder
+      .addCase(getFlows.pending, (state) => {
+        state.flowsStatus = 'loading';
+        state.flowsError = null;
+      })
+      .addCase(getFlows.fulfilled, (state, action) => {
+        state.flowsStatus = 'succeeded';
+        const payload = action.payload;
+
+        // Handle multiple possible response structures (similar to assistants)
+        let flowsList = [];
+        const raw = payload?._raw || {};
+
+        // Check all possible locations for the flows array
+        if (Array.isArray(payload?.flows)) {
+          flowsList = payload.flows;
+        } else if (Array.isArray(raw?.flows)) {
+          flowsList = raw.flows;
+        } else if (Array.isArray(payload?.data?.flows)) {
+          flowsList = payload.data.flows;
+        } else if (Array.isArray(raw?.data?.flows)) {
+          flowsList = raw.data.flows;
+        } else if (Array.isArray(payload?.data)) {
+          flowsList = payload.data;
+        } else if (Array.isArray(raw?.data)) {
+          flowsList = raw.data;
+        } else if (Array.isArray(payload)) {
+          flowsList = payload;
+        }
+
+        state.flows = flowsList;
+      })
+      .addCase(getFlows.rejected, (state, action) => {
+        state.flowsStatus = 'failed';
+        state.flowsError = action.payload;
       });
   },
 });

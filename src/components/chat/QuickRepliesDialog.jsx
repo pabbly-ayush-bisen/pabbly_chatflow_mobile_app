@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
+  Platform,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
@@ -257,6 +258,13 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 15,
     color: colors.text.primary,
+    fontWeight: '400',
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+      ios: {},
+    }),
   },
   tipContainer: {
     flexDirection: 'row',

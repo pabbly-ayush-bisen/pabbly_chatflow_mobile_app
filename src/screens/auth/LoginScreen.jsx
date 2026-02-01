@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ScrollView,
-  Image,
   Dimensions,
+  Image,
+  Animated,
+  Easing,
 } from 'react-native';
 import {
   Text,
@@ -19,33 +20,104 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
-import { signIn, checkSession, clearError } from '../../redux/slices/userSlice';
+import * as WebBrowser from 'expo-web-browser';
+import { clearError } from '../../redux/slices/userSlice';
 import { colors } from '../../theme';
 import ChatflowLogo from '../../components/ChatflowLogo';
+import { APP_CONFIG } from '../../config/app.config';
+import PabblyAuthWebView from '../../components/PabblyAuthWebView';
+import GoogleAuthWebView from '../../components/GoogleAuthWebView';
+import { showError, toastActions } from '../../utils/toast';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Responsive sizing based on screen height
+const isSmallScreen = SCREEN_HEIGHT < 700;
+
+// Dynamic sizes
+const LOGO_SIZE = isSmallScreen ? SCREEN_WIDTH * 0.35 : SCREEN_WIDTH * 0.4;
+const WELCOME_FONT_SIZE = isSmallScreen ? 24 : 28;
+const SUBTITLE_FONT_SIZE = isSmallScreen ? 13 : 15;
+const INPUT_HEIGHT = isSmallScreen ? 44 : 48;
+const BUTTON_HEIGHT = isSmallScreen ? 44 : 48;
+const SPACING = {
+  logoMargin: isSmallScreen ? 20 : 28,
+  welcomeMargin: isSmallScreen ? 12 : 16,
+  formPadding: isSmallScreen ? 16 : 20,
+  inputMargin: isSmallScreen ? 10 : 12,
+  buttonMargin: isSmallScreen ? 12 : 14,
+};
 
 export default function LoginScreen() {
   const dispatch = useDispatch();
-  const { loading, error, authenticated } = useSelector((state) => state.user);
+  const { loading, error } = useSelector((state) => state.user);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showAuthWebView, setShowAuthWebView] = useState(false);
+  const [showGoogleAuthWebView, setShowGoogleAuthWebView] = useState(false);
 
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const formFadeAnim = useRef(new Animated.Value(0)).current;
+  const formSlideAnim = useRef(new Animated.Value(40)).current;
+  const logoScaleAnim = useRef(new Animated.Value(0.8)).current;
+
+  // Entrance animation
+  useEffect(() => {
+    Animated.parallel([
+      // Logo animation
+      Animated.spring(logoScaleAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      // Header fade in
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      // Form fade in with delay
+      Animated.timing(formFadeAnim, {
+        toValue: 1,
+        duration: 700,
+        delay: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(formSlideAnim, {
+        toValue: 0,
+        duration: 700,
+        delay: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  // Handle errors from Redux
   useEffect(() => {
     if (error) {
-      Alert.alert('Login Failed', error);
+      toastActions.loginFailed(error);
       dispatch(clearError());
     }
   }, [error, dispatch]);
 
-  useEffect(() => {
-    console.log('Login Screen - authenticated:', authenticated);
-  }, [authenticated]);
-
+  // Form validation
   const validateForm = () => {
     const newErrors = {};
 
@@ -65,23 +137,53 @@ export default function LoginScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle login - Same as web app: signIn then checkSession
+  // Handle Google login - Opens visible WebView for Google authentication
+  const handleGoogleLogin = () => {
+    setShowGoogleAuthWebView(true);
+  };
+
+  // Handle Google auth success
+  const handleGoogleAuthSuccess = () => {
+    setShowGoogleAuthWebView(false);
+    setGoogleLoading(false);
+  };
+
+  // Handle Google auth error
+  const handleGoogleAuthError = (errorMessage) => {
+    setShowGoogleAuthWebView(false);
+    setGoogleLoading(false);
+    showError(errorMessage || 'Google authentication failed', 'Login Failed');
+  };
+
+  // Handle Google auth close
+  const handleGoogleAuthClose = () => {
+    setShowGoogleAuthWebView(false);
+    setGoogleLoading(false);
+  };
+
+  // Handle email/password login - WebView-based authentication
   const handleLogin = async () => {
     if (!validateForm()) {
       return;
     }
-
-    try {
-      const result = await dispatch(signIn({ email: email.trim(), password })).unwrap();
-      if (result.status === 'success') {
-        // Web app calls checkSession immediately after successful login
-        await dispatch(checkSession());
-      }
-    } catch (err) {
-      // Error is handled by the error useEffect
-      console.error('Login failed:', err);
-    }
+    setShowAuthWebView(true);
   };
+
+  // Handle successful authentication from WebView
+  const handleAuthSuccess = useCallback(() => {
+    setShowAuthWebView(false);
+  }, []);
+
+  // Handle authentication error from WebView
+  const handleAuthError = useCallback((errorMessage) => {
+    setShowAuthWebView(false);
+    showError(errorMessage || 'Authentication failed. Please try again.', 'Login Failed');
+  }, []);
+
+  // Handle WebView close
+  const handleAuthClose = useCallback(() => {
+    setShowAuthWebView(false);
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -93,9 +195,10 @@ export default function LoginScreen() {
         end={{ x: 1, y: 1 }}
       />
 
-      {/* Decorative circles */}
+      {/* Decorative circles with animation-ready positioning */}
       <View style={styles.decorativeCircle1} />
       <View style={styles.decorativeCircle2} />
+      <View style={styles.decorativeCircle3} />
 
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
@@ -106,26 +209,57 @@ export default function LoginScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            bounces={true}
+            overScrollMode="always"
           >
-            {/* Logo Section */}
-            <View style={styles.logoSection}>
+            {/* Logo Section with Animation */}
+            <Animated.View
+              style={[
+                styles.logoSection,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ scale: logoScaleAnim }],
+                  marginBottom: SPACING.logoMargin,
+                },
+              ]}
+            >
               <View style={styles.logoContainer}>
-                <ChatflowLogo width={SCREEN_WIDTH * 0.45} />
+                <View style={[styles.logoGlow, { width: LOGO_SIZE * 0.9, height: LOGO_SIZE * 0.9, borderRadius: LOGO_SIZE * 0.45 }]} />
+                <ChatflowLogo width={LOGO_SIZE} />
               </View>
-            </View>
+            </Animated.View>
 
-            {/* Welcome Section */}
-            <View style={styles.welcomeSection}>
-              <Text style={styles.welcomeText}>Welcome Back!</Text>
-              <Text style={styles.subtitleText}>
+            {/* Welcome Section with Animation */}
+            <Animated.View
+              style={[
+                styles.welcomeSection,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                  marginBottom: SPACING.welcomeMargin,
+                },
+              ]}
+            >
+              <Text style={[styles.welcomeText, { fontSize: WELCOME_FONT_SIZE }]}>Welcome</Text>
+              <Text style={[styles.subtitleText, { fontSize: SUBTITLE_FONT_SIZE }]}>
                 Sign in to manage your WhatsApp business
               </Text>
-            </View>
+            </Animated.View>
 
-            {/* Form Section */}
-            <View style={styles.formSection}>
+            {/* Form Section with Animation */}
+            <Animated.View
+              style={[
+                styles.formSection,
+                {
+                  opacity: formFadeAnim,
+                  transform: [{ translateY: formSlideAnim }],
+                  padding: SPACING.formPadding,
+                  paddingTop: SPACING.formPadding + 4,
+                },
+              ]}
+            >
               {/* Email Input */}
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, { marginBottom: SPACING.inputMargin }]}>
                 <Text style={styles.inputLabel}>Email Address</Text>
                 <TextInput
                   value={email}
@@ -139,14 +273,15 @@ export default function LoginScreen() {
                   autoComplete="email"
                   placeholder="Enter your email"
                   placeholderTextColor={colors.grey[400]}
-                  left={<TextInput.Icon icon="email-outline" color={colors.grey[400]} />}
-                  style={styles.input}
+                  left={<TextInput.Icon icon="email-outline" color={colors.grey[400]} size={isSmallScreen ? 18 : 20} />}
+                  style={[styles.input, { height: INPUT_HEIGHT }]}
                   outlineStyle={[
                     styles.inputOutline,
                     errors.email && styles.inputOutlineError
                   ]}
                   error={!!errors.email}
                   disabled={loading}
+                  dense={isSmallScreen}
                   theme={{
                     colors: {
                       primary: colors.primary.main,
@@ -161,7 +296,7 @@ export default function LoginScreen() {
               </View>
 
               {/* Password Input */}
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, { marginBottom: SPACING.inputMargin }]}>
                 <Text style={styles.inputLabel}>Password</Text>
                 <TextInput
                   value={password}
@@ -173,21 +308,23 @@ export default function LoginScreen() {
                   secureTextEntry={!showPassword}
                   placeholder="Enter your password"
                   placeholderTextColor={colors.grey[400]}
-                  left={<TextInput.Icon icon="lock-outline" color={colors.grey[400]} />}
+                  left={<TextInput.Icon icon="lock-outline" color={colors.grey[400]} size={isSmallScreen ? 18 : 20} />}
                   right={
                     <TextInput.Icon
                       icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
                       onPress={() => setShowPassword(!showPassword)}
                       color={colors.grey[400]}
+                      size={isSmallScreen ? 18 : 20}
                     />
                   }
-                  style={styles.input}
+                  style={[styles.input, { height: INPUT_HEIGHT }]}
                   outlineStyle={[
                     styles.inputOutline,
                     errors.password && styles.inputOutlineError
                   ]}
                   error={!!errors.password}
                   disabled={loading}
+                  dense={isSmallScreen}
                   theme={{
                     colors: {
                       primary: colors.primary.main,
@@ -214,9 +351,11 @@ export default function LoginScreen() {
                 </View>
                 <Button
                   mode="text"
-                  onPress={() => console.log('Forgot password')}
+                  onPress={() => {
+                    WebBrowser.openBrowserAsync(`${APP_CONFIG.pabblyAccountsUrl}/forgot-password`);
+                  }}
                   textColor={colors.primary.main}
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                   compact
                   labelStyle={styles.forgotPasswordLabel}
                 >
@@ -228,8 +367,8 @@ export default function LoginScreen() {
               <Button
                 mode="contained"
                 onPress={handleLogin}
-                style={styles.loginButton}
-                contentStyle={styles.loginButtonContent}
+                style={[styles.loginButton, { marginBottom: SPACING.buttonMargin }]}
+                contentStyle={[styles.loginButtonContent, { height: BUTTON_HEIGHT }]}
                 labelStyle={styles.loginButtonLabel}
                 disabled={loading}
                 buttonColor={colors.primary.main}
@@ -242,40 +381,93 @@ export default function LoginScreen() {
               </Button>
 
               {/* Divider */}
-              <View style={styles.dividerContainer}>
+              <View style={[styles.dividerContainer, { marginBottom: SPACING.buttonMargin }]}>
                 <View style={styles.divider} />
-                <Text style={styles.dividerText}>or</Text>
+                <Text style={styles.dividerText}>or continue with</Text>
                 <View style={styles.divider} />
               </View>
+
+              {/* Google Login Button */}
+              <Button
+                mode="outlined"
+                onPress={handleGoogleLogin}
+                style={[styles.socialButton, { marginBottom: SPACING.inputMargin }]}
+                contentStyle={[styles.socialButtonContent, { height: BUTTON_HEIGHT }]}
+                labelStyle={styles.socialButtonLabel}
+                disabled={loading || googleLoading}
+                icon={() => (
+                  <View style={styles.socialIconContainer}>
+                    {googleLoading ? (
+                      <ActivityIndicator color={colors.text.primary} size="small" />
+                    ) : (
+                      <Image
+                        source={{ uri: 'https://www.google.com/favicon.ico' }}
+                        style={styles.socialIcon}
+                      />
+                    )}
+                  </View>
+                )}
+              >
+                {googleLoading ? 'Signing in...' : 'Continue with Google'}
+              </Button>
 
               {/* Sign Up Link */}
               <View style={styles.signUpContainer}>
                 <Text style={styles.signUpText}>Don't have an account?</Text>
                 <Button
                   mode="text"
-                  onPress={() => console.log('Sign up')}
+                  onPress={() => {
+                    WebBrowser.openBrowserAsync(`${APP_CONFIG.pabblyAccountsUrl}/signup`);
+                  }}
                   textColor={colors.primary.main}
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                   labelStyle={styles.signUpLabel}
                   compact
                 >
                   Sign Up
                 </Button>
               </View>
-            </View>
+            </Animated.View>
 
-            {/* Footer */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>
-                By signing in, you agree to our{' '}
-                <Text style={styles.linkText}>Terms of Service</Text>
-                {' '}and{' '}
-                <Text style={styles.linkText}>Privacy Policy</Text>
-              </Text>
-            </View>
+            {/* Footer with Animation - Only show on larger screens */}
+            {!isSmallScreen && (
+              <Animated.View
+                style={[
+                  styles.footer,
+                  {
+                    opacity: formFadeAnim,
+                  },
+                ]}
+              >
+                <Text style={styles.footerText}>
+                  By signing in, you agree to our{' '}
+                  <Text style={styles.linkText}>Terms of Service</Text>
+                  {' '}and{' '}
+                  <Text style={styles.linkText}>Privacy Policy</Text>
+                </Text>
+              </Animated.View>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Email/Password Authentication WebView */}
+      <PabblyAuthWebView
+        visible={showAuthWebView}
+        onClose={handleAuthClose}
+        email={email.trim()}
+        password={password}
+        onSuccess={handleAuthSuccess}
+        onError={handleAuthError}
+      />
+
+      {/* Google Auth WebView */}
+      <GoogleAuthWebView
+        visible={showGoogleAuthWebView}
+        onClose={handleGoogleAuthClose}
+        onSuccess={handleGoogleAuthSuccess}
+        onError={handleGoogleAuthError}
+      />
     </View>
   );
 }
@@ -294,21 +486,30 @@ const styles = StyleSheet.create({
   },
   decorativeCircle1: {
     position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
+    width: 350,
+    height: 350,
+    borderRadius: 175,
     backgroundColor: 'rgba(32, 178, 118, 0.08)',
-    top: -100,
-    right: -100,
+    top: -120,
+    right: -120,
   },
   decorativeCircle2: {
     position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(32, 178, 118, 0.05)',
-    bottom: 100,
-    left: -80,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: 'rgba(32, 178, 118, 0.06)',
+    bottom: 80,
+    left: -100,
+  },
+  decorativeCircle3: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(32, 178, 118, 0.04)',
+    top: '40%',
+    right: -60,
   },
   safeArea: {
     flex: 1,
@@ -318,69 +519,65 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 24,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
-
-  // Logo Section
   logoSection: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginTop: 4,
   },
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
-
-  // Welcome Section
+  logoGlow: {
+    position: 'absolute',
+    backgroundColor: 'rgba(32, 178, 118, 0.12)',
+  },
   welcomeSection: {
     alignItems: 'center',
-    marginBottom: 32,
   },
   welcomeText: {
-    fontSize: 28,
     fontWeight: '800',
     color: colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 4,
     letterSpacing: -0.5,
   },
   subtitleText: {
-    fontSize: 15,
     color: colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 20,
   },
-
-  // Form Section
   formSection: {
     backgroundColor: colors.common.white,
     borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
+    shadowColor: colors.primary.main,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
     shadowRadius: 16,
-    elevation: 4,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(32, 178, 118, 0.08)',
   },
   inputContainer: {
-    marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 6,
     marginLeft: 4,
   },
   input: {
-    backgroundColor: colors.common.white,
+    backgroundColor: colors.grey[50],
     fontSize: 15,
   },
   inputOutline: {
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: colors.grey[300],
+    borderColor: colors.grey[200],
   },
   inputOutlineError: {
     borderColor: colors.error.main,
@@ -391,13 +588,11 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginLeft: 4,
   },
-
-  // Options Row
   optionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 12,
   },
   rememberMe: {
     flexDirection: 'row',
@@ -411,26 +606,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-
-  // Login Button
   loginButton: {
     borderRadius: 12,
-    marginBottom: 20,
+    shadowColor: colors.primary.main,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   loginButtonContent: {
-    height: 52,
   },
   loginButtonLabel: {
     fontSize: 16,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
   },
-
-  // Divider
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
   },
   divider: {
     flex: 1,
@@ -443,12 +636,40 @@ const styles = StyleSheet.create({
     color: colors.text.disabled,
     fontWeight: '500',
   },
-
-  // Sign Up
+  socialButton: {
+    borderRadius: 12,
+    borderColor: colors.grey[200],
+    borderWidth: 1.5,
+    backgroundColor: colors.common.white,
+  },
+  socialButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  socialButtonLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginLeft: 12,
+  },
+  socialIconContainer: {
+    width: 22,
+    height: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 4,
+  },
+  socialIcon: {
+    width: 20,
+    height: 20,
+    resizeMode: 'contain',
+  },
   signUpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingTop: 2,
   },
   signUpText: {
     fontSize: 14,
@@ -458,11 +679,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-
-  // Footer
   footer: {
-    marginTop: 24,
-    paddingHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
   },
   footerText: {
     fontSize: 12,

@@ -5,12 +5,17 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Animated,
+  Easing,
+  Modal,
+  StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text, ActivityIndicator, Button, Surface } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import PabblyIcon from '../components/PabblyIcon';
 import {
   getDashboardStats,
   getWANumbers,
@@ -26,6 +31,7 @@ import {
 } from '../redux/slices/userSlice';
 import { callApi, endpoints, httpMethods } from '../utils/axios';
 import { colors } from '../theme/colors';
+import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
 
 // Import reusable components
 import {
@@ -33,6 +39,14 @@ import {
   FolderPill,
   SectionHeader,
   EmptyState,
+  StatsGridSkeleton,
+  FoldersSkeleton,
+  WhatsAppNumbersListSkeleton,
+  TeamMembersListSkeleton,
+  SharedAccountsListSkeleton,
+  WelcomeCardSkeleton,
+  DashboardSkeleton,
+  SectionHeaderSkeleton,
 } from '../components/common';
 import { WhatsAppNumberCard } from '../components/dashboard';
 
@@ -64,6 +78,91 @@ export default function DashboardScreen() {
   const [foldersViewportWidth, setFoldersViewportWidth] = useState(0);
   const [folderLayoutTick, setFolderLayoutTick] = useState(0);
 
+  // Expandable folders state
+  const [expandedFolders, setExpandedFolders] = useState({});
+
+  // Animation for loading overlay
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(0.3)).current;
+  const dot2Anim = useRef(new Animated.Value(0.3)).current;
+  const dot3Anim = useRef(new Animated.Value(0.3)).current;
+
+  // Start animation when switching accounts
+  useEffect(() => {
+    if (accessingSharedId || exitingTeamMember) {
+      // Pulse animation for logo
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 700,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 700,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Sequential dots animation
+      const animateDots = () => {
+        Animated.sequence([
+          // Dot 1
+          Animated.timing(dot1Anim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          // Dot 2
+          Animated.timing(dot2Anim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          // Dot 3
+          Animated.timing(dot3Anim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          // Reset all
+          Animated.parallel([
+            Animated.timing(dot1Anim, {
+              toValue: 0.3,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot2Anim, {
+              toValue: 0.3,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot3Anim, {
+              toValue: 0.3,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]).start(() => {
+          if (accessingSharedId || exitingTeamMember) {
+            animateDots();
+          }
+        });
+      };
+      animateDots();
+    } else {
+      // Reset animations
+      pulseAnim.setValue(1);
+      dot1Anim.setValue(0.3);
+      dot2Anim.setValue(0.3);
+      dot3Anim.setValue(0.3);
+    }
+  }, [accessingSharedId, exitingTeamMember, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
+
   const {
     statsStatus,
     statsError,
@@ -80,10 +179,28 @@ export default function DashboardScreen() {
     selectedFolder,
   } = useSelector((state) => state.dashboard);
 
-  const { settingId, teamMemberStatus } = useSelector((state) => state.user);
+  const { settingId, teamMemberStatus, user } = useSelector((state) => state.user);
   const isTeamMemberLoggedIn = !!teamMemberStatus?.loggedIn;
 
   const isLoading = statsStatus === 'loading' || accountStatus === 'loading' || folderStatus === 'loading';
+
+  // Get greeting based on time of day
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  // Get user's full name for greeting
+  const getUserFullName = () => {
+    if (user?.first_name && user?.last_name) {
+      return `${user.first_name} ${user.last_name}`;
+    }
+    if (user?.first_name) return user.first_name;
+    if (user?.email) return user.email.split('@')[0];
+    return 'there';
+  };
   const isRefreshing = statsStatus === 'loading' && accountStatus === 'loading' && folderStatus === 'loading';
 
   const scrollActiveFolderIntoView = useCallback(() => {
@@ -230,7 +347,7 @@ export default function DashboardScreen() {
         }
       } catch (e) {
         // If storage read fails, don't block UI; fallback selection happens via current folder list
-        console.log('[DashboardScreen] Failed to load selectedFolderId:', e);
+        // Log:('[DashboardScreen] Failed to load selectedFolderId:', e);
       }
     };
 
@@ -239,6 +356,38 @@ export default function DashboardScreen() {
       cancelled = true;
     };
   }, [folders, selectedFolder, dispatch, findFolderById, flattenFolders]);
+
+  // Auto-select folder when settingId changes (e.g., after accessing a WhatsApp number)
+  // This ensures the correct folder is selected for the accessed number
+  useEffect(() => {
+    if (!settingId || !folders) return;
+    // Skip for team members - they don't have access to accessBusinessAccount endpoint
+    if (isTeamMemberLoggedIn) return;
+
+    const syncFolderWithSettingId = async () => {
+      try {
+        // Check if we need to fetch folder info for the current settingId
+        const savedFolderId = await AsyncStorage.getItem('selectedFolderId');
+
+        // If no folder is saved or current folder doesn't match, try to get the correct folder
+        if (!savedFolderId && settingId) {
+          // Fetch folder info for the current settingId
+          const result = await dispatch(accessBusinessAccount(settingId)).unwrap();
+          if (result?.data?._id) {
+            await AsyncStorage.setItem('selectedFolderId', result.data._id);
+            const matchedFolder = findFolderById(folders, result.data._id);
+            if (matchedFolder) {
+              dispatch(setFolderFilter(matchedFolder));
+            }
+          }
+        }
+      } catch (e) {
+        // Log:('[DashboardScreen] Could not sync folder with settingId:', e);
+      }
+    };
+
+    syncFolderWithSettingId();
+  }, [settingId, folders, dispatch, findFolderById, isTeamMemberLoggedIn]);
 
   // Fetch WA numbers when selected folder changes
   const fetchWANumbers = useCallback(() => {
@@ -252,6 +401,31 @@ export default function DashboardScreen() {
   useEffect(() => {
     fetchWANumbers();
   }, [fetchWANumbers]);
+
+  // Auto-access the first WhatsApp number if no settingId is set
+  // This matches web app behavior where the first number is accessed by default
+  useEffect(() => {
+    // Skip if already have a settingId or if team member is logged in
+    if (settingId || isTeamMemberLoggedIn) return;
+    // Skip if WhatsApp numbers are still loading or empty
+    if (accountStatus === 'loading' || whatsappNumbers.length === 0) return;
+
+    // Find the first active WhatsApp number
+    const firstActiveNumber = whatsappNumbers.find(n => n?.account?.status === 'active');
+    const numberToAccess = firstActiveNumber || whatsappNumbers[0];
+
+    if (numberToAccess?._id) {
+      // Auto-access the first WhatsApp number silently (without navigation)
+      dispatch(accessBusinessAccount(numberToAccess._id))
+        .unwrap()
+        .then(() => {
+          dispatch(checkSession());
+        })
+        .catch(() => {
+          // Silently fail - user can manually click Access Inbox
+        });
+    }
+  }, [settingId, whatsappNumbers, accountStatus, isTeamMemberLoggedIn, dispatch]);
 
   const loadDashboardData = useCallback(() => {
     dispatch(getDashboardStats());
@@ -289,7 +463,7 @@ export default function DashboardScreen() {
         navigation.navigate('InboxTab', { screen: 'InboxMain' });
       }
     } catch (error) {
-      console.error('Failed to access inbox:', error);
+      // Error:('Failed to access inbox:', error);
     } finally {
       setAccessingId(null);
     }
@@ -309,7 +483,7 @@ export default function DashboardScreen() {
     try {
       await dispatch(syncWhatsAppBusinessInfo(numberId)).unwrap();
     } catch (error) {
-      console.error('Failed to sync WhatsApp info:', error);
+      // Error:('Failed to sync WhatsApp info:', error);
     } finally {
       setSyncingId(null);
     }
@@ -321,6 +495,9 @@ export default function DashboardScreen() {
 
     setAccessingSharedId(id || `${row?.email}-${row?.settingId}`);
     try {
+      // Clear old inbox data immediately to prevent showing stale chats
+      dispatch(clearInboxData());
+
       const payload = {
         email: row.email,
         teamMemberId: row.teamMemberId,
@@ -328,15 +505,29 @@ export default function DashboardScreen() {
       };
       const result = await dispatch(loginViaTeammemberAccount(payload)).unwrap();
       if (result?.status === 'success') {
-        // Same as web app: navigate back to dashboard and refresh session state
+        // Note: Team members don't have access to accessBusinessAccount endpoint
+        // The settingId is already set during loginViaTeammemberAccount
+        // Folder info will be synced when the user is an admin
+
+        // Refresh session to get updated user data
         await dispatch(checkSession());
-        // Refresh core dashboard data only (avoid admin-only teammember endpoints in team-member mode)
-        dispatch(getDashboardStats());
-        dispatch(getFolders({ sort: -1 }));
+
+        // Reload all dashboard data for the team member context
+        await Promise.all([
+          dispatch(getDashboardStats()),
+          dispatch(getFolders({ sort: -1 })),
+        ]);
+
+        // Fetch WhatsApp numbers
         fetchWANumbers();
+
+        // Fetch fresh inbox chats for the new account
+        dispatch(fetchChats({ all: true }));
+
+        // Stay on dashboard - don't redirect to inbox
       }
     } catch (error) {
-      console.error('Failed to access shared account:', error);
+      // Error:('Failed to access shared account:', error);
     } finally {
       setAccessingSharedId(null);
     }
@@ -346,15 +537,48 @@ export default function DashboardScreen() {
     if (!isTeamMemberLoggedIn) return;
     setExitingTeamMember(true);
     try {
+      // Clear old inbox data immediately to prevent showing stale chats
+      dispatch(clearInboxData());
+
       await dispatch(logoutFromTeammember()).unwrap();
-      await dispatch(checkSession());
-      // Back to admin mode: refresh dashboard and reload team-member widgets
-      dispatch(getDashboardStats());
-      dispatch(getFolders({ sort: -1 }));
+
+      // Refresh session to get updated user data (back to admin mode)
+      const sessionResult = await dispatch(checkSession()).unwrap();
+
+      // Get folder info for the admin's current settingId
+      const adminSettingId = sessionResult?.data?.user?.settingId;
+      if (adminSettingId) {
+        try {
+          const accessResult = await dispatch(accessBusinessAccount(adminSettingId)).unwrap();
+          if (accessResult?.data?._id) {
+            await AsyncStorage.setItem('selectedFolderId', accessResult.data._id);
+          }
+        } catch (accessError) {
+          // Log:('Could not get folder info for admin:', accessError);
+          // Clear folder selection to start fresh if we can't get folder info
+          await AsyncStorage.removeItem('selectedFolderId');
+        }
+      } else {
+        // No settingId, clear folder selection
+        await AsyncStorage.removeItem('selectedFolderId');
+      }
+
+      // Reload all dashboard data for admin context
+      await Promise.all([
+        dispatch(getDashboardStats()),
+        dispatch(getFolders({ sort: -1 })),
+      ]);
+
+      // Fetch WhatsApp numbers
       fetchWANumbers();
+
+      // Fetch fresh inbox chats for the admin account
+      dispatch(fetchChats({ all: true }));
+
+      // Reload team member widgets (admin-only data)
       loadTeamMemberWidgets({ force: true });
     } catch (error) {
-      console.error('Failed to logout from team member:', error);
+      // Error:('Failed to logout from team member:', error);
     } finally {
       setExitingTeamMember(false);
     }
@@ -362,12 +586,7 @@ export default function DashboardScreen() {
 
   const renderTeamMembersPreview = () => {
     if (teamMembersLoading) {
-      return (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="small" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading team members...</Text>
-        </View>
-      );
+      return <TeamMembersListSkeleton count={3} />;
     }
 
     if (teamMembersError) {
@@ -385,6 +604,7 @@ export default function DashboardScreen() {
           icon="account-group-outline"
           title="No Team Members"
           message="No team members have been added yet"
+          compact
         />
       );
     }
@@ -449,12 +669,7 @@ export default function DashboardScreen() {
 
   const renderSharedAccounts = () => {
     if (sharedAccountsLoading) {
-      return (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="small" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading shared accounts...</Text>
-        </View>
-      );
+      return <SharedAccountsListSkeleton count={3} />;
     }
 
     if (sharedAccountsError) {
@@ -471,149 +686,206 @@ export default function DashboardScreen() {
         <EmptyState
           icon="account-switch-outline"
           title="No Shared Accounts"
-          message="No WhatsApp number accounts are shared with you yet"
+          message="No WhatsApp accounts are shared with you yet"
+          compact
         />
       );
     }
 
     return (
-      <View style={styles.sharedSectionContainer}>
-        {/* Info card to clarify purpose */}
-        <Surface style={styles.sharedInfoCard} elevation={0}>
-          <View style={styles.sharedInfoRow}>
-            <View style={styles.sharedInfoIconBox}>
-              <Icon name="information-outline" size={18} color="#1D4ED8" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sharedInfoTitle}>What is this?</Text>
-              <Text style={styles.sharedInfoText}>
-                These are WhatsApp inboxes shared with you. Tap “Access Now” (or tap the card) to switch into that account.
-              </Text>
-            </View>
-          </View>
-        </Surface>
+      <View style={styles.cardList}>
+        {sharedAccounts.slice(0, 5).map((row, index) => {
+          const key = row?._id || `${row?.email}-${row?.settingId}-${index}`;
+          const isLoadingRow = accessingSharedId === (row?._id || `${row?.email}-${row?.settingId}`);
+          const isReadOnly = row?.role === 'manager';
 
-        <View style={styles.cardList}>
-          {sharedAccounts.slice(0, 5).map((row, index) => {
-            const key = row?._id || `${row?.email}-${row?.settingId}-${index}`;
-            const isLoadingRow = accessingSharedId === (row?._id || `${row?.email}-${row?.settingId}`);
+          const displayNumber = row?.waNumber || 'WhatsApp Number';
+          const sharedByEmail = row?.email || 'Unknown';
 
-            const isReadOnly = row?.role === 'manager';
-            const permissionLabel = isReadOnly ? 'Read Only' : 'Full Access';
-            const permissionBg = isReadOnly ? '#EEF2FF' : '#DCFCE7';
-            const permissionText = isReadOnly ? '#4F46E5' : '#16A34A';
-
-            return (
-              <Surface key={key} style={styles.sharedAccountCard} elevation={0}>
-                <View style={styles.sharedCardStrip} />
-
-                <View style={styles.sharedCardContent}>
-                  <TouchableOpacity
-                    style={styles.sharedTapArea}
-                    onPress={() => handleAccessSharedAccount(row)}
-                    disabled={isLoadingRow}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.sharedHeaderRow}>
-                      <View style={styles.sharedIconBox}>
-                        <Icon name="whatsapp" size={18} color="#16A34A" />
-                      </View>
-
-                      <View style={styles.sharedMeta}>
-                        <Text style={styles.sharedTitle} numberOfLines={1}>
-                          {row?.waNumber || 'Shared WhatsApp Number'}
-                        </Text>
-                        <Text style={styles.sharedSubtitle} numberOfLines={1}>
-                          Shared by {row?.email || '-'}
-                        </Text>
-                      </View>
-
-                      <View style={[styles.sharedPermissionChip, { backgroundColor: permissionBg }]}>
-                        <Text style={[styles.sharedPermissionText, { color: permissionText }]}>
-                          {permissionLabel.toUpperCase()}
-                        </Text>
-                      </View>
-
-                      <Icon name="chevron-right" size={18} color="#94A3B8" />
-                    </View>
-
-                    <View style={styles.sharedHintRow}>
-                      <Icon name="login-variant" size={16} color={colors.text.secondary} />
-                      <Text style={styles.sharedHintText}>
-                        Tap to switch into this account and open its inbox.
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <Button
-                    mode="contained"
-                    onPress={() => handleAccessSharedAccount(row)}
-                    loading={isLoadingRow}
-                    disabled={isLoadingRow}
-                    style={styles.sharedActionBtn}
-                    labelStyle={styles.sharedActionBtnLabel}
-                    contentStyle={styles.sharedActionBtnContent}
-                    icon={isLoadingRow ? undefined : 'login'}
-                  >
-                    {isLoadingRow ? 'Accessing...' : 'Access Now'}
-                  </Button>
+          return (
+            <Surface key={key} style={styles.sharedCard} elevation={0}>
+              <View style={styles.sharedCardContent}>
+                {/* WhatsApp Icon */}
+                <View style={styles.sharedIconBox}>
+                  <Icon name="whatsapp" size={20} color="#25D366" />
                 </View>
-              </Surface>
-            );
-          })}
-        </View>
+
+                {/* Info */}
+                <View style={styles.sharedInfo}>
+                  <Text style={styles.sharedNumber} numberOfLines={1}>
+                    {displayNumber}
+                  </Text>
+                  <Text style={styles.sharedBy} numberOfLines={1}>
+                    {sharedByEmail}
+                  </Text>
+                  <View style={[
+                    styles.sharedPermissionPill,
+                    isReadOnly ? styles.sharedPermissionPillReadOnly : styles.sharedPermissionPillFull
+                  ]}>
+                    <Text style={[
+                      styles.sharedPermissionPillText,
+                      isReadOnly ? styles.sharedPermissionPillTextReadOnly : styles.sharedPermissionPillTextFull
+                    ]}>
+                      {isReadOnly ? 'VIEW ONLY' : 'FULL ACCESS'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Access Now Button */}
+                <TouchableOpacity
+                  style={[styles.accessNowButton, isLoadingRow && styles.accessNowButtonLoading]}
+                  onPress={() => handleAccessSharedAccount(row)}
+                  disabled={isLoadingRow}
+                  activeOpacity={0.7}
+                >
+                  {isLoadingRow ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Text style={styles.accessNowButtonText}>Access</Text>
+                      <Icon name="arrow-right" size={14} color="#FFFFFF" />
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Surface>
+          );
+        })}
+
       </View>
     );
   };
 
   // Render: Credits Overview Stats
-  const renderStats = () => (
-    <View style={styles.statsGrid}>
-      <StatsCard
-        title="Allotted"
-        value={totalQuota}
-        icon="wallet-outline"
-        iconBg="#FEF3C7"
-        iconColor="#D97706"
-      />
-      <StatsCard
-        title="Consumed"
-        value={quotaUsed}
-        icon="chart-line"
-        iconBg="#DBEAFE"
-        iconColor="#2563EB"
-      />
-      <StatsCard
-        title="Remaining"
-        value={Math.max(0, totalQuota - quotaUsed)}
-        icon="gift-outline"
-        iconBg="#F3E8FF"
-        iconColor="#9333EA"
-      />
-      <StatsCard
-        title="Numbers"
-        value={WANumberCount}
-        icon="cellphone"
-        iconBg="#DCFCE7"
-        iconColor="#16A34A"
-      />
-    </View>
-  );
+  const renderStats = () => {
+    if (statsStatus === 'loading') {
+      return <StatsGridSkeleton />;
+    }
 
-  // Render: Folders
+    return (
+      <View style={styles.statsGrid}>
+        <StatsCard
+          title="Allotted"
+          value={totalQuota}
+          icon="wallet-outline"
+          iconBg="#FEF3C7"
+          iconColor="#D97706"
+        />
+        <StatsCard
+          title="Consumed"
+          value={quotaUsed}
+          icon="chart-line"
+          iconBg="#DBEAFE"
+          iconColor="#2563EB"
+        />
+        <StatsCard
+          title="Remaining"
+          value={Math.max(0, totalQuota - quotaUsed)}
+          icon="gift-outline"
+          iconBg="#F3E8FF"
+          iconColor="#9333EA"
+        />
+        <StatsCard
+          title="Numbers"
+          value={WANumberCount}
+          icon="cellphone"
+          iconBg="#DCFCE7"
+          iconColor="#16A34A"
+        />
+      </View>
+    );
+  };
+
+  // Toggle folder expansion
+  const handleToggleFolderExpand = useCallback((folderId) => {
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [folderId]: !prev[folderId],
+    }));
+  }, []);
+
+  // Render folder pill with subfolders - supports deep nesting with level tracking
+  const renderFolderWithSubfolders = (folder, index, level = 0) => {
+    // Guard against invalid folder data
+    if (!folder || !folder._id) {
+      return [];
+    }
+
+    const id = folder._id;
+    const isSelected = selectedFolder?._id === id;
+    const isExpanded = expandedFolders[id];
+    const isSubfolder = level > 0;
+
+    // Check if folder has valid subfolders (with _id property)
+    const validSubfolders = Array.isArray(folder.subfolders)
+      ? folder.subfolders.filter(sf => sf && sf._id)
+      : [];
+    const hasSubfolders = validSubfolders.length > 0;
+
+    const elements = [];
+
+    // Add the parent folder pill
+    elements.push(
+      <View
+        key={id || index}
+        onLayout={(e) => {
+          if (!id) return;
+          const { x, width } = e.nativeEvent.layout;
+          folderItemLayoutsRef.current[id] = { x, width };
+          if (isSelected) setFolderLayoutTick((t) => t + 1);
+        }}
+      >
+        <FolderPill
+          folder={folder}
+          isSelected={isSelected}
+          isExpanded={isExpanded}
+          isSubfolder={isSubfolder}
+          level={level}
+          onPress={() => handleFolderSelect(folder)}
+          onExpandPress={handleToggleFolderExpand}
+        />
+      </View>
+    );
+
+    // If expanded and has valid subfolders, render them at next level
+    if (isExpanded && hasSubfolders) {
+      validSubfolders.forEach((subfolder, subIndex) => {
+        // Recursively render subfolders at the next level
+        const subElements = renderFolderWithSubfolders(
+          subfolder,
+          `${id}-${subIndex}`,
+          level + 1
+        );
+        elements.push(...subElements);
+      });
+    }
+
+    return elements;
+  };
+
+  // Render: Folders with horizontal pills (supports expandable nested folders)
   const renderFolders = () => {
+    if (folderStatus === 'loading') {
+      return <FoldersSkeleton />;
+    }
+
     const defaultFolders = folders?.defaultFolders || [];
     const restFolders = folders?.restFolders || [];
 
-    // Flatten restFolders to include subfolders
-    const flattenedRestFolders = flattenFolders(restFolders);
-    const allFolders = [...defaultFolders, ...flattenedRestFolders];
+    if (defaultFolders.length === 0 && restFolders.length === 0) return null;
 
-    // Debug: Log folder data to check itemCount
-    console.log('[Folders Debug] defaultFolders:', JSON.stringify(defaultFolders.map(f => ({ name: f.name, itemCount: f.itemCount, _id: f._id })), null, 2));
-    console.log('[Folders Debug] restFolders itemCounts:', JSON.stringify(flattenedRestFolders.map(f => ({ name: f.name, itemCount: f.itemCount, level: f.level })), null, 2));
+    // Build folder list with expandable hierarchy
+    const folderElements = [];
 
-    if (allFolders.length === 0) return null;
+    // Add default folders (Home, WhatsApp Numbers, etc.) at level 0
+    defaultFolders.forEach((folder, index) => {
+      folderElements.push(...renderFolderWithSubfolders(folder, `default-${index}`, 0));
+    });
+
+    // Add rest folders (user-created folders with potential nesting) at level 0
+    restFolders.forEach((folder, index) => {
+      folderElements.push(...renderFolderWithSubfolders(folder, `rest-${index}`, 0));
+    });
 
     return (
       <ScrollView
@@ -622,28 +894,9 @@ export default function DashboardScreen() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.foldersContainer}
         onLayout={(e) => setFoldersViewportWidth(e.nativeEvent.layout.width)}
+        nestedScrollEnabled={true}
       >
-        {allFolders.map((folder, index) => {
-          const id = folder?._id;
-          const isSelected = !!id && selectedFolder?._id === id;
-          return (
-            <View
-              key={id || index}
-              onLayout={(e) => {
-                if (!id) return;
-                const { x, width } = e.nativeEvent.layout;
-                folderItemLayoutsRef.current[id] = { x, width };
-                if (isSelected) setFolderLayoutTick((t) => t + 1);
-              }}
-            >
-              <FolderPill
-                folder={folder}
-                isSelected={isSelected}
-                onPress={() => handleFolderSelect(folder)}
-              />
-            </View>
-          );
-        })}
+        {folderElements}
       </ScrollView>
     );
   };
@@ -651,12 +904,7 @@ export default function DashboardScreen() {
   // Render: WhatsApp Numbers
   const renderWhatsAppNumbers = () => {
     if (accountStatus === 'loading') {
-      return (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading numbers...</Text>
-        </View>
-      );
+      return <WhatsAppNumbersListSkeleton count={3} />;
     }
 
     if (whatsappNumbers.length === 0) {
@@ -669,6 +917,7 @@ export default function DashboardScreen() {
               ? 'No numbers in trash'
               : 'Add your first number to get started'
           }
+          compact
         />
       );
     }
@@ -691,12 +940,17 @@ export default function DashboardScreen() {
     );
   };
 
-  // Loading Screen
+  // Loading Screen - Show skeleton instead of spinner
   if (isLoading && !isRefreshing && statsStatus !== 'succeeded') {
     return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={colors.primary.main} />
-        <Text style={styles.loadingScreenText}>Loading Dashboard...</Text>
+      <View style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <DashboardSkeleton />
+        </ScrollView>
       </View>
     );
   }
@@ -720,8 +974,29 @@ export default function DashboardScreen() {
             tintColor={colors.primary.main}
           />
         }
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+        keyboardShouldPersistTaps="handled"
+        bounces={true}
+        overScrollMode="always"
+        scrollEventThrottle={16}
       >
+        {/* Welcome Header */}
+        {!isTeamMemberLoggedIn && (
+          <View style={styles.welcomeCard}>
+            <View style={styles.welcomeIconBox}>
+              <Icon name="hand-wave" size={22} color="#F59E0B" />
+            </View>
+            <View style={styles.welcomeContent}>
+              <Text style={styles.welcomeGreeting}>{getGreeting()},</Text>
+              <Text style={styles.welcomeName} numberOfLines={1}>{getUserFullName()}</Text>
+            </View>
+            <TouchableOpacity style={styles.welcomeQuickAction} activeOpacity={0.7}>
+              <Icon name="bell-outline" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Error Message */}
         {errorMessage && (
           <View style={styles.errorBox}>
@@ -730,51 +1005,111 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Team Member Mode Card (top) */}
+        {/* Team Member Mode Card (top) - Beautiful Redesign */}
         {isTeamMemberLoggedIn && (
-          <Surface style={styles.teamMemberBanner} elevation={0}>
-            <View style={styles.teamMemberBannerLeft}>
-              <View style={styles.teamMemberBannerIconBox}>
-                <Icon name="account-badge-outline" size={18} color="#0C4A6E" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.teamMemberBannerTitle} numberOfLines={1}>
-                  Logged in as team member
-                </Text>
-                <Text style={styles.teamMemberBannerSubtitle} numberOfLines={1}>
-                  {(teamMemberStatus?.name || teamMemberStatus?.email || '').trim()}
-                  {teamMemberStatus?.role ? ` • ${String(teamMemberStatus.role).toUpperCase()}` : ''}
-                </Text>
+          <View style={styles.teamMemberBannerWrapper}>
+            {/* Gradient-like background with accent */}
+            <View style={styles.teamMemberBannerGradient}>
+              {/* Decorative elements */}
+              <View style={styles.teamMemberDecorCircle1} />
+              <View style={styles.teamMemberDecorCircle2} />
+
+              {/* Content */}
+              <View style={styles.teamMemberBannerContent}>
+                {/* Left: Avatar and Info */}
+                <View style={styles.teamMemberBannerLeft}>
+                  {/* Avatar with initials */}
+                  <View style={styles.teamMemberAvatarContainer}>
+                    <View style={styles.teamMemberAvatar}>
+                      <Text style={styles.teamMemberAvatarText}>
+                        {(teamMemberStatus?.name || teamMemberStatus?.email || 'T')[0]?.toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.teamMemberAvatarBadge}>
+                      <Icon name="account-switch" size={10} color="#FFFFFF" />
+                    </View>
+                  </View>
+
+                  {/* Info */}
+                  <View style={styles.teamMemberInfo}>
+                    <View style={styles.teamMemberLabelRow}>
+                      <Icon name="shield-account-outline" size={12} color="rgba(255, 255, 255, 0.9)" />
+                      <Text style={styles.teamMemberLabel}>TEAM MEMBER ACCESS</Text>
+                    </View>
+                    <Text style={styles.teamMemberName} numberOfLines={1}>
+                      {teamMemberStatus?.name || teamMemberStatus?.email?.split('@')[0] || 'Team Member'}
+                    </Text>
+                    <View style={styles.teamMemberMetaRow}>
+                      {teamMemberStatus?.email && (
+                        <Text style={styles.teamMemberEmail} numberOfLines={1}>
+                          {teamMemberStatus.email}
+                        </Text>
+                      )}
+                      {teamMemberStatus?.role && (
+                        <View style={styles.teamMemberRoleBadge}>
+                          <Text style={styles.teamMemberRoleText}>
+                            {String(teamMemberStatus.role).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Right: Exit Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.teamMemberExitBtn,
+                    exitingTeamMember && styles.teamMemberExitBtnLoading,
+                  ]}
+                  onPress={handleExitTeamMember}
+                  disabled={exitingTeamMember}
+                  activeOpacity={0.8}
+                >
+                  {exitingTeamMember ? (
+                    <ActivityIndicator size="small" color="#0EA5E9" />
+                  ) : (
+                    <>
+                      <Icon name="logout" size={16} color="#0EA5E9" />
+                      <Text style={styles.teamMemberExitText}>Exit</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
-            <Button
-              mode="outlined"
-              onPress={handleExitTeamMember}
-              loading={exitingTeamMember}
-              disabled={exitingTeamMember}
-              style={styles.teamMemberBannerBtn}
-              textColor={colors.primary.main}
-            >
-              Exit
-            </Button>
-          </Surface>
+          </View>
         )}
 
         {/* Credits Overview Section */}
         <View style={styles.section}>
-          <SectionHeader title="Credits Overview" showBadge={false} />
+          <SectionHeader
+            title="Credits Overview"
+            icon="chart-arc"
+            iconColor="#8B5CF6"
+            showBadge={false}
+          />
           {renderStats()}
         </View>
 
         {/* Folders Section */}
         <View style={styles.section}>
-          <SectionHeader title="Folders" count={foldersCount} />
+          <SectionHeader
+            title="Folders"
+            icon="folder-outline"
+            iconColor="#F59E0B"
+            count={foldersCount}
+          />
           {renderFolders()}
         </View>
 
         {/* WhatsApp Numbers Section */}
         <View style={styles.section}>
-          <SectionHeader title="WhatsApp Numbers" count={whatsappNumbers.length} />
+          <SectionHeader
+            title="WhatsApp Numbers"
+            icon="whatsapp"
+            iconColor="#25D366"
+            count={whatsappNumbers.length}
+          />
           {renderWhatsAppNumbers()}
         </View>
 
@@ -783,13 +1118,23 @@ export default function DashboardScreen() {
           <>
             {/* Team Members Section (moved to bottom) */}
             <View style={styles.section}>
-              <SectionHeader title="Team Members" count={teamMemberStats.totalMembers} />
+              <SectionHeader
+                title="Team Members"
+                icon="account-group-outline"
+                iconColor="#3B82F6"
+                count={teamMemberStats.totalMembers}
+              />
               {renderTeamMembersPreview()}
             </View>
 
             {/* Accounts Shared With You Section (moved to bottom) */}
             <View style={styles.section}>
-              <SectionHeader title="Accounts Shared With You" count={sharedAccounts.length} />
+              <SectionHeader
+                title="Shared With You"
+                icon="share-variant-outline"
+                iconColor="#EC4899"
+                count={sharedAccounts.length}
+              />
               {renderSharedAccounts()}
             </View>
           </>
@@ -798,21 +1143,49 @@ export default function DashboardScreen() {
         <View style={styles.bottomSpace} />
       </ScrollView>
 
-      {/* Team-member account switching overlay */}
-      {accessingSharedId && (
-        <View style={styles.teamSwitchOverlay}>
+      {/* Team-member account switching overlay with animated P logo - Full screen Modal */}
+      <Modal
+        visible={!!(accessingSharedId || exitingTeamMember)}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => {}}
+      >
+        <StatusBar backgroundColor="rgba(15, 23, 42, 0.6)" barStyle="light-content" />
+        <View style={styles.teamSwitchOverlayFull}>
           <View style={styles.teamSwitchCard}>
-            <View style={styles.teamSwitchIconCircle}>
-              <Icon name="account-switch-outline" size={32} color={colors.primary.main} />
+            {/* Animated P Logo */}
+            <Animated.View
+              style={[
+                styles.teamSwitchLogoContainer,
+                {
+                  transform: [
+                    { scale: pulseAnim },
+                  ],
+                },
+              ]}
+            >
+              <PabblyIcon size={60} />
+            </Animated.View>
+
+            {/* Animated loading dots */}
+            <View style={styles.loadingDotsContainer}>
+              <Animated.View style={[styles.loadingDot, { opacity: dot1Anim }]} />
+              <Animated.View style={[styles.loadingDot, { opacity: dot2Anim }]} />
+              <Animated.View style={[styles.loadingDot, { opacity: dot3Anim }]} />
             </View>
-            <Text style={styles.teamSwitchTitle}>Switching to team member account</Text>
-            <Text style={styles.teamSwitchSubtitle}>
-              Please wait while we log you in and refresh your inbox.
+
+            <Text style={styles.teamSwitchTitle}>
+              {exitingTeamMember ? 'Exiting Team Member Access' : 'Switching Account'}
             </Text>
-            <ActivityIndicator size="large" color={colors.primary.main} style={{ marginTop: 16 }} />
+            <Text style={styles.teamSwitchSubtitle}>
+              {exitingTeamMember
+                ? 'Please wait while we restore your admin session...'
+                : 'Please wait while we load the team member account...'}
+            </Text>
           </View>
         </View>
-      )}
+      </Modal>
     </View>
   );
 }
@@ -826,7 +1199,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 120,
   },
   loadingScreen: {
     flex: 1,
@@ -858,9 +1233,52 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
 
+  // Welcome Card
+  welcomeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 14,
+    marginBottom: 20,
+    gap: 12,
+  },
+  welcomeIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeContent: {
+    flex: 1,
+  },
+  welcomeGreeting: {
+    fontSize: 13,
+    color: '#92400E',
+    fontWeight: '500',
+  },
+  welcomeName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#78350F',
+    marginTop: 1,
+  },
+  welcomeQuickAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   // Section
   section: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
 
   // Stats Grid
@@ -878,114 +1296,220 @@ const styles = StyleSheet.create({
 
   // Loading & Card List
   loadingBox: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 48,
-    gap: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   loadingText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.text.secondary,
   },
   cardList: {
-    gap: 16,
+    gap: 10,
   },
 
-  // Team member banner
-  teamMemberBanner: {
+  // Team Member Banner - Vibrant Blue/Cyan Theme
+  teamMemberBannerWrapper: {
+    marginBottom: 20,
+  },
+  teamMemberBannerGradient: {
+    backgroundColor: '#0EA5E9',
+    borderRadius: 20,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  teamMemberDecorCircle1: {
+    position: 'absolute',
+    top: -40,
+    right: -20,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  teamMemberDecorCircle2: {
+    position: 'absolute',
+    bottom: -30,
+    left: -10,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  teamMemberBannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    padding: 16,
   },
   teamMemberBannerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     flex: 1,
-    marginRight: 10,
+    gap: 14,
   },
-  teamMemberBannerIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#E0F2FE',
+  teamMemberAvatarContainer: {
+    position: 'relative',
+  },
+  teamMemberAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  teamMemberBannerTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0C4A6E',
+  teamMemberAvatarText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0EA5E9',
   },
-  teamMemberBannerSubtitle: {
-    fontSize: 12,
-    color: '#075985',
-    marginTop: 2,
-  },
-  teamMemberBannerBtn: {
+  teamMemberAvatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
     borderRadius: 10,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#0EA5E9',
+  },
+  teamMemberInfo: {
+    flex: 1,
+  },
+  teamMemberLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  teamMemberLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.9)',
+    letterSpacing: 0.5,
+  },
+  teamMemberName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  teamMemberMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  teamMemberEmail: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.85)',
+    maxWidth: 140,
+  },
+  teamMemberRoleBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  teamMemberRoleText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  teamMemberExitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  teamMemberExitBtnLoading: {
+    opacity: 0.7,
+  },
+  teamMemberExitText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0EA5E9',
   },
 
   // Team Members preview cards
   memberPreviewCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    padding: 14,
+    borderColor: '#E2E8F0',
+    padding: 12,
   },
   memberPreviewRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   memberAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: colors.primary.main,
     alignItems: 'center',
     justifyContent: 'center',
   },
   memberAvatarText: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   memberMeta: {
     flex: 1,
   },
   memberName: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '600',
     color: '#0F172A',
-    marginBottom: 2,
   },
   memberEmail: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748B',
-    marginBottom: 10,
+    marginTop: 2,
   },
   memberBadgesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
+    marginTop: 6,
   },
   pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   pillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   viewAllRow: {
     flexDirection: 'row',
@@ -999,168 +1523,142 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Shared Accounts cards
-  sharedAccountCard: {
+  // Shared Accounts - Clean design with Access button
+  sharedCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    overflow: 'hidden',
-  },
-  sharedSectionContainer: {
-    gap: 12,
-  },
-  sharedInfoCard: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-    padding: 14,
-  },
-  sharedInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  sharedInfoIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#DBEAFE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sharedInfoTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1E40AF',
-    marginBottom: 4,
-  },
-  sharedInfoText: {
-    fontSize: 12,
-    color: '#1D4ED8',
-    lineHeight: 16,
-  },
-  sharedCardStrip: {
-    height: 4,
-    backgroundColor: '#0C68E9',
+    borderColor: '#E2E8F0',
   },
   sharedCardContent: {
-    padding: 14,
-  },
-  sharedTapArea: {
-    borderRadius: 14,
-    padding: 2,
-    marginBottom: 10,
-  },
-  sharedHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
+    padding: 12,
+    gap: 10,
   },
   sharedIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: '#F0FDF4',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sharedMeta: {
+  sharedInfo: {
     flex: 1,
   },
-  sharedTitle: {
+  sharedNumber: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '600',
     color: '#0F172A',
     marginBottom: 2,
   },
-  sharedSubtitle: {
-    fontSize: 12,
+  sharedBy: {
+    fontSize: 11,
     color: '#64748B',
+    marginBottom: 4,
   },
-  sharedPermissionChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+  sharedPermissionPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
   },
-  sharedPermissionText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.4,
+  sharedPermissionPillReadOnly: {
+    backgroundColor: '#FEF3C7',
   },
-  sharedHintRow: {
+  sharedPermissionPillFull: {
+    backgroundColor: '#E0F2FE',
+  },
+  sharedPermissionPillText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  sharedPermissionPillTextReadOnly: {
+    color: '#D97706',
+  },
+  sharedPermissionPillTextFull: {
+    color: '#0284C7',
+  },
+  accessNowButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  sharedHintText: {
-    flex: 1,
-    fontSize: 12,
-    color: colors.text.secondary,
-    lineHeight: 16,
-  },
-  sharedActionBtn: {
-    borderRadius: 14,
-    elevation: 0,
-  },
-  sharedActionBtnContent: {
+    backgroundColor: colors.primary.main,
+    paddingHorizontal: 12,
     paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
   },
-  sharedActionBtnLabel: {
-    fontSize: 14,
-    fontWeight: '800',
+  accessNowButtonLoading: {
+    opacity: 0.7,
+  },
+  accessNowButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#FFFFFF',
-    letterSpacing: 0.3,
   },
 
   bottomSpace: {
     height: 20,
   },
-  // Team-member account switching overlay
-  teamSwitchOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+  // Team-member account switching overlay with animated logo (full screen modal)
+  teamSwitchOverlayFull: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 20,
   },
   teamSwitchCard: {
-    width: '78%',
-    maxWidth: 360,
-    borderRadius: 24,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
+    width: '82%',
+    maxWidth: 340,
+    borderRadius: 28,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 15,
   },
-  teamSwitchIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#ECFEFF',
+  teamSwitchLogoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 28,
+    backgroundColor: '#F0FDF4',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#BBF7D0',
+  },
+  loadingDotsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 10,
+  },
+  loadingDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary.main,
   },
   teamSwitchTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     color: colors.text.primary,
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   teamSwitchSubtitle: {
     fontSize: 13,
     color: colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 19,
+    paddingHorizontal: 8,
   },
 });

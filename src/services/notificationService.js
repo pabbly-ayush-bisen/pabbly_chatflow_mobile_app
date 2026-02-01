@@ -1,8 +1,15 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
 import { APP_CONFIG } from '../config/app.config';
+
+// Notification preferences storage key
+const NOTIFICATION_PREFS_KEY = '@pabbly_notification_prefs';
+
+// Sound object reference for cleanup
+let notificationSound = null;
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -24,7 +31,6 @@ export const registerForPushNotifications = async () => {
 
   // Check if running on a physical device
   if (!Device.isDevice) {
-    console.log('Push notifications require a physical device');
     return null;
   }
 
@@ -39,7 +45,6 @@ export const registerForPushNotifications = async () => {
   }
 
   if (finalStatus !== 'granted') {
-    console.log('Failed to get push notification permission');
     return null;
   }
 
@@ -49,7 +54,6 @@ export const registerForPushNotifications = async () => {
       projectId: 'b49e424a-9ca4-4577-a11a-0b5161d62953', // EAS project ID from app.json
     });
     token = tokenData.data;
-    console.log('Push token:', token);
 
     // Store token locally
     await AsyncStorage.setItem('@pabbly_chatflow_pushToken', token);
@@ -57,7 +61,7 @@ export const registerForPushNotifications = async () => {
     // Send token to your backend server
     await sendTokenToServer(token);
   } catch (error) {
-    console.error('Error getting push token:', error);
+    // Error getting push token
   }
 
   // Configure Android channel
@@ -98,7 +102,6 @@ const sendTokenToServer = async (token) => {
     const settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
 
     if (!authToken || !settingId) {
-      console.log('Cannot send push token: not authenticated');
       return;
     }
 
@@ -117,13 +120,127 @@ const sendTokenToServer = async (token) => {
       }),
     });
 
-    if (response.ok) {
-      console.log('Push token sent to server successfully');
-    } else {
-      console.log('Failed to send push token to server');
+  } catch (error) {
+    // Error sending push token to server
+  }
+};
+
+/**
+ * Get notification preferences from storage
+ * @returns {Promise<Object>} Notification preferences
+ */
+export const getNotificationPreferences = async () => {
+  try {
+    const prefs = await AsyncStorage.getItem(NOTIFICATION_PREFS_KEY);
+    if (prefs) {
+      return JSON.parse(prefs);
+    }
+    // Default preferences
+    return {
+      notificationsEnabled: true,
+      soundEnabled: true,
+      vibrationEnabled: true,
+    };
+  } catch (error) {
+    return {
+      notificationsEnabled: true,
+      soundEnabled: true,
+      vibrationEnabled: true,
+    };
+  }
+};
+
+/**
+ * Play WhatsApp-like notification sound
+ * Uses a pleasant pop/chime sound similar to WhatsApp
+ */
+export const playNotificationSound = async () => {
+  try {
+    // Unload previous sound if exists
+    if (notificationSound) {
+      await notificationSound.unloadAsync();
+      notificationSound = null;
+    }
+
+    // Configure audio mode
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    });
+
+    // Load and play the notification sound
+    // Using a built-in system sound URI that works across platforms
+    const { sound } = await Audio.Sound.createAsync(
+      // WhatsApp-like notification sound - using a web URL for a pleasant pop sound
+      { uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' },
+      { shouldPlay: true, volume: 0.8 }
+    );
+
+    notificationSound = sound;
+
+    // Cleanup after sound finishes
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.didJustFinish) {
+        sound.unloadAsync();
+        notificationSound = null;
+      }
+    });
+  } catch (error) {
+    // Fallback: try using system default
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/notification.mp3'),
+        { shouldPlay: true, volume: 0.8 }
+      );
+      notificationSound = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          sound.unloadAsync();
+          notificationSound = null;
+        }
+      });
+    } catch (fallbackError) {
+      // Fallback sound also failed
+    }
+  }
+};
+
+/**
+ * Trigger vibration pattern similar to WhatsApp
+ */
+export const vibrateNotification = () => {
+  // WhatsApp-like vibration pattern: short buzz, pause, short buzz
+  const pattern = Platform.OS === 'android'
+    ? [0, 100, 50, 100] // Android: delay, vibrate, pause, vibrate
+    : [100, 100]; // iOS: simplified pattern
+
+  Vibration.vibrate(pattern);
+};
+
+/**
+ * Play sound and vibrate based on user preferences
+ */
+export const triggerNotificationFeedback = async () => {
+  try {
+    const prefs = await getNotificationPreferences();
+
+    if (!prefs.notificationsEnabled) {
+      return; // Notifications disabled, do nothing
+    }
+
+    // Play sound if enabled
+    if (prefs.soundEnabled) {
+      await playNotificationSound();
+    }
+
+    // Vibrate if enabled
+    if (prefs.vibrationEnabled) {
+      vibrateNotification();
     }
   } catch (error) {
-    console.error('Error sending push token to server:', error);
+    // Error triggering notification feedback
   }
 };
 
@@ -135,6 +252,15 @@ const sendTokenToServer = async (token) => {
  */
 export const showMessageNotification = async (message, contact, chatId) => {
   try {
+    // Check if notifications are enabled
+    const prefs = await getNotificationPreferences();
+    if (!prefs.notificationsEnabled) {
+      return;
+    }
+
+    // Trigger sound and vibration feedback
+    await triggerNotificationFeedback();
+
     const contactName = contact?.name || contact?.phoneNumber || 'Unknown';
     let messageText = 'New message';
 
@@ -196,7 +322,7 @@ export const showMessageNotification = async (message, contact, chatId) => {
       trigger: null, // Show immediately
     });
   } catch (error) {
-    console.error('Error showing notification:', error);
+    // Error showing notification
   }
 };
 
@@ -208,7 +334,7 @@ export const setBadgeCount = async (count) => {
   try {
     await Notifications.setBadgeCountAsync(count);
   } catch (error) {
-    console.error('Error setting badge count:', error);
+    // Error setting badge count
   }
 };
 
@@ -220,7 +346,7 @@ export const clearAllNotifications = async () => {
     await Notifications.dismissAllNotificationsAsync();
     await Notifications.setBadgeCountAsync(0);
   } catch (error) {
-    console.error('Error clearing notifications:', error);
+    // Error clearing notifications
   }
 };
 
@@ -258,4 +384,8 @@ export default {
   addNotificationResponseListener,
   addNotificationReceivedListener,
   getLastNotificationResponse,
+  getNotificationPreferences,
+  playNotificationSound,
+  vibrateNotification,
+  triggerNotificationFeedback,
 };

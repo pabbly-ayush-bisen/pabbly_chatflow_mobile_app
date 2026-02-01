@@ -103,12 +103,101 @@ export const fetchChats = createAsyncThunk(
   'inbox/fetchChats',
   async (params = {}, { rejectWithValue }) => {
     try {
-      const response = await callApi(endpoints.inbox.getChats, httpMethods.GET, params);
+      const { all: fetchAll, filter } = params;
+      let allChats = [];
+      let lastChatUpdatedAt = null;
+      let hasMore = true;
+      let pageCount = 0;
+      const maxPages = 50; // Safety limit to prevent infinite loops
+
+      // Log:('[fetchChats] Starting fetch with params:', JSON.stringify(params));
+
+      // If all: true, we need to paginate through ALL pages
+      if (fetchAll === true) {
+        while (hasMore && pageCount < maxPages) {
+          pageCount++;
+          const requestParams = {};
+
+          // Add filter if specified
+          if (filter && filter !== 'all') {
+            requestParams.filter = filter;
+          }
+
+          // Add pagination cursor for subsequent pages
+          if (lastChatUpdatedAt) {
+            requestParams.lastChatUpdatedAt = lastChatUpdatedAt;
+          }
+
+          // Log:(`[fetchChats] Page ${pageCount} - Request params:`, JSON.stringify(requestParams));
+
+          const response = await callApi(endpoints.inbox.getChats, httpMethods.GET, requestParams);
+
+          if (response.status === 'error') {
+            // Error:('[fetchChats] API Error:', response.message);
+            return rejectWithValue(response.message || 'Failed to fetch chats');
+          }
+
+          // Extract chats from response
+          const rawChats = response.data?.chats || response.chats || response._raw?.chats || [];
+          // Log:(`[fetchChats] Page ${pageCount} - Received ${rawChats.length} chats`);
+
+          if (rawChats.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          // Append chats to our collection
+          allChats = [...allChats, ...rawChats];
+
+          // Check if there are more chats to fetch
+          hasMore = response.data?.hasMoreChats || response.hasMoreChats || response._raw?.hasMoreChats || false;
+
+          // Get the oldest chat's updatedAt for next page cursor
+          if (hasMore && rawChats.length > 0) {
+            const lastChat = rawChats[rawChats.length - 1];
+            lastChatUpdatedAt = lastChat.updatedAt || lastChat.lastMessageAt || lastChat.createdAt;
+          }
+
+          // Log:(`[fetchChats] Page ${pageCount} - hasMoreChats: ${hasMore}, nextCursor: ${lastChatUpdatedAt}`);
+        }
+
+        // Deduplicate chats by _id to prevent duplicate key errors in FlatList
+        const uniqueChatsMap = new Map();
+        allChats.forEach(chat => {
+          if (chat._id && !uniqueChatsMap.has(chat._id)) {
+            uniqueChatsMap.set(chat._id, chat);
+          }
+        });
+        const uniqueChats = Array.from(uniqueChatsMap.values());
+
+        // Log:(`[fetchChats] Completed! Total chats fetched: ${allChats.length}, unique: ${uniqueChats.length} across ${pageCount} pages`);
+
+        // Return all chats in the expected format
+        return {
+          status: 'success',
+          chats: uniqueChats,
+          data: { chats: uniqueChats },
+          hasMoreChats: false, // We've fetched everything
+          _raw: { chats: uniqueChats, hasMoreChats: false },
+        };
+      }
+
+      // Regular single-page fetch (for manual pagination if needed)
+      const requestParams = { ...params };
+      delete requestParams.all;
+
+      const response = await callApi(endpoints.inbox.getChats, httpMethods.GET, requestParams);
+
       if (response.status === 'error') {
         return rejectWithValue(response.message || 'Failed to fetch chats');
       }
+
+      const rawChats = response.data?.chats || response.chats || response._raw?.chats || [];
+      // Log:('[fetchChats] Single page fetch - Received:', rawChats.length, 'chats');
+
       return response;
     } catch (error) {
+      // Error:('[fetchChats] Exception:', error.message);
       return rejectWithValue(error.message);
     }
   }
@@ -248,17 +337,18 @@ export const updateContactChat = createAsyncThunk(
 );
 
 // Toggle AI Assistant for a chat
+// Uses the same endpoint as web app: aiassistants/toggle-chat-assistant
 export const toggleAiAssistant = createAsyncThunk(
   'inbox/toggleAiAssistant',
   async ({ chatId, assistantId, isActive }, { rejectWithValue }) => {
     try {
-      const url = `${endpoints.inbox.toggleAiAssistant || '/chat/ai-assistant'}`;
+      const url = endpoints.assistants.toggleAiAssistant;
       const response = await callApi(url, httpMethods.POST, {
         chatId,
         assistantId,
         isActive,
       });
-      if (response.status !== 'success' && response.status === 'error') {
+      if (response.status === 'error') {
         return rejectWithValue(response.message || 'Failed to toggle AI Assistant');
       }
       return { chatId, isActive, response };
@@ -547,7 +637,9 @@ const inboxSlice = createSlice({
     },
     updateChatInList: (state, action) => {
       const incoming = normalizeChatForList(action.payload);
-      const index = state.chats.findIndex(chat => chat._id === incoming?._id);
+      if (!incoming?._id) return; // Skip if no valid _id
+
+      const index = state.chats.findIndex(chat => chat._id === incoming._id);
       if (index !== -1) {
         // Update existing chat
         state.chats[index] = { ...state.chats[index], ...incoming };
@@ -557,8 +649,11 @@ const inboxSlice = createSlice({
           state.chats.unshift(chat);
         }
       } else {
-        // New chat, add to top
-        state.chats.unshift(incoming);
+        // New chat, add to top only if not already present
+        const alreadyExists = state.chats.some(chat => chat._id === incoming._id);
+        if (!alreadyExists) {
+          state.chats.unshift(incoming);
+        }
       }
       // Also update currentConversation if it matches
       if (state.currentConversation && state.currentConversation._id === incoming?._id) {
@@ -640,7 +735,7 @@ const inboxSlice = createSlice({
 
           if (optimisticIndex !== -1) {
             // Replace optimistic message with real message from server
-            console.log('[inboxSlice] Replacing optimistic message with real message');
+            // Log:('[inboxSlice] Replacing optimistic message with real message');
             state.currentConversation.messages[optimisticIndex] = {
               ...message,
               isOptimistic: false,
@@ -650,9 +745,10 @@ const inboxSlice = createSlice({
         }
 
         // Check if message already exists (by wamid or _id)
+        // Also check optimistic messages to prevent duplicates
         const messageExists = state.currentConversation.messages.some(
           m => (message.wamid && m.wamid === message.wamid) ||
-               (message._id && !m.isOptimistic && m._id === message._id)
+               (message._id && m._id === message._id)
         );
         if (!messageExists) {
           // Add new message to the end of the array
@@ -874,6 +970,37 @@ const inboxSlice = createSlice({
       state.isLoadingMoreMessages = false;
       state.loadMoreMessagesError = null;
     },
+    // Clear all inbox data (used when switching accounts/team members)
+    clearInboxData: (state) => {
+      state.chats = [];
+      state.currentConversation = null;
+      state.conversationCache = {};
+      state.status = 'idle';
+      state.conversationStatus = 'idle';
+      state.messagesSkip = 0;
+      state.hasMoreMessages = true;
+      state.isLoadingMoreMessages = false;
+      state.loadMoreMessagesError = null;
+      state.hasMoreChats = false;
+      state.selectedChatId = null;
+      state.conversationId = null;
+      state.aiAssistantStatus = false;
+      state.selectedAssistantId = null;
+      state.chatStatus = null;
+      state.templates = [];
+      state.templatesStatus = 'idle';
+      state.quickReplies = [];
+      state.quickRepliesStatus = 'idle';
+      state.activeFilter = 'all';
+      state.paginationCursor = null;
+      state.isLoadingMore = false;
+      state.notes = [];
+      state.notesStatus = 'idle';
+      state.teamMembers = [];
+      state.teamMembersStatus = 'idle';
+      state.error = null;
+      state.conversationError = null;
+    },
   },
   extraReducers: (builder) => {
     // Fetch Chats
@@ -884,15 +1011,30 @@ const inboxSlice = createSlice({
       })
       .addCase(fetchChats.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        const data = action.payload.data || action.payload;
+        const payload = action.payload || {};
+        // API can return chats in different locations:
+        // 1. payload.data.chats (nested in data object)
+        // 2. payload.chats (top-level from callApi)
+        // 3. payload._raw.chats (raw response fallback)
+        const rawChats = payload.data?.chats || payload.chats || payload._raw?.chats || [];
+
+        // Deduplicate chats by _id to prevent duplicate key errors in FlatList
+        const normalizedChats = rawChats.map(normalizeChatForList);
+        const uniqueChatsMap = new Map();
+        normalizedChats.forEach(chat => {
+          if (chat._id && !uniqueChatsMap.has(chat._id)) {
+            uniqueChatsMap.set(chat._id, chat);
+          }
+        });
+        const chats = Array.from(uniqueChatsMap.values());
+
         // Sort chats by latest activity (lastMessage timestamp or updatedAt)
-        const chats = (data.chats || []).map(normalizeChatForList);
         state.chats = chats.sort((a, b) => {
           const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
           const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
           return bTime - aTime; // Descending order (newest first)
         });
-        state.hasMoreChats = data.hasMoreChats || false;
+        state.hasMoreChats = payload.data?.hasMoreChats || payload.hasMoreChats || payload._raw?.hasMoreChats || false;
       })
       .addCase(fetchChats.rejected, (state, action) => {
         state.status = 'failed';
@@ -1169,14 +1311,16 @@ const inboxSlice = createSlice({
       })
       .addCase(fetchMoreChats.fulfilled, (state, action) => {
         state.isLoadingMore = false;
-        const data = action.payload.data || action.payload;
-        const newChats = (data.chats || []).map(normalizeChatForList);
+        const payload = action.payload || {};
+        // API can return chats in different locations (same as fetchChats)
+        const rawChats = payload.data?.chats || payload.chats || payload._raw?.chats || [];
+        const newChats = rawChats.map(normalizeChatForList);
         // Append new chats, avoiding duplicates
         const existingIds = new Set(state.chats.map(c => c._id));
         const uniqueNewChats = newChats.filter(c => !existingIds.has(c._id));
         state.chats = [...state.chats, ...uniqueNewChats];
-        state.hasMoreChats = data.hasMoreChats || false;
-        state.paginationCursor = data.cursor || null;
+        state.hasMoreChats = payload.data?.hasMoreChats || payload.hasMoreChats || payload._raw?.hasMoreChats || false;
+        state.paginationCursor = payload.data?.cursor || payload.cursor || payload._raw?.cursor || null;
       })
       .addCase(fetchMoreChats.rejected, (state, action) => {
         state.isLoadingMore = false;
@@ -1332,6 +1476,8 @@ export const {
   addOptimisticMessage,
   updateOptimisticMessage,
   markOptimisticMessageFailed,
+  // Clear inbox data (for account switching)
+  clearInboxData,
 } = inboxSlice.actions;
 
 export default inboxSlice.reducer;

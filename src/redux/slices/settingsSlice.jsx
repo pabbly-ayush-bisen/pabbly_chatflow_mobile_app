@@ -183,7 +183,19 @@ const initialState = {
     },
     inboxSettings: {
       autoResolveChats: false,
+      readReceipts: false,
       welcomeMessage: {
+        enabled: false,
+        messageType: '',
+        templateName: '',
+        headerFileURL: '',
+        bodyParams: {},
+        headerParams: {},
+        regularMessage: '',
+        regularMessageType: '',
+        fileName: ''
+      },
+      wellcomeMessage: {
         enabled: false,
         messageType: '',
         templateName: '',

@@ -11,176 +11,14 @@ const axiosInstance = axios.create({
   timeout: 30000,
 });
 
-// Request interceptor
-axiosInstance.interceptors.request.use(
-  async (config) => {
-    try {
-      // Add auth token
-      const token = await AsyncStorage.getItem(APP_CONFIG.tokenKey);
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-
-      // Add settingId header for non-auth endpoints
-      const url = config.url || '';
-      const excludedUrls = [
-        endpoints.auth.signIn,
-        endpoints.auth.signUp,
-        endpoints.auth.session,
-        endpoints.dashboard.accesssettingId,
-      ];
-
-      if (!excludedUrls.includes(url)) {
-        const settingId = await AsyncStorage.getItem('settingId');
-        if (settingId) {
-          config.headers.settingId = settingId;
-        }
-      }
-    } catch (error) {
-      console.error('Error in request interceptor:', error);
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor
-axiosInstance.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401 || error.response?.status === 400) {
-      // Clear storage on unauthorized
-      await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
-      await AsyncStorage.removeItem(APP_CONFIG.userKey);
-      await AsyncStorage.removeItem('settingId');
-      // Navigation will be handled by the app
-    }
-    return Promise.reject(error);
-  }
-);
-
-/**
- * Main API call function
- * Compatible with frontend patterns - handles both GET params and POST data
- * Returns response in same format as frontend: { status, data, statusCode, ... }
- */
-export async function callApi(url, method, data = {}, customHeaders = {}) {
-  if (!url) {
-    console.error(`[API] URL is undefined or null: ${url}`);
-    return {
-      status: 'error',
-      data: null,
-      statusCode: 400,
-      success: false,
-      error: 'URL is required',
-    };
-  }
-
-  try {
-    const headers = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...customHeaders,
-    };
-
-    // Normalize method to uppercase
-    const normalizedMethod = method.toUpperCase();
-
-    const config = {
-      method: normalizedMethod,
-      url,
-      headers,
-      data: normalizedMethod !== 'GET' ? data : undefined,
-      params: normalizedMethod === 'GET' ? data : undefined,
-    };
-
-    // Debug logging
-    console.log('[API Request]', {
-      fullUrl: `${API_URL}/${url}`,
-      method: normalizedMethod,
-      data: normalizedMethod !== 'GET' ? data : undefined,
-      params: normalizedMethod === 'GET' ? data : undefined,
-    });
-
-    const response = await axiosInstance(config);
-
-    // Debug logging
-    console.log('[API Response]', {
-      url,
-      status: response.status,
-      data: response.data,
-    });
-
-    // Return in frontend-compatible format
-    // Frontend expects: { status: 'success', data: {...}, statusCode }
-    // API response structure: { data: { data: {...}, message, status }, status: 200 }
-    // We want to return: { status, data: <actual data>, statusCode }
-    return {
-      status: response.data?.status || 'success',
-      data: response.data?.data,  // Extract the nested data
-      message: response.data?.message,
-      statusCode: response.status,
-      success: true,
-    };
-  } catch (error) {
-    // Enhanced error logging
-    console.error('[API Error]', {
-      url: `${API_URL}/${url}`,
-      method,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
-      code: error.code,
-    });
-
-    // Handle specific error cases like frontend
-    const statusCode = error.response?.status || 500;
-    const errorMessage = error.response?.data?.message || error.message;
-
-    return {
-      status: 'error',
-      data: error.response?.data || { status: 'error', message: errorMessage },
-      statusCode,
-      success: false,
-      error: errorMessage,
-      message: errorMessage,
-    };
-  }
-}
-
-/**
- * FormData API call function
- */
-export async function callFormDataApi(url, method, formData) {
-  try {
-    const response = await axiosInstance({
-      method,
-      url,
-      data: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        Accept: 'application/json',
-      },
-    });
-    return { data: response.data, success: true };
-  } catch (error) {
-    console.error('FormData API Error:', error);
-    return {
-      data: error.response?.data || null,
-      success: false,
-      error: error.response?.data?.message || error.message,
-    };
-  }
-}
-
-// API Endpoints
+// API Endpoints - defined before interceptors to avoid reference errors
 export const endpoints = {
   auth: {
     signIn: 'auth/signin',
     signUp: 'auth/signup',
     logout: 'auth/logout',
     session: 'auth/verify-session',
+    tokenAuth: 'auth/tauth',
     teamMemberLogin: 'teammember/access/inbox',
     teamMemberLogout: 'teammember/logout',
   },
@@ -245,6 +83,7 @@ export const endpoints = {
     updateAssistant: 'aiassistants',
     getAssistants: 'aiassistants',
     toggleStatus: 'aiassistants/toggle-status',
+    toggleAiAssistant: 'aiassistants/toggle-chat-assistant',
     renameAssistant: 'aiassistants/rename',
     deleteAssistant: 'aiassistants',
     getAssistantStats: 'aiassistants/stats',
@@ -303,13 +142,169 @@ export const endpoints = {
   },
 };
 
+// Request interceptor
+axiosInstance.interceptors.request.use(
+  async (config) => {
+    try {
+      // Add auth token
+      const token = await AsyncStorage.getItem(APP_CONFIG.tokenKey);
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+
+      // Add settingId header for non-auth endpoints
+      const url = config.url || '';
+      const excludedUrls = [
+        endpoints.auth.signIn,
+        endpoints.auth.signUp,
+        endpoints.auth.session,
+        endpoints.auth.tokenAuth,
+        endpoints.dashboard.accesssettingId,
+      ];
+
+      if (!excludedUrls.includes(url)) {
+        const settingId = await AsyncStorage.getItem('settingId');
+        if (settingId) {
+          config.headers.settingId = settingId;
+        }
+      }
+    } catch (error) {
+      // Silently handle interceptor errors
+    }
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor
+axiosInstance.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  async (error) => {
+    const status = error.response?.status;
+
+    // Only handle 401 Unauthorized - this means the session might be invalid
+    if (status === 401) {
+      const errorMessage = (error.response?.data?.message || '').toLowerCase();
+
+      // Check if this is a genuine session invalidation
+      const sessionInvalidKeywords = ['session', 'token', 'unauthorized', 'authentication', 'login', 'expired'];
+      const isSessionInvalid = sessionInvalidKeywords.some((keyword) => errorMessage.includes(keyword));
+
+      if (isSessionInvalid) {
+        // Clear storage only for genuine session invalidation
+        await AsyncStorage.removeItem(APP_CONFIG.tokenKey);
+        await AsyncStorage.removeItem(APP_CONFIG.userKey);
+        await AsyncStorage.removeItem('settingId');
+        await AsyncStorage.removeItem('@pabbly_chatflow_settingId');
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+/**
+ * Main API call function
+ * Compatible with frontend patterns - handles both GET params and POST data
+ * Returns response in same format as frontend: { status, data, statusCode, ... }
+ */
+export async function callApi(url, method, data = {}, customHeaders = {}) {
+  if (!url) {
+    return {
+      status: 'error',
+      data: null,
+      statusCode: 400,
+      success: false,
+      error: 'URL is required',
+    };
+  }
+
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...customHeaders,
+    };
+
+    // Normalize method to uppercase
+    const normalizedMethod = method.toUpperCase();
+
+    const config = {
+      method: normalizedMethod,
+      url,
+      headers,
+      data: normalizedMethod !== 'GET' ? data : undefined,
+      params: normalizedMethod === 'GET' ? data : undefined,
+    };
+
+    const response = await axiosInstance(config);
+
+    // Return in frontend-compatible format
+    const responseBody = response.data || {};
+    const result = {
+      status: responseBody.status || 'success',
+      data: responseBody.data,
+      assistants: responseBody.assistants,
+      pagination: responseBody.pagination,
+      message: responseBody.message,
+      chats: responseBody.chats,
+      hasMoreChats: responseBody.hasMoreChats,
+      statusCode: response.status,
+      success: true,
+      _raw: responseBody,
+    };
+
+    return result;
+  } catch (error) {
+    const statusCode = error.response?.status || 500;
+    const errorMessage = error.response?.data?.message || error.message;
+
+    return {
+      status: 'error',
+      data: error.response?.data || { status: 'error', message: errorMessage },
+      statusCode,
+      success: false,
+      error: errorMessage,
+      message: errorMessage,
+    };
+  }
+}
+
+/**
+ * FormData API call function
+ */
+export async function callFormDataApi(url, method, formData) {
+  try {
+    const response = await axiosInstance({
+      method,
+      url,
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        Accept: 'application/json',
+      },
+    });
+    return { data: response.data, success: true };
+  } catch (error) {
+    return {
+      data: error.response?.data || null,
+      success: false,
+      error: error.response?.data?.message || error.message,
+    };
+  }
+}
+
 export const httpMethods = {
   GET: 'GET',
   POST: 'POST',
   PUT: 'PUT',
   DELETE: 'DELETE',
   PATCH: 'PATCH',
-  // Lowercase versions for compatibility with frontend patterns
   get: 'GET',
   post: 'POST',
   put: 'PUT',

@@ -9,12 +9,14 @@ import {
   Modal,
   Image,
   Alert,
+  Platform,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { colors, chatColors } from '../../theme/colors';
+import { showError, showWarning } from '../../utils/toast';
 import EmojiPicker from './EmojiPicker';
 import QuickRepliesDialog from './QuickRepliesDialog';
 import TemplatePickerDialog from './TemplatePickerDialog';
@@ -111,10 +113,10 @@ const ChatInput = ({
 
   // Handle send message with WhatsApp formatting
   const handleSend = useCallback(() => {
-    console.log('[ChatInput] handleSend called', { canSend, hasText, hasFile, filePreview, isSending, disabled });
+    // Log:('[ChatInput] handleSend called', { canSend, hasText, hasFile, filePreview, isSending, disabled });
 
     if (!canSend) {
-      console.log('[ChatInput] handleSend: canSend is false, returning early');
+      // Log:('[ChatInput] handleSend: canSend is false, returning early');
       return;
     }
 
@@ -147,7 +149,7 @@ const ChatInput = ({
       formatting: { isBold, isItalic, isStrikethrough },
     };
 
-    console.log('[ChatInput] Calling onSendMessage with:', messageData);
+    // Log:('[ChatInput] Calling onSendMessage with:', messageData);
     onSendMessage?.(messageData);
 
     // Reset state
@@ -242,13 +244,8 @@ const ChatInput = ({
     const resolvedBodyParams = Array.isArray(bodyParams) ? bodyParams : Object.values(bodyParams || {});
     const resolvedHeaderParams = Array.isArray(headerParams) ? headerParams : Object.values(headerParams || {});
 
-    console.log('[ChatInput] Processing template payload:', {
-      hasTemplate: !!template,
-      hasRow: !!row,
-      bodyParamsType: Array.isArray(bodyParams) ? 'array' : typeof bodyParams,
-      bodyParamsLength: resolvedBodyParams.length,
-      bodyParamsValues: resolvedBodyParams,
-    });
+    // Log: Processing template payload
+    // hasTemplate: !!template, hasRow: !!row, bodyParamsType, bodyParamsLength, bodyParamsValues
 
     // Prepare the template payload for the backend
     const templatePayload = {
@@ -305,7 +302,7 @@ const ChatInput = ({
       templatePayload.carouselMediaType = carouselMediaType;
     }
 
-    console.log('[ChatInput] Sending template payload:', templatePayload);
+    // Log:('[ChatInput] Sending template payload:', templatePayload);
     onSendTemplate?.(templatePayload);
     setShowTemplatePreview(false);
     setSelectedTemplate(null);
@@ -399,7 +396,7 @@ const ChatInput = ({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Permission to access gallery is required');
+        showWarning('Permission to access gallery is required', 'Permission Required');
         return;
       }
 
@@ -414,13 +411,13 @@ const ChatInput = ({
         const asset = result.assets[0];
         const fileName = generateFileName('image', asset.uri, asset.fileName);
 
-        console.log('[ChatInput] Image selected:', {
-          uri: asset.uri,
-          fileName,
-          fileSize: asset.fileSize,
-          width: asset.width,
-          height: asset.height,
-        });
+        // Log:('[ChatInput] Image selected:', {
+        //   uri: asset.uri,
+        //   fileName,
+        //   fileSize: asset.fileSize,
+        //   width: asset.width,
+        //   height: asset.height,
+        // });
 
         setFilePreview({
           fileName,
@@ -433,8 +430,8 @@ const ChatInput = ({
         });
       }
     } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+      // Error:('Error picking image:', error);
+      showError('Failed to select image. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);
@@ -444,7 +441,7 @@ const ChatInput = ({
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Permission to access camera is required');
+        showWarning('Permission to access camera is required', 'Permission Required');
         return;
       }
 
@@ -458,11 +455,11 @@ const ChatInput = ({
         const asset = result.assets[0];
         const fileName = generateFileName('image', asset.uri, asset.fileName);
 
-        console.log('[ChatInput] Photo captured:', {
-          uri: asset.uri,
-          fileName,
-          fileSize: asset.fileSize,
-        });
+        // Log:('[ChatInput] Photo captured:', {
+        //   uri: asset.uri,
+        //   fileName,
+        //   fileSize: asset.fileSize,
+        // });
 
         setFilePreview({
           fileName,
@@ -475,8 +472,8 @@ const ChatInput = ({
         });
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
+      // Error:('Error taking photo:', error);
+      showError('Failed to take photo. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);
@@ -486,7 +483,7 @@ const ChatInput = ({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Permission to access gallery is required');
+        showWarning('Permission to access gallery is required', 'Permission Required');
         return;
       }
 
@@ -501,12 +498,12 @@ const ChatInput = ({
         const asset = result.assets[0];
         const fileName = generateFileName('video', asset.uri, asset.fileName);
 
-        console.log('[ChatInput] Video selected:', {
-          uri: asset.uri,
-          fileName,
-          fileSize: asset.fileSize,
-          duration: asset.duration,
-        });
+        // Log:('[ChatInput] Video selected:', {
+        //   uri: asset.uri,
+        //   fileName,
+        //   fileSize: asset.fileSize,
+        //   duration: asset.duration,
+        // });
 
         setFilePreview({
           fileName,
@@ -518,8 +515,8 @@ const ChatInput = ({
         });
       }
     } catch (error) {
-      console.error('Error picking video:', error);
-      Alert.alert('Error', 'Failed to select video. Please try again.');
+      // Error:('Error picking video:', error);
+      showError('Failed to select video. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);
@@ -538,12 +535,12 @@ const ChatInput = ({
       if (doc && doc.uri) {
         const fileName = doc.name || generateFileName('document', doc.uri, null);
 
-        console.log('[ChatInput] Document selected:', {
-          uri: doc.uri,
-          fileName,
-          fileSize: doc.size,
-          mimeType: doc.mimeType,
-        });
+        // Log:('[ChatInput] Document selected:', {
+        //   uri: doc.uri,
+        //   fileName,
+        //   fileSize: doc.size,
+        //   mimeType: doc.mimeType,
+        // });
 
         setFilePreview({
           fileName,
@@ -554,8 +551,8 @@ const ChatInput = ({
         });
       }
     } catch (error) {
-      console.error('Error picking document:', error);
-      Alert.alert('Error', 'Failed to select document. Please try again.');
+      // Error:('Error picking document:', error);
+      showError('Failed to select document. Please try again.');
     }
     setShowAttachmentOptions(false);
   }, [generateFileName]);
@@ -1225,6 +1222,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 4,
     maxHeight: 140,
+    fontWeight: '400',
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+      ios: {},
+    }),
   },
   sendButton: {
     width: 50,

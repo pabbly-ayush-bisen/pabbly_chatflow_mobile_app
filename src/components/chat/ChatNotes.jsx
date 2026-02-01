@@ -21,6 +21,7 @@ import {
   deleteChatNote,
 } from '../../redux/slices/inboxSlice';
 import { format } from 'date-fns';
+import { showError } from '../../utils/toast';
 
 const ChatNotes = ({ visible, onClose, chatId }) => {
   const dispatch = useDispatch();
@@ -48,7 +49,7 @@ const ChatNotes = ({ visible, onClose, chatId }) => {
       await dispatch(addChatNote({ chatId, note: newNote.trim() })).unwrap();
       setNewNote('');
     } catch (error) {
-      Alert.alert('Error', error || 'Failed to add note');
+      showError(error || 'Failed to add note');
     }
   }, [chatId, newNote, isAdding, dispatch]);
 
@@ -66,7 +67,7 @@ const ChatNotes = ({ visible, onClose, chatId }) => {
             try {
               await dispatch(deleteChatNote({ chatId, noteId })).unwrap();
             } catch (error) {
-              Alert.alert('Error', error || 'Failed to delete note');
+              showError(error || 'Failed to delete note');
             }
           },
         },

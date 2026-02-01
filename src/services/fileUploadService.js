@@ -12,15 +12,14 @@ import { APP_CONFIG } from '../config/app.config';
  */
 export const uploadFile = async (file, onProgress = null) => {
   try {
-    const settingId = await AsyncStorage.getItem('settingId');
-
-    console.log('[FileUpload] Auth check:', {
-      hasSettingId: !!settingId,
-      settingId: settingId
-    });
+    // Try primary key first, then fallback to alternate key
+    let settingId = await AsyncStorage.getItem('settingId');
+    if (!settingId) {
+      settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+    }
 
     if (!settingId) {
-      throw new Error('Setting ID required - please select a WhatsApp number first');
+      throw new Error('No WhatsApp number selected. Please go to Dashboard and access a WhatsApp number first.');
     }
 
     // Get file URI - handle different possible field names
@@ -41,9 +40,8 @@ export const uploadFile = async (file, onProgress = null) => {
           to: destUri,
         });
         fileUri = destUri;
-        console.log('[FileUpload] Copied content:// URI to cache:', destUri);
       } catch (copyError) {
-        console.warn('[FileUpload] Could not copy content:// URI, using original:', copyError);
+        // Could not copy content:// URI, using original
       }
     }
 
@@ -66,10 +64,9 @@ export const uploadFile = async (file, onProgress = null) => {
             to: destUri,
           });
           fileUri = destUri;
-          console.log('[FileUpload] iOS: Copied file to cache:', destUri);
         }
       } catch (copyError) {
-        console.warn('[FileUpload] iOS: Could not copy file, using original:', copyError);
+        // iOS: Could not copy file, using original
       }
     }
 
@@ -85,16 +82,6 @@ export const uploadFile = async (file, onProgress = null) => {
     const mimeType = normalizeMimeType(rawMimeType);
     // Normalize filename extension for backend compatibility (e.g., .mov -> .mp4)
     const fileName = normalizeFileName(rawFileName, mimeType);
-
-    console.log('[FileUpload] Preparing upload:', {
-      rawFileName,
-      fileName,
-      rawMimeType,
-      mimeType,
-      fileType: file.fileType,
-      originalUri: file.fileUrl || file.uri,
-      processedUri: fileUri,
-    });
 
     // Create FormData with proper React Native format
     const formData = new FormData();
@@ -123,12 +110,6 @@ export const uploadFile = async (file, onProgress = null) => {
 
     const responseData = await response.json();
 
-    console.log('[FileUpload] Response:', {
-      status: response.status,
-      ok: response.ok,
-      data: responseData,
-    });
-
     if (!response.ok) {
       throw new Error(responseData.message || `Upload failed with status ${response.status}`);
     }
@@ -139,7 +120,6 @@ export const uploadFile = async (file, onProgress = null) => {
                         fileData.file?.url || fileData.file?.link;
 
     if (!uploadedUrl) {
-      console.error('[FileUpload] No URL in response:', responseData);
       throw new Error('Upload succeeded but no URL returned');
     }
 
@@ -152,7 +132,6 @@ export const uploadFile = async (file, onProgress = null) => {
       ...fileData,
     };
   } catch (error) {
-    console.error('[FileUpload] Error:', error);
     throw error;
   }
 };
@@ -201,10 +180,14 @@ const getExtensionFromType = (fileType) => {
  */
 export const uploadToMediaLibrary = async (file, onProgress = null) => {
   try {
-    const settingId = await AsyncStorage.getItem('settingId');
+    // Try primary key first, then fallback to alternate key
+    let settingId = await AsyncStorage.getItem('settingId');
+    if (!settingId) {
+      settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+    }
 
     if (!settingId) {
-      throw new Error('Setting ID required - please select a WhatsApp number first');
+      throw new Error('No WhatsApp number selected. Please go to Dashboard and access a WhatsApp number first.');
     }
 
     // Get file URI - handle different possible field names
@@ -223,7 +206,7 @@ export const uploadToMediaLibrary = async (file, onProgress = null) => {
         });
         fileUri = destUri;
       } catch (copyError) {
-        console.warn('[MediaUpload] Could not copy content:// URI:', copyError);
+        // Could not copy content:// URI
       }
     }
 
@@ -244,10 +227,9 @@ export const uploadToMediaLibrary = async (file, onProgress = null) => {
             to: destUri,
           });
           fileUri = destUri;
-          console.log('[MediaUpload] iOS: Copied file to cache:', destUri);
         }
       } catch (copyError) {
-        console.warn('[MediaUpload] iOS: Could not copy file, using original:', copyError);
+        // iOS: Could not copy file, using original
       }
     }
 
@@ -300,7 +282,6 @@ export const uploadToMediaLibrary = async (file, onProgress = null) => {
       ...fileData,
     };
   } catch (error) {
-    console.error('[MediaUpload] Error:', error);
     throw error;
   }
 };
@@ -510,10 +491,14 @@ export const validateFileSize = (fileSize, fileType) => {
 export const uploadFileWithProgress = async (file, onProgress = null, abortController = null) => {
   return new Promise(async (resolve, reject) => {
     try {
-      const settingId = await AsyncStorage.getItem('settingId');
+      // Try primary key first, then fallback to alternate key
+      let settingId = await AsyncStorage.getItem('settingId');
+      if (!settingId) {
+        settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+      }
 
       if (!settingId) {
-        reject(new Error('Setting ID required - please select a WhatsApp number first'));
+        reject(new Error('No WhatsApp number selected. Please go to Dashboard and access a WhatsApp number first.'));
         return;
       }
 
@@ -532,9 +517,8 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
             to: destUri,
           });
           fileUri = destUri;
-          console.log('[FileUploadProgress] Copied content:// URI to cache:', destUri);
         } catch (copyError) {
-          console.warn('[FileUploadProgress] Could not copy content:// URI, using original:', copyError);
+          // Could not copy content:// URI, using original
         }
       }
 
@@ -557,10 +541,9 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
               to: destUri,
             });
             fileUri = destUri;
-            console.log('[FileUploadProgress] iOS: Copied file to cache:', destUri);
           }
         } catch (copyError) {
-          console.warn('[FileUploadProgress] iOS: Could not copy file, using original:', copyError);
+          // iOS: Could not copy file, using original
         }
       }
 
@@ -577,24 +560,8 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
       // Normalize filename extension for backend compatibility (e.g., .mov -> .mp4)
       const fileName = normalizeFileName(rawFileName, mimeType);
 
-      console.log('[FileUploadProgress] Preparing upload:', {
-        rawFileName,
-        fileName,
-        rawMimeType,
-        mimeType,
-        fileType: file.fileType,
-        originalUri: file.fileUrl || file.uri,
-        processedUri: fileUri,
-      });
-
       // Verify file exists before upload
       const fileCheck = await FileSystem.getInfoAsync(fileUri);
-      console.log('[FileUploadProgress] File check before upload:', {
-        uri: fileUri,
-        exists: fileCheck.exists,
-        size: fileCheck.size,
-        isDirectory: fileCheck.isDirectory,
-      });
 
       if (!fileCheck.exists) {
         reject(new Error(`File does not exist at path: ${fileUri}`));
@@ -609,12 +576,6 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
         type: mimeType,
       });
       formData.append('isPerm', 'false');
-
-      console.log('[FileUploadProgress] FormData prepared:', {
-        uri: fileUri,
-        name: fileName,
-        type: mimeType,
-      });
 
       // Create XMLHttpRequest for progress tracking
       const xhr = new XMLHttpRequest();
@@ -637,11 +598,6 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
 
       // Load handler (success)
       xhr.onload = () => {
-        console.log('[FileUploadProgress] Response received:', {
-          status: xhr.status,
-          responseText: xhr.responseText?.substring(0, 500),
-        });
-
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const responseData = JSON.parse(xhr.responseText);
@@ -650,7 +606,6 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
                                 fileData.file?.url || fileData.file?.link;
 
             if (!uploadedUrl) {
-              console.error('[FileUploadProgress] No URL in response:', responseData);
               reject(new Error('Upload succeeded but no URL returned'));
               return;
             }
@@ -667,10 +622,6 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
             reject(new Error('Failed to parse upload response'));
           }
         } else {
-          console.error('[FileUploadProgress] Upload failed:', {
-            status: xhr.status,
-            response: xhr.responseText,
-          });
           try {
             const errorData = JSON.parse(xhr.responseText);
             reject(new Error(errorData.message || `Upload failed with status ${xhr.status}`));
@@ -704,7 +655,6 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
       xhr.send(formData);
 
     } catch (error) {
-      console.error('[FileUploadProgress] Error:', error);
       reject(error);
     }
   });

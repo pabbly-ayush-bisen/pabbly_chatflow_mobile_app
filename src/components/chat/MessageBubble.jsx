@@ -1,8 +1,9 @@
-import React, { memo, useState, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Image, Linking, Pressable, PanResponder, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { useSelector } from 'react-redux';
 import { colors, chatColors } from '../../theme/colors';
 import PaymentMessage from './messages/PaymentMessage';
 import TemplateMessage from './messages/TemplateMessage';
@@ -26,12 +27,17 @@ import {
   getActualMediaType,
   isEmojiOnly,
   getErrorInfo,
+  getSenderInfo,
 } from '../../utils/messageHelpers';
 
 const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, onLongPress, onContactPress }) => {
   const [imageError, setImageError] = useState(false);
   const [generatedVideoThumbnail, setGeneratedVideoThumbnail] = useState(null);
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+
+  // Get assistants and flows from Redux for sender name lookup
+  const assistants = useSelector((state) => state.assistant?.assistants || []);
+  const flows = useSelector((state) => state.assistant?.flows || []);
 
   // Determine if outgoing message (used for animation direction)
   const isOutgoing = isOutgoingMessage(message);
@@ -120,7 +126,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
             : responseJson;
         }
       } catch (error) {
-        console.warn('[MessageBubble] Failed to parse nfm_reply response_json:', error);
+        // Warn:('[MessageBubble] Failed to parse nfm_reply response_json:', error);
       }
     }
   }
@@ -167,6 +173,34 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
       default:
         return <Icon name="clock-outline" size={14} color={chatColors.tickGrey} />;
     }
+  };
+
+  // Get sender info for outgoing messages (team member, AI assistant, flow, broadcast, etc.)
+  // Pass assistants and flows for name lookup (like web app)
+  const senderInfo = useMemo(
+    () => getSenderInfo(message, { assistants, flows }),
+    [message, assistants, flows]
+  );
+
+  // Render sender badge with icon and name
+  const renderSenderBadge = () => {
+    if (!senderInfo || !isOutgoing) return null;
+
+    // Determine icon color based on outgoing message style
+    const iconColor = 'rgba(0,0,0,0.45)';
+    const textColor = 'rgba(0,0,0,0.45)';
+
+    return (
+      <View style={styles.senderBadge}>
+        <Icon name={senderInfo.icon} size={12} color={iconColor} />
+        <Text
+          style={[styles.senderName, { color: textColor }]}
+          numberOfLines={1}
+        >
+          {senderInfo.name}
+        </Text>
+      </View>
+    );
   };
 
   // Render error message for failed media
@@ -300,7 +334,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
         });
         setGeneratedVideoThumbnail(uri);
       } catch (e) {
-        console.warn('[MessageBubble] Failed to generate video thumbnail', e);
+        // Warn:('[MessageBubble] Failed to generate video thumbnail', e);
       } finally {
         setIsGeneratingThumbnail(false);
       }
@@ -675,10 +709,12 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
 
     return (
       <View style={styles.unsupportedContainer}>
-        <Icon name="alert-circle-outline" size={24} color={colors.warning.main} />
-        <Text style={styles.unsupportedText}>
-          WhatsApp Cloud API does not support this message type
-        </Text>
+        <Icon name="alert-circle-outline" size={20} color="#FF5630" />
+        <View style={styles.unsupportedTextContainer}>
+          <Text style={[styles.unsupportedText, isOutgoing && styles.unsupportedTextOutgoing]}>
+            WhatsApp Cloud API does not support this message type. Try using a different format.
+          </Text>
+        </View>
       </View>
     );
   };
@@ -1061,12 +1097,18 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
             </View>
           )}
 
-          {/* Time and status */}
-          <View style={styles.metaContainer}>
-            <Text style={[styles.timestamp, isOutgoing && styles.outgoingTimestamp]}>
-              {formatTime(timestamp)}
-            </Text>
-            {getStatusIcon()}
+          {/* Sender info, time and status */}
+          <View style={[
+            styles.metaContainer,
+            senderInfo && isOutgoing && styles.metaContainerWithSender,
+          ]}>
+            {renderSenderBadge()}
+            <View style={styles.timestampContainer}>
+              <Text style={[styles.timestamp, isOutgoing && styles.outgoingTimestamp]}>
+                {formatTime(timestamp)}
+              </Text>
+              {getStatusIcon()}
+            </View>
           </View>
         </View>
       </Pressable>
@@ -1141,7 +1183,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     marginTop: 4,
+    gap: 8,
+  },
+  metaContainerWithSender: {
+    justifyContent: 'space-between',
+  },
+  senderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
+    flexShrink: 1,
+    maxWidth: '60%',
+  },
+  senderName: {
+    fontSize: 10,
+    fontWeight: '400',
+    flexShrink: 1,
+  },
+  timestampContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
   },
   timestamp: {
     fontSize: 11,
@@ -1586,14 +1649,22 @@ const styles = StyleSheet.create({
   // Unsupported styles
   unsupportedContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    gap: 8,
+    alignItems: 'flex-start',
+    paddingVertical: 4,
+    minWidth: 200,
+  },
+  unsupportedTextContainer: {
+    flex: 1,
+    marginLeft: 8,
   },
   unsupportedText: {
-    fontSize: 13,
-    color: colors.warning.dark,
-    flex: 1,
+    fontSize: 14,
+    fontWeight: '400',
+    lineHeight: 20,
+    color: colors.text.primary,
+  },
+  unsupportedTextOutgoing: {
+    color: colors.common.white,
   },
 
   // System message styles

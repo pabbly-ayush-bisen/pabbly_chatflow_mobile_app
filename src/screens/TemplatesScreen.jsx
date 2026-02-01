@@ -18,7 +18,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { fetchAllTemplates, fetchTemplateStats, resetTemplates } from '../redux/slices/templateSlice';
 import { colors, chatColors } from '../theme/colors';
-import { EmptyState } from '../components/common';
+import { EmptyState, TemplatesListSkeleton } from '../components/common';
 
 // Status configurations
 const STATUS_CONFIG = {
@@ -423,13 +423,12 @@ export default function TemplatesScreen() {
     );
   };
 
-  // Loading
+  // Loading - show skeleton
   if (isLoading && templates.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading templates...</Text>
+        <View style={styles.skeletonContainer}>
+          <TemplatesListSkeleton count={8} />
         </View>
       </View>
     );
@@ -525,7 +524,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingBottom: 32,
+    paddingBottom: 80,
   },
   loadingBox: {
     flex: 1,
@@ -536,6 +535,10 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     color: colors.text.secondary,
+  },
+  skeletonContainer: {
+    flex: 1,
+    paddingTop: 16,
   },
   errorBox: {
     flexDirection: 'row',

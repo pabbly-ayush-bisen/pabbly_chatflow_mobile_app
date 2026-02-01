@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { colors, chatColors } from '../../theme/colors';
 import { uploadFile } from '../../services/fileUploadService';
+import { showError, showWarning, showInfo } from '../../utils/toast';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -359,18 +360,18 @@ const TemplatePreviewDialog = ({
         });
         setCarouselBodyVariables(initialCarouselBodyVars);
 
-        console.log('[TemplatePreviewDialog] Initialized carousel template:', {
-          templateName: template.name,
-          cardsCount: cards.length,
-          carouselBodyVars: initialCarouselBodyVars,
-        });
+        // Log:('[TemplatePreviewDialog] Initialized carousel template:', {
+        //   templateName: template.name,
+        //   cardsCount: cards.length,
+        //   carouselBodyVars: initialCarouselBodyVars,
+        // });
       } else {
-        console.log('[TemplatePreviewDialog] Initialized variables for template:', {
-          templateName: template.name,
-          bodyVars: extractedBodyVars,
-          headerVars: extractedHeaderVars,
-          bodyText: bodyComp?.text,
-        });
+        // Log:('[TemplatePreviewDialog] Initialized variables for template:', {
+        //   templateName: template.name,
+        //   bodyVars: extractedBodyVars,
+        //   headerVars: extractedHeaderVars,
+        //   bodyText: bodyComp?.text,
+        // });
       }
     }
   }, [template]);
@@ -443,19 +444,19 @@ const TemplatePreviewDialog = ({
     // Handle carousel template validation
     if (isCarouselTemplate) {
       if (!allCarouselVariablesFilled && carouselFilledProgress.total > 0) {
-        Alert.alert('Variables Required', 'Please fill in all variables for each carousel card.');
+        showWarning('Please fill in all variables for each carousel card.', 'Variables Required');
         return;
       }
 
       if (isAnyCarouselMediaUploading) {
-        Alert.alert('Please Wait', 'Media is still uploading. Please wait for the upload to complete.');
+        showInfo('Media is still uploading. Please wait for the upload to complete.', 'Please Wait');
         return;
       }
 
       if (!allCarouselMediaUploaded) {
-        Alert.alert(
-          'Media Required',
+        showWarning(
           'Please upload media for all carousel cards before sending.',
+          'Media Required'
           [{ text: 'OK' }]
         );
         return;
@@ -501,12 +502,12 @@ const TemplatePreviewDialog = ({
         carouselBodies,
       };
 
-      console.log('[TemplatePreviewDialog] Sending carousel template:', {
-        templateName: template?.name,
-        cardsCount: carouselCards.length,
-        carouselBodies,
-        carouselFileDataCount: carouselFileData.length,
-      });
+      // Log:('[TemplatePreviewDialog] Sending carousel template:', {
+      //   templateName: template?.name,
+      //   cardsCount: carouselCards.length,
+      //   carouselBodies,
+      //   carouselFileDataCount: carouselFileData.length,
+      // });
 
       onSend?.(sendPayload);
       return;
@@ -518,15 +519,15 @@ const TemplatePreviewDialog = ({
     }
 
     if (isUploadingMedia) {
-      Alert.alert('Please Wait', 'Media is still uploading. Please wait for the upload to complete.');
+      showInfo('Media is still uploading. Please wait for the upload to complete.', 'Please Wait');
       return;
     }
 
     // Validate media is uploaded for media templates
     if (requiresMediaUpload && !uploadedMedia) {
-      Alert.alert(
-        'Media Required',
+      showWarning(
         'This template requires media. Please upload an image, video, or document before sending.',
+        'Media Required'
         [{ text: 'OK' }]
       );
       return;
@@ -534,9 +535,9 @@ const TemplatePreviewDialog = ({
 
     // Validate location fields for location templates
     if (isLocationTemplate && !isLocationValid) {
-      Alert.alert(
-        'Location Required',
+      showWarning(
         'Please fill in all location fields (latitude, longitude, name, and address).',
+        'Location Required'
         [{ text: 'OK' }]
       );
       return;
@@ -600,29 +601,29 @@ const TemplatePreviewDialog = ({
       }),
     };
 
-    console.log('[TemplatePreviewDialog] Sending template:', {
-      templateName: template?.name,
-      templateType: template?.type,
-      isLtoTemplate,
-      isLocationTemplate,
-      isCatalogTemplate,
-      hasCopyCodeButton,
-      requiresMediaUpload,
-      hasMedia: !!uploadedMedia,
-      mediaDetails: uploadedMedia ? {
-        uri: uploadedMedia.uri,
-        fileUrl: uploadedMedia.fileUrl,
-        mediaId: uploadedMedia.mediaId,
-        fileName: uploadedMedia.fileName,
-        type: uploadedMedia.type,
-      } : null,
-      bodyVars,
-      bodyVariables,
-      bodyParams,
-      bodyParamsCount: bodyParams.length,
-      headerParams,
-      headerParamsCount: headerParams.length,
-    });
+    // Log:('[TemplatePreviewDialog] Sending template:', {
+    //   templateName: template?.name,
+    //   templateType: template?.type,
+    //   isLtoTemplate,
+    //   isLocationTemplate,
+    //   isCatalogTemplate,
+    //   hasCopyCodeButton,
+    //   requiresMediaUpload,
+    //   hasMedia: !!uploadedMedia,
+    //   mediaDetails: uploadedMedia ? {
+    //     uri: uploadedMedia.uri,
+    //     fileUrl: uploadedMedia.fileUrl,
+    //     mediaId: uploadedMedia.mediaId,
+    //     fileName: uploadedMedia.fileName,
+    //     type: uploadedMedia.type,
+    //   } : null,
+    //   bodyVars,
+    //   bodyVariables,
+    //   bodyParams,
+    //   bodyParamsCount: bodyParams.length,
+    //   headerParams,
+    //   headerParamsCount: headerParams.length,
+    // });
 
     onSend?.(sendPayload);
   }, [template, bodyVars, headerVars, bodyVariables, headerVariables, allVariablesFilled, hasVariables, uploadedMedia, requiresMediaUpload, isUploadingMedia, onSend, isCarouselTemplate, allCarouselVariablesFilled, carouselFilledProgress, isAnyCarouselMediaUploading, allCarouselMediaUploaded, carouselCardVariables, carouselBodyVariables, carouselCards, carouselMedia, carouselHeaderFormat, isLtoTemplate, ltoFields, getLtoUnixTimestamp, isLocationTemplate, locationFields, isLocationValid, isCatalogTemplate, catalogProductId, hasCopyCodeButton, copyCodeValue, urlButtonsWithVariables, urlVariables]);
@@ -769,7 +770,7 @@ const TemplatePreviewDialog = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow access to your photo library to upload images.');
+        showWarning('Please allow access to your photo library to upload images.', 'Permission Required');
         return;
       }
 
@@ -810,15 +811,15 @@ const TemplatePreviewDialog = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload image:', uploadError);
-          Alert.alert('Upload Failed', 'Failed to upload image to server. You can still send with local file.');
+          // Error:('Failed to upload image:', uploadError);
+          showError('Failed to upload image to server. You can still send with local file.', 'Upload Failed');
         } finally {
           setIsUploadingMedia(false);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
-      console.error('Image picker error:', error);
+      showError('Failed to pick image. Please try again.');
+      // Error:('Image picker error:', error);
     }
   }, []);
 
@@ -827,7 +828,7 @@ const TemplatePreviewDialog = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow access to your photo library to upload videos.');
+        showWarning('Please allow access to your photo library to upload videos.', 'Permission Required');
         return;
       }
 
@@ -844,7 +845,7 @@ const TemplatePreviewDialog = ({
         // Check file size (max 16MB for videos)
         const maxSize = 16 * 1024 * 1024; // 16MB in bytes
         if (asset.fileSize && asset.fileSize > maxSize) {
-          Alert.alert('File Too Large', 'Video must be less than 16MB. Please select a smaller video.');
+          showWarning('Video must be less than 16MB. Please select a smaller video.', 'File Too Large');
           return;
         }
 
@@ -876,15 +877,15 @@ const TemplatePreviewDialog = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload video:', uploadError);
-          Alert.alert('Upload Failed', 'Failed to upload video to server. You can still send with local file.');
+          // Error:('Failed to upload video:', uploadError);
+          showError('Failed to upload video to server. You can still send with local file.', 'Upload Failed');
         } finally {
           setIsUploadingMedia(false);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick video. Please try again.');
-      console.error('Video picker error:', error);
+      showError('Failed to pick video. Please try again.');
+      // Error:('Video picker error:', error);
     }
   }, []);
 
@@ -900,7 +901,7 @@ const TemplatePreviewDialog = ({
         // Check file size (max 100MB for documents)
         const maxSize = 100 * 1024 * 1024; // 100MB in bytes
         if (result.size && result.size > maxSize) {
-          Alert.alert('File Too Large', 'Document must be less than 100MB. Please select a smaller file.');
+          showWarning('Document must be less than 100MB. Please select a smaller file.', 'File Too Large');
           return;
         }
 
@@ -932,15 +933,15 @@ const TemplatePreviewDialog = ({
             mediaId: uploadResult.fileId,
           });
         } catch (uploadError) {
-          console.error('Failed to upload document:', uploadError);
-          Alert.alert('Upload Failed', 'Failed to upload document to server. You can still send with local file.');
+          // Error:('Failed to upload document:', uploadError);
+          showError('Failed to upload document to server. You can still send with local file.', 'Upload Failed');
         } finally {
           setIsUploadingMedia(false);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick document. Please try again.');
-      console.error('Document picker error:', error);
+      showError('Failed to pick document. Please try again.');
+      // Error:('Document picker error:', error);
     }
   }, []);
 
@@ -980,7 +981,7 @@ const TemplatePreviewDialog = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow access to your photo library to upload media.');
+        showWarning('Please allow access to your photo library to upload media.', 'Permission Required');
         return;
       }
 
@@ -1000,7 +1001,7 @@ const TemplatePreviewDialog = ({
         // Check file size
         const maxSize = mediaType === 'VIDEO' ? 16 * 1024 * 1024 : 5 * 1024 * 1024;
         if (asset.fileSize && asset.fileSize > maxSize) {
-          Alert.alert('File Too Large', `${mediaType === 'VIDEO' ? 'Video' : 'Image'} must be less than ${mediaType === 'VIDEO' ? '16MB' : '5MB'}.`);
+          showWarning(`${mediaType === 'VIDEO' ? 'Video' : 'Image'} must be less than ${mediaType === 'VIDEO' ? '16MB' : '5MB'}.`, 'File Too Large');
           return;
         }
 
@@ -1035,15 +1036,15 @@ const TemplatePreviewDialog = ({
             },
           }));
         } catch (uploadError) {
-          console.error(`Failed to upload carousel card ${cardIndex + 1} media:`, uploadError);
-          Alert.alert('Upload Failed', `Failed to upload media for card ${cardIndex + 1}. You can still send with local file.`);
+          // Error:(`Failed to upload carousel card ${cardIndex + 1} media:`, uploadError);
+          showError(`Failed to upload media for card ${cardIndex + 1}. You can still send with local file.`, 'Upload Failed');
         } finally {
           setIsUploadingCarouselMedia(prev => ({ ...prev, [cardIndex]: false }));
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick media. Please try again.');
-      console.error('Carousel media picker error:', error);
+      showError('Failed to pick media. Please try again.');
+      // Error:('Carousel media picker error:', error);
     }
   }, [carouselHeaderFormat]);
 
@@ -1227,7 +1228,7 @@ const TemplatePreviewDialog = ({
                                     source={{ uri: uploadedMedia.uri }}
                                     style={styles.uploadedImage}
                                     resizeMode="cover"
-                                    onError={(e) => console.log('[TemplatePreview] Image load error:', e.nativeEvent.error)}
+                                    onError={(e) => { /* Log:('[TemplatePreview] Image load error:', e.nativeEvent.error) */ }}
                                   />
                                   {isUploadingMedia && (
                                     <View style={styles.uploadingOverlay}>
@@ -1263,7 +1264,7 @@ const TemplatePreviewDialog = ({
                                     source={{ uri: uploadedMedia.uri }}
                                     style={styles.uploadedVideo}
                                     resizeMode="cover"
-                                    onError={(e) => console.log('[TemplatePreview] Video thumbnail load error:', e.nativeEvent.error)}
+                                    onError={(e) => { /* Log:('[TemplatePreview] Video thumbnail load error:', e.nativeEvent.error) */ }}
                                   />
                                   <View style={styles.videoPlayButton}>
                                     <Icon name="play" size={24} color={colors.common.white} />
@@ -1962,7 +1963,7 @@ const TemplatePreviewDialog = ({
                     style={[styles.ltoDateTimeButton, { flex: 1, marginRight: 8 }]}
                     onPress={() => {
                       // For now, show a simple date representation
-                      Alert.alert('Date Selection', `Current: ${ltoFields.date.toLocaleDateString()}\n\nNote: In production, integrate a date picker component.`);
+                      showInfo(`Current: ${ltoFields.date.toLocaleDateString()}\n\nNote: In production, integrate a date picker component.`, 'Date Selection');
                     }}
                   >
                     <Icon name="calendar" size={18} color={chatColors.primary} />
@@ -1973,7 +1974,7 @@ const TemplatePreviewDialog = ({
                   <TouchableOpacity
                     style={[styles.ltoDateTimeButton, { flex: 1 }]}
                     onPress={() => {
-                      Alert.alert('Time Selection', `Current: ${ltoFields.time.toLocaleTimeString()}\n\nNote: In production, integrate a time picker component.`);
+                      showInfo(`Current: ${ltoFields.time.toLocaleTimeString()}\n\nNote: In production, integrate a time picker component.`, 'Time Selection');
                     }}
                   >
                     <Icon name="clock-outline" size={18} color={chatColors.primary} />
