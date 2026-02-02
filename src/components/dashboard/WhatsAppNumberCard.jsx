@@ -58,6 +58,43 @@ const TIER_LABELS = {
 };
 
 /**
+ * Format large credit numbers
+ * - Very large numbers (>= 10^15) show as "Unlimited"
+ * - Large numbers use K/M/B/T suffixes
+ * - Smaller numbers use locale formatting
+ */
+const formatCreditValue = (value) => {
+  if (value === null || value === undefined) return '0';
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'unlimited') return 'Unlimited';
+    const parsed = parseFloat(value);
+    if (isNaN(parsed)) return value;
+    value = parsed;
+  }
+  if (!isFinite(value)) return 'Unlimited';
+  if (value >= 1e15) return 'Unlimited';
+  if (value < 0) return '0';
+
+  if (value >= 1e12) {
+    const t = value / 1e12;
+    return t >= 100 ? `${Math.round(t)}T` : `${t.toFixed(t >= 10 ? 0 : 1)}T`;
+  }
+  if (value >= 1e9) {
+    const b = value / 1e9;
+    return b >= 100 ? `${Math.round(b)}B` : `${b.toFixed(b >= 10 ? 0 : 1)}B`;
+  }
+  if (value >= 1e6) {
+    const m = value / 1e6;
+    return m >= 100 ? `${Math.round(m)}M` : `${m.toFixed(m >= 10 ? 0 : 1)}M`;
+  }
+  if (value >= 1e4) {
+    const k = value / 1e3;
+    return k >= 100 ? `${Math.round(k)}K` : `${k.toFixed(k >= 10 ? 0 : 1)}K`;
+  }
+  return Math.round(value).toLocaleString();
+};
+
+/**
  * Quality score colors
  */
 const QUALITY_COLORS = {
@@ -219,9 +256,9 @@ const WhatsAppNumberCard = ({
           <View style={styles.creditsHeader}>
             <Text style={styles.creditsTitle}>Credits Usage</Text>
             <Text style={styles.creditsValue}>
-              <Text style={styles.creditsUsed}>{upperCapUsed.toLocaleString()}</Text>
+              <Text style={styles.creditsUsed}>{formatCreditValue(upperCapUsed)}</Text>
               <Text style={styles.creditsSeparator}> / </Text>
-              <Text style={styles.creditsTotal}>{creditsAllotted.toLocaleString()}</Text>
+              <Text style={styles.creditsTotal}>{formatCreditValue(creditsAllotted)}</Text>
             </Text>
           </View>
 
@@ -248,7 +285,7 @@ const WhatsAppNumberCard = ({
               </View>
               <View>
                 <Text style={styles.statLabel}>Used</Text>
-                <Text style={styles.statNumber}>{upperCapUsed.toLocaleString()}</Text>
+                <Text style={styles.statNumber}>{formatCreditValue(upperCapUsed)}</Text>
               </View>
             </View>
 
@@ -261,7 +298,7 @@ const WhatsAppNumberCard = ({
               <View>
                 <Text style={styles.statLabel}>Remaining</Text>
                 <Text style={[styles.statNumber, creditsRemaining < 100 && styles.lowCredits]}>
-                  {creditsRemaining.toLocaleString()}
+                  {formatCreditValue(creditsRemaining)}
                 </Text>
               </View>
             </View>

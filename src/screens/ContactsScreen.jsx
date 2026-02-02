@@ -820,7 +820,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 16,
-    bottom: 70,
+    bottom: 90,
     backgroundColor: colors.primary.main,
     borderRadius: 28,
   },
