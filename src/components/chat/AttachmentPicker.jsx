@@ -34,22 +34,16 @@ const AttachmentPicker = ({ visible, onClose, onSelect }) => {
       type: 'gallery',
     },
     {
+      icon: 'video',
+      label: 'Video',
+      color: '#D32F2F',
+      type: 'video',
+    },
+    {
       icon: 'headphones',
       label: 'Audio',
       color: '#FF6F00',
       type: 'audio',
-    },
-    {
-      icon: 'map-marker',
-      label: 'Location',
-      color: '#43A047',
-      type: 'location',
-    },
-    {
-      icon: 'account',
-      label: 'Contact',
-      color: '#039BE5',
-      type: 'contact',
     },
   ];
 
