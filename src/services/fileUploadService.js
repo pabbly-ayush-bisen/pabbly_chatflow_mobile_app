@@ -147,7 +147,10 @@ const generateFileName = (fileType) => {
     case 'video':
       return `VID_${timestamp}.mp4`;
     case 'audio':
-      return `AUD_${timestamp}.m4a`;
+      // Use .aac extension - React Native derives MIME type from file extension
+      // .m4a gets detected as audio/x-m4a which backend rejects
+      // .aac gets detected as audio/aac which is in the allowed list
+      return `AUD_${timestamp}.aac`;
     case 'document':
     default:
       return `DOC_${timestamp}`;
@@ -164,7 +167,8 @@ const getExtensionFromType = (fileType) => {
     case 'video':
       return 'mp4';
     case 'audio':
-      return 'm4a';
+      // Use .aac extension - React Native derives MIME type from file extension
+      return 'aac';
     case 'document':
     default:
       return 'bin';
@@ -296,6 +300,13 @@ export const uploadToMediaLibrary = async (file, onProgress = null) => {
 const getMimeType = (fileName, fileType) => {
   const extension = fileName?.split('.').pop()?.toLowerCase();
 
+  // IMPORTANT: For audio files, return audio/aac for WhatsApp compatibility
+  // WhatsApp Cloud API supports: audio/aac, audio/mp4, audio/mpeg, audio/amr, audio/ogg
+  // Using audio/aac to avoid confusion with video/mp4
+  if (fileType === 'audio' && (extension === 'mp4' || extension === 'm4a' || extension === 'aac' || extension === 'caf')) {
+    return 'audio/aac';
+  }
+
   // Comprehensive MIME types by extension
   const mimeTypes = {
     // Images - including mobile camera formats
@@ -326,16 +337,17 @@ const getMimeType = (fileName, fileType) => {
     mpg: 'video/mpeg',
 
     // Audio - including mobile recording formats
+    // Using audio/aac for m4a/caf to ensure WhatsApp compatibility
     mp3: 'audio/mpeg',
     wav: 'audio/wav',
     ogg: 'audio/ogg',
-    m4a: 'audio/mp4',        // iOS voice memo format
+    m4a: 'audio/aac',        // iOS voice memo format - use audio/aac for WhatsApp
     aac: 'audio/aac',
     amr: 'audio/amr',        // Android voice format
     flac: 'audio/flac',
     wma: 'audio/x-ms-wma',
     opus: 'audio/opus',
-    caf: 'audio/x-caf',      // iOS Core Audio Format
+    caf: 'audio/aac',        // iOS Core Audio Format - use audio/aac for WhatsApp
 
     // Documents
     pdf: 'application/pdf',
@@ -370,7 +382,7 @@ const getMimeType = (fileName, fileType) => {
     case 'video':
       return 'video/mp4';   // Most compatible for WhatsApp
     case 'audio':
-      return 'audio/mp4';   // m4a/mp4 audio - compatible with WhatsApp
+      return 'audio/aac';   // audio/aac - explicitly audio format for WhatsApp
     case 'document':
     default:
       return 'application/octet-stream';
@@ -386,8 +398,9 @@ const getMimeType = (fileName, fileType) => {
 const normalizeMimeType = (mimeType) => {
   if (!mimeType) return mimeType;
 
-  // Video MIME types that should be converted to video/mp4
-  const videoMimeTypeMap = {
+  // MIME type normalization map
+  const mimeTypeMap = {
+    // Video MIME types that should be converted to video/mp4
     'video/quicktime': 'video/mp4',      // iOS .mov files
     'video/x-msvideo': 'video/mp4',      // .avi files
     'video/x-matroska': 'video/mp4',     // .mkv files
@@ -396,10 +409,19 @@ const normalizeMimeType = (mimeType) => {
     'video/m4v': 'video/mp4',            // .m4v files (alternate)
     'video/3gp': 'video/3gpp',           // .3gp files
     'video/3gpp2': 'video/3gpp2',        // .3g2 files
+
+    // Audio MIME types - normalize to audio/aac for WhatsApp compatibility
+    // WhatsApp explicitly supports audio/aac and this avoids confusion with video/mp4
+    'audio/m4a': 'audio/aac',            // m4a - use audio/aac for WhatsApp
+    'audio/x-m4a': 'audio/aac',          // alternate m4a MIME
+    'audio/mp4': 'audio/aac',            // audio/mp4 might be confused with video - use audio/aac
+    'audio/x-caf': 'audio/aac',          // iOS Core Audio Format - convert to aac
+
+    // Generic fallback
     'application/octet-stream': null,    // Will be handled by fileType fallback
   };
 
-  const normalized = videoMimeTypeMap[mimeType];
+  const normalized = mimeTypeMap[mimeType];
   // If mapped to null, it means we need to use a fallback
   if (normalized === null) {
     return mimeType; // Keep original, let fileType-based logic handle it
@@ -417,13 +439,15 @@ const normalizeMimeType = (mimeType) => {
 const normalizeFileName = (fileName, mimeType) => {
   if (!fileName) return fileName;
 
-  // Extensions that should be converted to .mp4
+  // Extensions that should be converted for backend compatibility
   const extensionMap = {
     '.mov': '.mp4',
     '.avi': '.mp4',
     '.mkv': '.mp4',
     '.m4v': '.mp4',
     '.m4': '.mp4',    // .m4 video files
+    '.m4a': '.aac',   // .m4a gets detected as audio/x-m4a - convert to .aac
+    '.caf': '.aac',   // iOS Core Audio Format - convert to .aac
   };
 
   const lowerFileName = fileName.toLowerCase();
@@ -438,6 +462,15 @@ const normalizeFileName = (fileName, mimeType) => {
     const lastDot = fileName.lastIndexOf('.');
     if (lastDot > 0) {
       return fileName.slice(0, lastDot) + '.mp4';
+    }
+  }
+
+  // If MIME type is audio/aac but extension is not .aac, convert to .aac
+  // .m4a gets detected as audio/x-m4a by React Native which backend rejects
+  if (mimeType === 'audio/aac' && !lowerFileName.endsWith('.aac')) {
+    const lastDot = fileName.lastIndexOf('.');
+    if (lastDot > 0) {
+      return fileName.slice(0, lastDot) + '.aac';
     }
   }
 
@@ -561,20 +594,40 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
       const fileName = normalizeFileName(rawFileName, mimeType);
 
       // Verify file exists before upload
-      const fileCheck = await FileSystem.getInfoAsync(fileUri);
+      // For some URIs (especially from expo-av), we need to ensure proper file:// prefix
+      let verifyUri = fileUri;
+      if (Platform.OS === 'ios' && !verifyUri.startsWith('file://') && !verifyUri.startsWith('http')) {
+        verifyUri = `file://${verifyUri}`;
+        fileUri = verifyUri;
+      }
+
+      const fileCheck = await FileSystem.getInfoAsync(verifyUri);
 
       if (!fileCheck.exists) {
-        reject(new Error(`File does not exist at path: ${fileUri}`));
-        return;
+        // Try one more time without the file:// prefix (some expo versions handle this differently)
+        if (verifyUri.startsWith('file://')) {
+          const altUri = verifyUri.replace('file://', '');
+          const altCheck = await FileSystem.getInfoAsync(altUri);
+          if (altCheck.exists) {
+            fileUri = verifyUri; // Keep the file:// prefix for FormData
+          } else {
+            reject(new Error(`File does not exist at path: ${fileUri}`));
+            return;
+          }
+        } else {
+          reject(new Error(`File does not exist at path: ${fileUri}`));
+          return;
+        }
       }
 
       // Create FormData
       const formData = new FormData();
-      formData.append('file', {
+      const fileObject = {
         uri: fileUri,
         name: fileName,
         type: mimeType,
-      });
+      };
+      formData.append('file', fileObject);
       formData.append('isPerm', 'false');
 
       // Create XMLHttpRequest for progress tracking
@@ -601,6 +654,7 @@ export const uploadFileWithProgress = async (file, onProgress = null, abortContr
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const responseData = JSON.parse(xhr.responseText);
+
             const fileData = responseData.data?.[0] || responseData.data || responseData;
             const uploadedUrl = fileData.url || fileData.fileUrl || fileData.link ||
                                 fileData.file?.url || fileData.file?.link;
