@@ -5,6 +5,43 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 
 /**
+ * Format large numbers to display in human-readable format
+ * Uses K, M, B, T suffixes for thousands, millions, billions, trillions
+ * @param {number|string} num - The number to format
+ * @returns {string} Formatted number string (e.g., "1.2K", "3.5M", "2.1B")
+ */
+const formatLargeNumber = (num) => {
+  if (num === null || num === undefined) return '0';
+
+  const numStr = String(num);
+
+  // Parse the number (handles both regular and scientific notation)
+  const parsed = parseFloat(numStr);
+  if (!isFinite(parsed)) return '0';
+
+  const absNum = Math.abs(parsed);
+  const sign = parsed < 0 ? '-' : '';
+
+  // Format based on magnitude with appropriate suffix
+  if (absNum >= 1e12) {
+    // Trillions
+    return `${sign}${(absNum / 1e12).toFixed(1)}T`;
+  } else if (absNum >= 1e9) {
+    // Billions
+    return `${sign}${(absNum / 1e9).toFixed(1)}B`;
+  } else if (absNum >= 1e6) {
+    // Millions
+    return `${sign}${(absNum / 1e6).toFixed(1)}M`;
+  } else if (absNum >= 1e3) {
+    // Thousands
+    return `${sign}${(absNum / 1e3).toFixed(1)}K`;
+  }
+
+  // For smaller numbers, use locale formatting with commas
+  return parsed.toLocaleString();
+};
+
+/**
  * Avatar color palette (same as web app)
  */
 const AVATAR_COLORS = [
@@ -219,9 +256,9 @@ const WhatsAppNumberCard = ({
           <View style={styles.creditsHeader}>
             <Text style={styles.creditsTitle}>Credits Usage</Text>
             <Text style={styles.creditsValue}>
-              <Text style={styles.creditsUsed}>{upperCapUsed.toLocaleString()}</Text>
+              <Text style={styles.creditsUsed}>{formatLargeNumber(upperCapUsed)}</Text>
               <Text style={styles.creditsSeparator}> / </Text>
-              <Text style={styles.creditsTotal}>{creditsAllotted.toLocaleString()}</Text>
+              <Text style={styles.creditsTotal}>{formatLargeNumber(creditsAllotted)}</Text>
             </Text>
           </View>
 
@@ -248,7 +285,7 @@ const WhatsAppNumberCard = ({
               </View>
               <View>
                 <Text style={styles.statLabel}>Used</Text>
-                <Text style={styles.statNumber}>{upperCapUsed.toLocaleString()}</Text>
+                <Text style={styles.statNumber}>{formatLargeNumber(upperCapUsed)}</Text>
               </View>
             </View>
 
@@ -261,7 +298,7 @@ const WhatsAppNumberCard = ({
               <View>
                 <Text style={styles.statLabel}>Remaining</Text>
                 <Text style={[styles.statNumber, creditsRemaining < 100 && styles.lowCredits]}>
-                  {creditsRemaining.toLocaleString()}
+                  {formatLargeNumber(creditsRemaining)}
                 </Text>
               </View>
             </View>

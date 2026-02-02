@@ -6,6 +6,45 @@ import { colors } from '../../theme/colors';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /**
+ * Format large numbers to display in human-readable format
+ * Uses K, M, B, T suffixes for thousands, millions, billions, trillions
+ * @param {number|string} num - The number to format
+ * @returns {string} Formatted number string (e.g., "1.2K", "3.5M", "2.1B")
+ */
+const formatLargeNumber = (num) => {
+  // Handle null, undefined, or non-numeric values
+  if (num === null || num === undefined) return '0';
+
+  // Convert to string first to handle scientific notation input
+  const numStr = String(num);
+
+  // Parse the number (handles both regular and scientific notation)
+  const parsed = parseFloat(numStr);
+  if (!isFinite(parsed)) return '0';
+
+  const absNum = Math.abs(parsed);
+  const sign = parsed < 0 ? '-' : '';
+
+  // Format based on magnitude with appropriate suffix
+  if (absNum >= 1e12) {
+    // Trillions
+    return `${sign}${(absNum / 1e12).toFixed(1)}T`;
+  } else if (absNum >= 1e9) {
+    // Billions
+    return `${sign}${(absNum / 1e9).toFixed(1)}B`;
+  } else if (absNum >= 1e6) {
+    // Millions
+    return `${sign}${(absNum / 1e6).toFixed(1)}M`;
+  } else if (absNum >= 1e3) {
+    // Thousands
+    return `${sign}${(absNum / 1e3).toFixed(1)}K`;
+  }
+
+  // For smaller numbers, use locale formatting with commas
+  return parsed.toLocaleString();
+};
+
+/**
  * Reusable StatsCard component for displaying statistics
  * @param {string} title - Label text below the value
  * @param {number|string} value - Main statistic value
@@ -22,7 +61,7 @@ const StatsCard = ({
   iconColor = '#6B7280',
   style,
 }) => {
-  const formattedValue = typeof value === 'number' ? value.toLocaleString() : value || 0;
+  const formattedValue = formatLargeNumber(value);
 
   return (
     <View style={[styles.container, style]}>
