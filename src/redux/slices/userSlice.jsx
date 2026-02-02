@@ -639,6 +639,9 @@ const userSlice = createSlice({
     setSettingId: (state, action) => {
       state.settingId = action.payload;
     },
+    setTeamMemberStatus: (state, action) => {
+      state.teamMemberStatus = action.payload || { loggedIn: false, name: '', email: '', role: '' };
+    },
     setTokenExpiredDialogOpen: (state, action) => {
       state.isTokenExpiredDialogOpen = action.payload;
       if (!action.payload) {
@@ -791,8 +794,12 @@ const userSlice = createSlice({
               loggedIn: true,
               role: teamMemberStatus.role,
             };
+            // Persist team member status to AsyncStorage for app restart
+            sessionManager.saveTeamMemberStatus(state.teamMemberStatus);
           } else {
             state.teamMemberStatus = { loggedIn: false, name: '', email: '', role: '' };
+            // Clear persisted team member status
+            sessionManager.clearTeamMemberStatus();
           }
         }
 
@@ -893,6 +900,8 @@ const userSlice = createSlice({
       .addCase(logoutFromTeammember.fulfilled, (state) => {
         state.loading = false;
         state.teamMemberStatus = { loggedIn: false, name: '', email: '', role: '' };
+        // Clear persisted team member status
+        sessionManager.clearTeamMemberStatus();
         // After team member logout, checkSession should be called
       })
       .addCase(logoutFromTeammember.rejected, (state, action) => {
@@ -934,6 +943,7 @@ const userSlice = createSlice({
 export const {
   setUser,
   setSettingId,
+  setTeamMemberStatus,
   setTokenExpiredDialogOpen,
   resetManualCloseOnNavigation,
   reopenTokenExpiredDialog,

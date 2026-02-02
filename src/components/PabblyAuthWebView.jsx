@@ -48,8 +48,13 @@ export default function PabblyAuthWebView({
   const [loginAttempted, setLoginAttempted] = useState(false);
   const [injectionRetryCount, setInjectionRetryCount] = useState(0);
   const [webViewKey, setWebViewKey] = useState(Date.now());
+  const [hasReceivedLoad, setHasReceivedLoad] = useState(false);
+
+  // Timeout ref for handling slow WebView loads on new devices
+  const loadTimeoutRef = useRef(null);
 
   const maxInjectionRetries = 5;
+  const loadTimeoutDuration = 15000; // 15 seconds timeout for initial load
   const pabblyLoginUrl = `${APP_CONFIG.pabblyAccountsUrl}/login`;
   const accessUrl = `${APP_CONFIG.pabblyAccountsBackendUrl}/access?project=${APP_CONFIG.pabblyProject}`;
 
@@ -73,6 +78,13 @@ export default function PabblyAuthWebView({
       setHasInjectedCredentials(false);
       setLoginAttempted(false);
       setInjectionRetryCount(0);
+      setHasReceivedLoad(false);
+
+      // Clear any existing timeout
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
 
       // Reset animations
       fadeAnim.setValue(0);
@@ -94,7 +106,22 @@ export default function PabblyAuthWebView({
           useNativeDriver: true,
         }),
       ]).start();
+
+      // Set timeout for slow WebView loads (common on new devices with no cache)
+      loadTimeoutRef.current = setTimeout(() => {
+        if (!hasReceivedLoad && !authCompleted) {
+          onError?.('Connection is taking too long. Please check your internet connection and try again.');
+          onClose?.();
+        }
+      }, loadTimeoutDuration);
     }
+
+    return () => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
+    };
   }, [visible]);
 
   // Logo pulse animation
@@ -374,6 +401,15 @@ export default function PabblyAuthWebView({
 
   // Handle load end
   const handleLoadEnd = useCallback(() => {
+    // Mark that we received a load - clear the timeout
+    if (!hasReceivedLoad) {
+      setHasReceivedLoad(true);
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
+    }
+
     if (authCompleted) return;
 
     if (currentUrl.includes('/login') && !hasInjectedCredentials && !loginAttempted) {
@@ -385,7 +421,21 @@ export default function PabblyAuthWebView({
         }
       }, 1500);
     }
-  }, [currentUrl, hasInjectedCredentials, loginAttempted, authCompleted, getLoginInjectionScript]);
+  }, [currentUrl, hasInjectedCredentials, loginAttempted, authCompleted, getLoginInjectionScript, hasReceivedLoad]);
+
+  // Handle WebView errors (network errors, etc.)
+  const handleWebViewError = useCallback(() => {
+    // Clear the timeout since we got an error response
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+
+    if (!authCompleted) {
+      onError?.('Unable to connect. Please check your internet connection and try again.');
+      onClose?.();
+    }
+  }, [authCompleted, onError, onClose]);
 
   // Handle URL interception
   const handleShouldStartLoadWithRequest = useCallback((request) => {
@@ -558,6 +608,8 @@ export default function PabblyAuthWebView({
               onNavigationStateChange={handleNavigationStateChange}
               onLoadEnd={handleLoadEnd}
               onMessage={handleMessage}
+              onError={handleWebViewError}
+              onHttpError={handleWebViewError}
               onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
               javaScriptEnabled={true}
               domStorageEnabled={true}

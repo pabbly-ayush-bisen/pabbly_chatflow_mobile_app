@@ -58,12 +58,28 @@ export const getMessageCaption = (message) => {
 
 /**
  * Get media URL from message
+ * Handles multiple message structures:
+ * - Backend messages: message.message.link or message.audio.link
+ * - Optimistic messages: message.message.audio.link, message.message.video.link, etc.
  */
 export const getMediaUrl = (message) => {
   if (!message) return null;
 
   return (
+    // Direct link on message.message (common structure)
     message?.message?.link ||
+    // Nested media objects inside message.message (optimistic messages)
+    message?.message?.audio?.link ||
+    message?.message?.audio?.url ||
+    message?.message?.video?.link ||
+    message?.message?.video?.url ||
+    message?.message?.image?.link ||
+    message?.message?.image?.url ||
+    message?.message?.document?.link ||
+    message?.message?.document?.url ||
+    message?.message?.sticker?.link ||
+    message?.message?.sticker?.url ||
+    // Top-level media objects (legacy/alternative structure)
     message?.media?.link ||
     message?.image?.link ||
     message?.video?.link ||

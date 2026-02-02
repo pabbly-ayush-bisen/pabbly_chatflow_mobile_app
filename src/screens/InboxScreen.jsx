@@ -4,7 +4,7 @@ import { Text, ActivityIndicator, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { fetchChats, resetUnreadCount, resetPagination } from '../redux/slices/inboxSlice';
+import { fetchChats, resetUnreadCount, resetPagination, setShouldRefreshChats } from '../redux/slices/inboxSlice';
 import { getAssistants, getFlows } from '../redux/slices/assistantSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
@@ -12,6 +12,7 @@ import { useNetwork } from '../contexts/NetworkContext';
 import { colors, chatColors } from '../theme/colors';
 import ChatListItem from '../components/chat/ChatListItem';
 import InboxHeader from '../components/chat/InboxHeader';
+import QuickAddContactSheet from '../components/contacts/QuickAddContactSheet';
 import { ConversationsListSkeleton, EmptyState } from '../components/common';
 
 export default function InboxScreen() {
@@ -20,13 +21,16 @@ export default function InboxScreen() {
   const { isOffline, isNetworkAvailable } = useNetwork();
   const [searchQuery, setSearchQuery] = useState('');
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [showQuickAddContact, setShowQuickAddContact] = useState(false);
+  const [isSilentRefresh, setIsSilentRefresh] = useState(false);
 
   const {
     chats,
     status,
     error,
     selectedChatId,
-    isLoadingMore
+    isLoadingMore,
+    shouldRefreshChats,
   } = useSelector((state) => state.inbox);
   const { teamMemberStatus } = useSelector((state) => state.user);
   const { connectionStatus } = useSocket();
@@ -35,7 +39,8 @@ export default function InboxScreen() {
 
   // Only show loading if online and actually loading
   const isLoading = isNetworkAvailable && status === 'loading';
-  const isRefreshing = isNetworkAvailable && status === 'loading' && chats.length > 0;
+  // Don't show refresh indicator for silent refreshes (e.g., after creating a new contact)
+  const isRefreshing = isNetworkAvailable && status === 'loading' && chats.length > 0 && !isSilentRefresh;
 
   // Show all chats without team member filtering
   const visibleChats = useMemo(() => {
@@ -43,8 +48,9 @@ export default function InboxScreen() {
   }, [chats]);
 
   useEffect(() => {
-    // Only fetch if online
-    if (isNetworkAvailable) {
+    // Only fetch if online and no chats loaded yet
+    // This prevents re-fetching every time the screen mounts
+    if (isNetworkAvailable && chats.length === 0) {
       loadChats();
     }
   }, []);
@@ -64,6 +70,17 @@ export default function InboxScreen() {
     }
   }, [dispatch, isNetworkAvailable]);
 
+  // Refresh chats when shouldRefreshChats flag is set (e.g., after creating a new chat)
+  // Using useEffect instead of useFocusEffect to trigger immediately when flag changes
+  // This is a silent refresh - no loading indicator shown
+  useEffect(() => {
+    if (shouldRefreshChats && isNetworkAvailable) {
+      dispatch(setShouldRefreshChats(false));
+      setIsSilentRefresh(true);
+      loadChats();
+    }
+  }, [shouldRefreshChats, isNetworkAvailable, dispatch, loadChats]);
+
   const loadChats = useCallback(() => {
     // Don't fetch if offline
     if (isOffline) return;
@@ -72,7 +89,13 @@ export default function InboxScreen() {
     // Fetch ALL chats without pagination (matching web app behavior)
     // The 'all: true' param tells the API to return all chats in one request
     dispatch(fetchChats({ all: true }))
-      .then(() => setHasLoadedOnce(true));
+      .then(() => {
+        setHasLoadedOnce(true);
+        setIsSilentRefresh(false); // Reset silent refresh flag after load completes
+      })
+      .catch(() => {
+        setIsSilentRefresh(false); // Also reset on error
+      });
   }, [dispatch, isOffline]);
 
   const onRefresh = useCallback(() => {
@@ -125,6 +148,10 @@ export default function InboxScreen() {
     // Navigate to contacts to start new chat
     navigation.navigate('ContactsTab');
   }, [navigation]);
+
+  const handleAddContact = useCallback(() => {
+    setShowQuickAddContact(true);
+  }, []);
 
   // Filter chats based on search
   const filteredChats = visibleChats.filter((chat) => {
@@ -212,6 +239,7 @@ export default function InboxScreen() {
         <InboxHeader
           onMenuPress={handleMenuPress}
           onSearchChange={handleSearchChange}
+          onAddContact={handleAddContact}
           connectionStatus={connectionStatus}
         />
         <View style={styles.skeletonContainer}>
@@ -226,6 +254,7 @@ export default function InboxScreen() {
       <InboxHeader
         onMenuPress={handleMenuPress}
         onSearchChange={handleSearchChange}
+        onAddContact={handleAddContact}
         connectionStatus={connectionStatus}
       />
 
@@ -269,6 +298,13 @@ export default function InboxScreen() {
           color={colors.common.white}
         />
       )}
+
+      {/* Quick Add Contact Sheet */}
+      <QuickAddContactSheet
+        visible={showQuickAddContact}
+        onClose={() => setShowQuickAddContact(false)}
+        navigation={navigation}
+      />
     </View>
   );
 }

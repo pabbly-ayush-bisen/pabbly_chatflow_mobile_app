@@ -109,7 +109,6 @@ export default function GoogleAuthWebView({
       // Fallback timeout: show WebView if auto-click doesn't happen within 5 seconds
       autoClickTimeoutRef.current = setTimeout(() => {
         if (!showWebView && !authCompleted) {
-          console.log('Auto-click timeout - showing WebView as fallback');
           setShowWebView(true);
           setAuthStep(1); // Move to Google step
         }
@@ -285,7 +284,6 @@ export default function GoogleAuthWebView({
       const data = JSON.parse(event.nativeEvent.data);
 
       if (data.type === 'AUTO_CLICK_SUCCESS') {
-        console.log('Auto-click Google button succeeded');
         // Clear the fallback timeout since auto-click worked
         if (autoClickTimeoutRef.current) {
           clearTimeout(autoClickTimeoutRef.current);
@@ -293,8 +291,6 @@ export default function GoogleAuthWebView({
         }
         setAuthStep(1); // Move to Google step
       } else if (data.type === 'AUTO_CLICK_FAILED') {
-        console.log('Auto-click failed:', data.reason);
-
         // Retry up to 3 times with increasing delay
         if (autoClickRetryCount < 3) {
           setAutoClickRetryCount(prev => prev + 1);
@@ -302,20 +298,17 @@ export default function GoogleAuthWebView({
 
           setTimeout(() => {
             if (webViewRef.current && !authCompleted && !showWebView) {
-              console.log(`Retrying auto-click (attempt ${autoClickRetryCount + 2})`);
               webViewRef.current.injectJavaScript(getAutoClickGoogleScript());
             }
           }, retryDelay);
         } else {
           // After 3 retries, show WebView for manual interaction
-          console.log('Auto-click failed after retries - showing WebView');
           setShowWebView(true);
           setAuthStep(1); // Move to Google step
         }
       }
     } catch (error) {
       // Ignore non-JSON messages
-      console.log('WebView message (non-JSON):', event.nativeEvent.data);
     }
   }, [autoClickRetryCount, authCompleted, showWebView, getAutoClickGoogleScript]);
 
@@ -440,6 +433,20 @@ export default function GoogleAuthWebView({
 
     return true;
   }, [handleTokenCapture, authCompleted]);
+
+  // Handle WebView errors (network errors, etc.)
+  const handleWebViewError = useCallback(() => {
+    // Clear the fallback timeout
+    if (autoClickTimeoutRef.current) {
+      clearTimeout(autoClickTimeoutRef.current);
+      autoClickTimeoutRef.current = null;
+    }
+
+    if (!authCompleted) {
+      onError?.('Unable to connect. Please check your internet connection and try again.');
+      onClose?.();
+    }
+  }, [authCompleted, onError, onClose]);
 
   const currentStepData = AUTH_STEPS[authStep] || AUTH_STEPS[0];
 
@@ -631,6 +638,8 @@ export default function GoogleAuthWebView({
               onLoadEnd={() => setLoading(false)}
               onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
               onMessage={handleWebViewMessage}
+              onError={handleWebViewError}
+              onHttpError={handleWebViewError}
               javaScriptEnabled={true}
               domStorageEnabled={true}
               incognito={true}

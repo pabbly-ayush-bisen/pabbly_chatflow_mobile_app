@@ -610,6 +610,8 @@ const initialState = {
   // Team Members for assignment
   teamMembers: [],
   teamMembersStatus: 'idle',
+  // Flag to trigger chat list refresh (e.g., after creating a new chat)
+  shouldRefreshChats: false,
 };
 
 // Slice
@@ -969,6 +971,10 @@ const inboxSlice = createSlice({
       state.hasMoreMessages = true;
       state.isLoadingMoreMessages = false;
       state.loadMoreMessagesError = null;
+    },
+    // Set flag to trigger chat list refresh
+    setShouldRefreshChats: (state, action) => {
+      state.shouldRefreshChats = action.payload;
     },
     // Clear all inbox data (used when switching accounts/team members)
     clearInboxData: (state) => {
@@ -1478,6 +1484,8 @@ export const {
   markOptimisticMessageFailed,
   // Clear inbox data (for account switching)
   clearInboxData,
+  // Trigger chat refresh
+  setShouldRefreshChats,
 } = inboxSlice.actions;
 
 export default inboxSlice.reducer;
