@@ -89,6 +89,15 @@
       "expo-web-browser",
       "@react-native-google-signin/google-signin"
     ],
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/b49e424a-9ca4-4577-a11a-0b5161d62953"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "extra": {
       "eas": {
         "projectId": "b49e424a-9ca4-4577-a11a-0b5161d62953"

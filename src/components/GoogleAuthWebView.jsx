@@ -47,6 +47,8 @@ export default function GoogleAuthWebView({
   const [showWebView, setShowWebView] = useState(false); // Start hidden, auto-click Google button first
   const [authStep, setAuthStep] = useState(0); // 0-3 for steps
   const [hasAutoClicked, setHasAutoClicked] = useState(false); // Track if auto-click was attempted
+  const [autoClickRetryCount, setAutoClickRetryCount] = useState(0); // Track retry attempts
+  const autoClickTimeoutRef = useRef(null); // Timeout ref for fallback
 
   // Pabbly URLs
   const pabblyLoginUrl = `${APP_CONFIG.pabblyAccountsUrl}/login`;
@@ -74,6 +76,13 @@ export default function GoogleAuthWebView({
       setHasNavigatedToAccess(false);
       setShowWebView(false); // Start hidden for auto-click
       setHasAutoClicked(false);
+      setAutoClickRetryCount(0);
+
+      // Clear any existing timeout
+      if (autoClickTimeoutRef.current) {
+        clearTimeout(autoClickTimeoutRef.current);
+        autoClickTimeoutRef.current = null;
+      }
 
       // Reset animations
       fadeAnim.setValue(0);
@@ -96,7 +105,23 @@ export default function GoogleAuthWebView({
           useNativeDriver: true,
         }),
       ]).start();
+
+      // Fallback timeout: show WebView if auto-click doesn't happen within 5 seconds
+      autoClickTimeoutRef.current = setTimeout(() => {
+        if (!showWebView && !authCompleted) {
+          console.log('Auto-click timeout - showing WebView as fallback');
+          setShowWebView(true);
+          setAuthStep(1); // Move to Google step
+        }
+      }, 5000);
     }
+
+    return () => {
+      if (autoClickTimeoutRef.current) {
+        clearTimeout(autoClickTimeoutRef.current);
+        autoClickTimeoutRef.current = null;
+      }
+    };
   }, [visible]);
 
   // Logo pulse animation
@@ -227,25 +252,72 @@ export default function GoogleAuthWebView({
   const getAutoClickGoogleScript = useCallback(() => {
     return `
       (function() {
-        // Try multiple selectors to find the Google sign-in button
-        const googleButton = document.querySelector('[data-provider="google"]') ||
-                            document.querySelector('button[class*="google"]') ||
-                            document.querySelector('a[href*="google"]') ||
-                            document.querySelector('[class*="google-btn"]') ||
-                            document.querySelector('[class*="googleBtn"]') ||
-                            document.querySelector('button:has(img[src*="google"])') ||
-                            Array.from(document.querySelectorAll('button, a')).find(el =>
-                              el.textContent.toLowerCase().includes('google') ||
-                              el.innerHTML.toLowerCase().includes('google')
-                            );
-        if (googleButton) {
-          googleButton.click();
-          return true;
+        try {
+          // Try multiple selectors to find the Google sign-in button
+          const googleButton = document.querySelector('[data-provider="google"]') ||
+                              document.querySelector('button[class*="google"]') ||
+                              document.querySelector('a[href*="google"]') ||
+                              document.querySelector('[class*="google-btn"]') ||
+                              document.querySelector('[class*="googleBtn"]') ||
+                              document.querySelector('button:has(img[src*="google"])') ||
+                              Array.from(document.querySelectorAll('button, a')).find(el =>
+                                el.textContent.toLowerCase().includes('google') ||
+                                el.innerHTML.toLowerCase().includes('google')
+                              );
+          if (googleButton) {
+            googleButton.click();
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AUTO_CLICK_SUCCESS' }));
+            return true;
+          }
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AUTO_CLICK_FAILED', reason: 'Button not found' }));
+          return false;
+        } catch (error) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'AUTO_CLICK_FAILED', reason: error.message }));
+          return false;
         }
-        return false;
       })();
     `;
   }, []);
+
+  // Handle messages from WebView (for auto-click feedback)
+  const handleWebViewMessage = useCallback((event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+
+      if (data.type === 'AUTO_CLICK_SUCCESS') {
+        console.log('Auto-click Google button succeeded');
+        // Clear the fallback timeout since auto-click worked
+        if (autoClickTimeoutRef.current) {
+          clearTimeout(autoClickTimeoutRef.current);
+          autoClickTimeoutRef.current = null;
+        }
+        setAuthStep(1); // Move to Google step
+      } else if (data.type === 'AUTO_CLICK_FAILED') {
+        console.log('Auto-click failed:', data.reason);
+
+        // Retry up to 3 times with increasing delay
+        if (autoClickRetryCount < 3) {
+          setAutoClickRetryCount(prev => prev + 1);
+          const retryDelay = 1000 * (autoClickRetryCount + 1); // 1s, 2s, 3s
+
+          setTimeout(() => {
+            if (webViewRef.current && !authCompleted && !showWebView) {
+              console.log(`Retrying auto-click (attempt ${autoClickRetryCount + 2})`);
+              webViewRef.current.injectJavaScript(getAutoClickGoogleScript());
+            }
+          }, retryDelay);
+        } else {
+          // After 3 retries, show WebView for manual interaction
+          console.log('Auto-click failed after retries - showing WebView');
+          setShowWebView(true);
+          setAuthStep(1); // Move to Google step
+        }
+      }
+    } catch (error) {
+      // Ignore non-JSON messages
+      console.log('WebView message (non-JSON):', event.nativeEvent.data);
+    }
+  }, [autoClickRetryCount, authCompleted, showWebView, getAutoClickGoogleScript]);
 
   // Handle token capture
   const handleTokenCapture = useCallback(async (url) => {
@@ -558,6 +630,7 @@ export default function GoogleAuthWebView({
               onLoadStart={() => setLoading(true)}
               onLoadEnd={() => setLoading(false)}
               onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+              onMessage={handleWebViewMessage}
               javaScriptEnabled={true}
               domStorageEnabled={true}
               incognito={true}
