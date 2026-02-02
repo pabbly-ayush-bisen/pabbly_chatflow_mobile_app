@@ -126,6 +126,11 @@ const UploadingMediaMessage = ({
   // Render audio upload preview
   const renderAudioPreview = () => (
     <View style={styles.audioContainer}>
+      {/* Play button placeholder (uploading state) */}
+      <View style={styles.audioPlayButton}>
+        <Icon name="microphone" size={20} color={colors.text.primary} />
+      </View>
+
       <View style={styles.audioContent}>
         {/* Waveform placeholder */}
         <View style={styles.waveformContainer}>
@@ -134,7 +139,11 @@ const UploadingMediaMessage = ({
               key={i}
               style={[
                 styles.waveformBar,
-                { height: 8 + Math.random() * 16, opacity: 0.4 + (progress / 100) * 0.6 },
+                {
+                  height: 8 + Math.random() * 16,
+                  backgroundColor: colors.text.primary,
+                  opacity: 0.4 + (progress / 100) * 0.4,
+                },
               ]}
             />
           ))}
@@ -143,19 +152,68 @@ const UploadingMediaMessage = ({
         {/* Progress info */}
         <View style={styles.audioInfo}>
           <Text style={styles.audioFileName} numberOfLines={1}>
-            {fileName || 'Audio'}
+            {fileName || 'Voice message'}
           </Text>
-          {fileSize && (
-            <Text style={styles.audioFileSize}>
-              {formatFileSize(fileSize)}
-            </Text>
-          )}
+          <View style={styles.audioMeta}>
+            {fileSize && (
+              <Text style={styles.audioFileSize}>
+                {formatFileSize(fileSize)}
+              </Text>
+            )}
+            {isUploading && (
+              <Text style={styles.audioProgress}>
+                {Math.round(progress)}%
+              </Text>
+            )}
+            {isFailed && (
+              <Text style={styles.audioFailed}>Failed</Text>
+            )}
+          </View>
         </View>
       </View>
 
-      {/* Upload progress circle */}
+      {/* Upload progress circle / action button */}
       <View style={styles.audioProgressContainer}>
-        {renderProgressCircle(44)}
+        <TouchableOpacity
+          style={styles.audioActionButton}
+          onPress={handleActionPress}
+          activeOpacity={0.7}
+        >
+          {isUploading ? (
+            <View style={styles.audioProgressRing}>
+              <Svg width={36} height={36}>
+                <Circle
+                  cx={18}
+                  cy={18}
+                  r={15}
+                  stroke="rgba(0, 0, 0, 0.2)"
+                  strokeWidth={2}
+                  fill="transparent"
+                />
+                <Circle
+                  cx={18}
+                  cy={18}
+                  r={15}
+                  stroke={colors.text.primary}
+                  strokeWidth={2}
+                  fill="transparent"
+                  strokeDasharray={2 * Math.PI * 15}
+                  strokeDashoffset={(2 * Math.PI * 15) * (1 - progress / 100)}
+                  strokeLinecap="round"
+                  rotation="-90"
+                  origin="18, 18"
+                />
+              </Svg>
+              <Icon name="close" size={14} color={colors.text.primary} style={styles.audioActionIcon} />
+            </View>
+          ) : isFailed ? (
+            <View style={[styles.audioRetryButton, { backgroundColor: colors.error.lighter }]}>
+              <Icon name="refresh" size={18} color={colors.error.main} />
+            </View>
+          ) : (
+            <Icon name="check-circle" size={24} color={chatColors.accent} />
+          )}
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -411,53 +469,100 @@ const styles = StyleSheet.create({
 
   // Audio styles
   audioContainer: {
-    width: 240,
+    width: 250,
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+    borderRadius: 12,
+  },
+  audioPlayButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
   audioContent: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 8,
   },
   waveformContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 32,
+    height: 28,
     gap: 2,
   },
   waveformBar: {
     width: 3,
-    backgroundColor: colors.common.white,
     borderRadius: 2,
   },
   audioInfo: {
-    marginTop: 6,
+    marginTop: 4,
   },
   audioFileName: {
     fontSize: 13,
-    color: colors.common.white,
+    color: colors.text.primary,
     fontWeight: '500',
+  },
+  audioMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    gap: 8,
   },
   audioFileSize: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginTop: 2,
+    color: colors.text.secondary,
+  },
+  audioProgress: {
+    fontSize: 11,
+    color: colors.text.primary,
+    fontWeight: '600',
+  },
+  audioFailed: {
+    fontSize: 11,
+    color: colors.error.main,
+    fontWeight: '500',
   },
   audioProgressContainer: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  audioActionButton: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  audioProgressRing: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  audioActionIcon: {
+    position: 'absolute',
+  },
+  audioRetryButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
-  // Document styles
+  // Document styles - designed for light outgoing bubble background
   documentContainer: {
     minWidth: 220,
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
     borderRadius: 8,
   },
   documentIconContainer: {
@@ -487,7 +592,7 @@ const styles = StyleSheet.create({
   },
   documentFileName: {
     fontSize: 13,
-    color: colors.common.white,
+    color: colors.text.primary,
     fontWeight: '500',
   },
   documentMeta: {
@@ -498,16 +603,16 @@ const styles = StyleSheet.create({
   },
   documentFileSize: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: colors.text.secondary,
   },
   documentProgress: {
     fontSize: 11,
-    color: chatColors.accent,
+    color: chatColors.primary,
     fontWeight: '600',
   },
   documentFailed: {
     fontSize: 11,
-    color: colors.error.light,
+    color: colors.error.main,
     fontWeight: '500',
   },
   documentActionButton: {
@@ -582,7 +687,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   outgoingCaption: {
-    color: colors.common.white,
+    color: colors.text.primary, // Dark text on light outgoing bubble
   },
 });
 

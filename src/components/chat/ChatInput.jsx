@@ -21,6 +21,7 @@ import EmojiPicker from './EmojiPicker';
 import QuickRepliesDialog from './QuickRepliesDialog';
 import TemplatePickerDialog from './TemplatePickerDialog';
 import TemplatePreviewDialog from './TemplatePreviewDialog';
+import VoiceRecorder from './VoiceRecorder';
 import { MessageStatus, formatWhatsAppMessage, getTimeLeftDisplay } from '../../utils/messageHelpers';
 
 /**
@@ -69,6 +70,9 @@ const ChatInput = ({
 
   // Chat input disabled for audio files
   const [chatInputDisabled, setChatInputDisabled] = useState(false);
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
 
   // Refs
   const inputRef = useRef(null);
@@ -385,7 +389,7 @@ const ChatInput = ({
       case 'video':
         return `VID_${timestamp}.${extension || 'mp4'}`;
       case 'audio':
-        return `AUD_${timestamp}.${extension || 'm4a'}`;
+        return `AUD_${timestamp}.${extension || 'mp4'}`; // Use .mp4 for ChatFlow compatibility
       default:
         return `FILE_${timestamp}.${extension || 'bin'}`;
     }
@@ -557,10 +561,73 @@ const ChatInput = ({
     setShowAttachmentOptions(false);
   }, [generateFileName]);
 
+  // Handle audio file pick
+  const handlePickAudio = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*'],
+        copyToCacheDirectory: true,
+      });
+
+      // Handle both old and new DocumentPicker response formats
+      const doc = result.assets?.[0] || (result.type === 'success' ? result : null);
+
+      if (doc && doc.uri) {
+        const fileName = doc.name || generateFileName('audio', doc.uri, null);
+
+        setFilePreview({
+          fileName,
+          fileUrl: doc.uri,
+          fileType: 'audio',
+          fileSize: doc.size,
+          mimeType: doc.mimeType || 'audio/mpeg',
+        });
+      }
+    } catch (error) {
+      showError('Failed to select audio file. Please try again.');
+    }
+    setShowAttachmentOptions(false);
+  }, [generateFileName]);
+
   // Remove file preview
   const handleRemoveFile = useCallback(() => {
     setFilePreview(null);
     setChatInputDisabled(false);
+  }, []);
+
+  // Handle voice recording completion
+  const handleVoiceRecordingComplete = useCallback((recording) => {
+    setIsRecording(false);
+    if (recording && recording.uri) {
+      // Immediately send the audio message
+      // IMPORTANT: Use audio/aac MIME type - this is explicitly audio and WhatsApp accepts it
+      // WhatsApp Cloud API supports: audio/aac, audio/mp4, audio/mpeg, audio/amr, audio/ogg
+      // Using .aac extension - React Native derives MIME type from file extension during upload
+      const messageData = {
+        text: '',
+        file: {
+          fileName: recording.fileName || `voice_${Date.now()}.aac`,
+          fileUrl: recording.uri,
+          fileType: 'audio',
+          duration: recording.duration,
+          mimeType: recording.mimeType || 'audio/aac',
+          fileSize: recording.fileSize, // Include file size for validation
+        },
+        replyTo: replyingTo?.wamid || replyingTo?._id,
+      };
+
+      onSendMessage?.(messageData);
+    }
+  }, [onSendMessage, replyingTo]);
+
+  // Handle voice recording cancel
+  const handleVoiceRecordingCancel = useCallback(() => {
+    setIsRecording(false);
+  }, []);
+
+  // Handle voice recording state change
+  const handleRecordingStateChange = useCallback((recording) => {
+    setIsRecording(recording);
   }, []);
 
   // Get reply preview text
@@ -822,97 +889,101 @@ const ChatInput = ({
 
       {/* Input row - WhatsApp style */}
       <View style={styles.inputRow}>
-        {/* Text input container */}
-        <View style={styles.inputContainer}>
-          {/* Emoji button */}
-          <TouchableOpacity
-            style={styles.inputIconButton}
-            onPress={() => setShowEmojiPicker(true)}
-            disabled={disabled || chatInputDisabled}
-          >
-            <Icon
-              name="emoticon-outline"
-              size={26}
-              color={disabled || chatInputDisabled ? colors.grey[400] : colors.grey[500]}
-            />
-          </TouchableOpacity>
-
-          {/* Text input */}
-          <TextInput
-            ref={inputRef}
-            style={[styles.input, { height: inputHeight }, textStyle]}
-            placeholder="Type a message"
-            placeholderTextColor={colors.grey[400]}
-            value={message}
-            onChangeText={handleChangeText}
-            onContentSizeChange={handleContentSizeChange}
-            multiline
-            maxLength={4096}
-            editable={!disabled && !chatInputDisabled}
-          />
-
-          {/* Template button - always visible when templates available */}
-          {templates.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setShowTemplatePicker(true)}
-              style={styles.inputIconButton}
-              disabled={disabled}
-            >
-              <Icon
-                name="file-document-outline"
-                size={22}
-                color={disabled ? colors.grey[400] : chatColors.primary}
-              />
-            </TouchableOpacity>
-          )}
-
-          {/* Attachment button (inside input, right side) */}
-          <TouchableOpacity
-            onPress={() => setShowAttachmentOptions(true)}
-            style={styles.inputIconButton}
-            disabled={disabled || chatInputDisabled}
-          >
-            <Icon
-              name="paperclip"
-              size={24}
-              color={disabled || chatInputDisabled ? colors.grey[400] : colors.grey[500]}
-              style={{ transform: [{ rotate: '-45deg' }] }}
-            />
-          </TouchableOpacity>
-
-          {/* Camera (when no text and no file) */}
-          {!hasText && !hasFile && !templates.length && (
+        {/* Text input container - hidden when recording */}
+        {!isRecording && (
+          <View style={styles.inputContainer}>
+            {/* Emoji button */}
             <TouchableOpacity
               style={styles.inputIconButton}
-              onPress={handleTakePhoto}
+              onPress={() => setShowEmojiPicker(true)}
               disabled={disabled || chatInputDisabled}
             >
               <Icon
-                name="camera"
-                size={24}
+                name="emoticon-outline"
+                size={26}
                 color={disabled || chatInputDisabled ? colors.grey[400] : colors.grey[500]}
               />
             </TouchableOpacity>
-          )}
-        </View>
 
-        {/* Send button - always visible when there's content to send */}
-        <Animated.View style={{ transform: [{ scale: sendButtonScale }] }}>
-          <TouchableOpacity
-            onPress={(hasText || hasFile) ? handleSend : () => setShowAttachmentOptions(true)}
-            style={[
-              styles.sendButton,
-              (hasText || hasFile) ? styles.sendButtonActive : styles.micButton,
-            ]}
-            disabled={(hasText || hasFile) ? (!canSend || isSending) : disabled}
-          >
-            <Icon
-              name={(hasText || hasFile) ? "send" : "microphone"}
-              size={(hasText || hasFile) ? 22 : 24}
-              color={colors.common.white}
+            {/* Text input */}
+            <TextInput
+              ref={inputRef}
+              style={[styles.input, { height: inputHeight }, textStyle]}
+              placeholder="Type a message"
+              placeholderTextColor={colors.grey[400]}
+              value={message}
+              onChangeText={handleChangeText}
+              onContentSizeChange={handleContentSizeChange}
+              multiline
+              maxLength={4096}
+              editable={!disabled && !chatInputDisabled}
             />
-          </TouchableOpacity>
-        </Animated.View>
+
+            {/* Template button - always visible when templates available */}
+            {templates.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setShowTemplatePicker(true)}
+                style={styles.inputIconButton}
+                disabled={disabled}
+              >
+                <Icon
+                  name="file-document-outline"
+                  size={22}
+                  color={disabled ? colors.grey[400] : chatColors.primary}
+                />
+              </TouchableOpacity>
+            )}
+
+            {/* Attachment button (inside input, right side) */}
+            <TouchableOpacity
+              onPress={() => setShowAttachmentOptions(true)}
+              style={styles.inputIconButton}
+              disabled={disabled || chatInputDisabled}
+            >
+              <Icon
+                name="paperclip"
+                size={24}
+                color={disabled || chatInputDisabled ? colors.grey[400] : colors.grey[500]}
+                style={{ transform: [{ rotate: '-45deg' }] }}
+              />
+            </TouchableOpacity>
+
+            {/* Camera (when no text and no file) */}
+            {!hasText && !hasFile && !templates.length && (
+              <TouchableOpacity
+                style={styles.inputIconButton}
+                onPress={handleTakePhoto}
+                disabled={disabled || chatInputDisabled}
+              >
+                <Icon
+                  name="camera"
+                  size={24}
+                  color={disabled || chatInputDisabled ? colors.grey[400] : colors.grey[500]}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Send button or Voice Recorder */}
+        {(hasText || hasFile) ? (
+          <Animated.View style={{ transform: [{ scale: sendButtonScale }] }}>
+            <TouchableOpacity
+              onPress={handleSend}
+              style={[styles.sendButton, styles.sendButtonActive]}
+              disabled={!canSend || isSending}
+            >
+              <Icon name="send" size={22} color={colors.common.white} />
+            </TouchableOpacity>
+          </Animated.View>
+        ) : (
+          <VoiceRecorder
+            onRecordingComplete={handleVoiceRecordingComplete}
+            onCancel={handleVoiceRecordingCancel}
+            onRecordingStateChange={handleRecordingStateChange}
+            disabled={disabled}
+          />
+        )}
       </View>
 
       {/* Emoji Picker Modal */}
@@ -994,18 +1065,11 @@ const ChatInput = ({
                 <Text style={styles.attachmentLabel}>Video</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.attachmentOption} onPress={() => setShowAttachmentOptions(false)}>
+              <TouchableOpacity style={styles.attachmentOption} onPress={handlePickAudio}>
                 <View style={[styles.attachmentIcon, { backgroundColor: '#FF6F00' }]}>
                   <Icon name="headphones" size={24} color={colors.common.white} />
                 </View>
                 <Text style={styles.attachmentLabel}>Audio</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.attachmentOption} onPress={() => setShowAttachmentOptions(false)}>
-                <View style={[styles.attachmentIcon, { backgroundColor: '#43A047' }]}>
-                  <Icon name="map-marker" size={24} color={colors.common.white} />
-                </View>
-                <Text style={styles.attachmentLabel}>Location</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1020,6 +1084,7 @@ const styles = StyleSheet.create({
     backgroundColor: chatColors.inputBg,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
+    // paddingBottom is set dynamically based on safe area insets
   },
 
   // Action button container (for intervene, stop AI, send template)
@@ -1197,46 +1262,61 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 6,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingTop: 16,
+    paddingBottom: 24,
+    paddingRight: 12,
+    paddingLeft: 12,
   },
   inputContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
     backgroundColor: colors.common.white,
-    borderRadius: 25,
-    paddingHorizontal: 6,
-    minHeight: 50,
+    borderRadius: 24,
+    paddingHorizontal: 4,
+    minHeight: 48,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
   inputIconButton: {
-    width: 40,
-    height: 48,
+    width: 38,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },
   input: {
     flex: 1,
-    fontSize: 17,
+    fontSize: 16,
     color: colors.text.primary,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 4,
-    maxHeight: 140,
+    maxHeight: 120,
     fontWeight: '400',
     ...Platform.select({
       android: {
         includeFontPadding: false,
+        textAlignVertical: 'center',
       },
       ios: {},
     }),
   },
   sendButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 6,
+    marginLeft: 8,
   },
   sendButtonActive: {
     backgroundColor: chatColors.accent,
