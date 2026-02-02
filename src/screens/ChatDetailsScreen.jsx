@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Modal, ScrollView, ImageBackground } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
@@ -34,6 +34,9 @@ import ImageLightbox from '../components/chat/ImageLightbox';
 import ChatNotes from '../components/chat/ChatNotes';
 import UploadingMediaMessage from '../components/chat/messages/UploadingMediaMessage';
 
+// Chat wallpaper background image
+const chatWallpaper = require('../../assets/chat-wallpaper.png');
+
 export default function ChatDetailsScreen({ route, navigation }) {
   const { chatId, chat } = route.params;
   const dispatch = useDispatch();
@@ -54,6 +57,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
   // Upload state management for WhatsApp-style progress UI
   const {
+    uploads, // For FlatList extraData to trigger re-renders on progress update
     addUpload,
     updateProgress,
     completeUpload,
@@ -83,6 +87,11 @@ export default function ChatDetailsScreen({ route, navigation }) {
   // Get quick replies from settings
   const { settings } = useSelector((state) => state.settings);
   const quickReplies = settings?.quickReplies?.items || [];
+
+  // Get current user info for optimistic messages sender display
+  const { user, teamMemberStatus } = useSelector((state) => state.user);
+  const currentUserName = teamMemberStatus?.name || user?.name || 'Team Member';
+  const currentUserId = teamMemberStatus?._id || user?._id || null;
 
   const isLoading = conversationStatus === 'loading';
   const messages = currentConversation?.messages || [];
@@ -287,7 +296,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
               throw new Error('Upload succeeded but no URL was returned');
             }
           } catch (uploadError) {
-
             // Check if it was cancelled
             if (uploadError.message === 'Upload cancelled') {
               setIsSending(false);
@@ -325,6 +333,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
         sentBy: 'user',
         timestamp,
         createdAt: timestamp,
+        // Include from property for team member name display
+        from: {
+          type: 'teamMember',
+          name: currentUserName,
+          id: currentUserId,
+        },
         ...(messageType === 'text' ? {
           message: { body: text?.trim() || '' },
         } : {
@@ -367,6 +381,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
       };
 
       const sent = sendMessageViaSocket(socketData);
+
       if (sent) {
         // Message was sent successfully via socket
         setIsSending(false);
@@ -444,6 +459,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
           sentBy: 'user',
           timestamp,
           createdAt: timestamp,
+          // Include from property for team member name display
+          from: {
+            type: 'teamMember',
+            name: currentUserName,
+            id: currentUserId,
+          },
           message: {
             [messageType]: {
               link: uploadResult.url,
@@ -528,6 +549,11 @@ export default function ChatDetailsScreen({ route, navigation }) {
         sentBy: 'user',
         timestamp,
         createdAt: timestamp,
+        from: {
+          type: 'teamMember',
+          name: currentUserName,
+          id: currentUserId,
+        },
         message: {
           template: {
             name: templateName,
@@ -623,6 +649,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
       sentBy: 'user',
       timestamp,
       createdAt: timestamp,
+      // Include from property for team member name display
+      from: {
+        type: 'teamMember',
+        name: currentUserName,
+        id: currentUserId,
+      },
       message: {
         template: {
           name: templateName,
@@ -886,7 +918,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
               <Text style={styles.uploadingTimestamp}>
                 {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </Text>
-              <Icon name="clock-outline" size={14} color="rgba(255,255,255,0.7)" />
+              <Icon name="clock-outline" size={14} color={chatColors.tickGrey} />
             </View>
           </View>
         </View>
@@ -925,11 +957,24 @@ export default function ChatDetailsScreen({ route, navigation }) {
   }, [handleImagePress, handleMessageLongPress, handleCancelUpload, handleRetryUpload, messages, scrollToMessage]);
 
   const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Icon name="message-text-outline" size={60} color={colors.grey[300]} />
-      <Text variant="bodyLarge" style={styles.emptyText}>
-        No messages yet. Start the conversation!
+    // Apply scaleY(-1) to counteract the FlatList's inverted prop
+    <View style={[styles.emptyContainer, { transform: [{ scaleY: -1 }] }]}>
+      {/* Icon */}
+      <View style={styles.emptyIconWrapper}>
+        <Icon name="message-text-outline" size={48} color={chatColors.primary} />
+      </View>
+
+      {/* Text content */}
+      <Text style={styles.emptyTitle}>No messages yet</Text>
+      <Text style={styles.emptySubtitle}>
+        Send a template message to start{'\n'}the conversation with this contact
       </Text>
+
+      {/* Template hint */}
+      <View style={styles.emptyTemplateHint}>
+        <Icon name="file-document-outline" size={18} color={chatColors.primary} />
+        <Text style={styles.emptyTemplateText}>Tap the template icon below</Text>
+      </View>
     </View>
   );
 
@@ -996,8 +1041,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
         style={styles.keyboardAvoid}
         keyboardVerticalOffset={0}
       >
-        {/* Chat background */}
-        <View style={styles.chatContainer}>
+        {/* Chat background with wallpaper */}
+        <ImageBackground
+          source={chatWallpaper}
+          style={styles.chatContainer}
+          resizeMode="cover"
+        >
           {conversationError && (
             <View style={styles.errorBanner}>
               <Icon name="alert-circle" size={16} color={colors.error.main} />
@@ -1013,6 +1062,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
             inverted
+            extraData={uploads} // Ensure re-render on upload progress change
             contentContainerStyle={[
               styles.messagesList,
               groupedMessagesInverted.length === 0 && styles.emptyList,
@@ -1023,9 +1073,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
             maxToRenderPerBatch={20}
             windowSize={21}
           />
-        </View>
+        </ImageBackground>
 
-        {/* Chat input */}
+        {/* Chat input - handles safe area internally */}
         <ChatInput
           onSendMessage={handleSendMessage}
           onSendTemplate={handleSendTemplate}
@@ -1045,9 +1095,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
           isIntervened={isIntervened}
           lastActiveTime={lastActiveTime}
         />
-
-        {/* Safe area bottom padding */}
-        <View style={{ height: insets.bottom, backgroundColor: chatColors.inputBg }} />
       </KeyboardAvoidingView>
 
       {/* Attachment picker */}
@@ -1257,12 +1304,46 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 40,
   },
-  emptyText: {
+  emptyIconWrapper: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: `${chatColors.primary}12`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
     color: colors.text.secondary,
     textAlign: 'center',
-    marginTop: 16,
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  emptyTemplateHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: `${chatColors.primary}10`,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: `${chatColors.primary}20`,
+  },
+  emptyTemplateText: {
+    fontSize: 13,
+    color: chatColors.primary,
+    fontWeight: '500',
   },
   // Error banner
   errorBanner: {
@@ -1287,9 +1368,12 @@ const styles = StyleSheet.create({
     maxWidth: '85%',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 16,
-    borderBottomRightRadius: 4,
-    backgroundColor: chatColors.primary,
+    borderRadius: 8,
+    borderTopRightRadius: 8,
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 2,
+    backgroundColor: chatColors.outgoing, // Same as outgoing message bubble
   },
   uploadingMeta: {
     flexDirection: 'row',
@@ -1300,7 +1384,7 @@ const styles = StyleSheet.create({
   },
   uploadingTimestamp: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(0,0,0,0.45)', // Same as outgoing message timestamp
   },
 
   // Shared contact bottom sheet styles
