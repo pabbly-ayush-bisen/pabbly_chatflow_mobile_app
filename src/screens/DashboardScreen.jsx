@@ -285,20 +285,24 @@ export default function DashboardScreen() {
       setTeamMembersLoading(true);
       setSharedAccountsLoading(true);
 
-      const [statsRes, sharedRes] = await Promise.all([
-        callApi(endpoints.teamMember.getTeamMemberStats, httpMethods.GET),
-        callApi(`${endpoints.teamMember.WANumberAccess}?skip=0&limit=10&order=-1`, httpMethods.GET),
+      const [teamMembersRes, sharedRes] = await Promise.all([
+        // Use settings endpoint with keys=teamMembers to get actual list (same as web frontend)
+        callApi(`${endpoints.settings.getSettings}?keys=teamMembers&skip=0&limit=1000&order=-1`, httpMethods.GET),
+        callApi(`${endpoints.teamMember.WANumberAccess}?skip=0&limit=1000&order=-1`, httpMethods.GET),
       ]);
 
-      if (statsRes?.success && statsRes.status !== 'error') {
+      if (teamMembersRes?.success && teamMembersRes.status !== 'error') {
+        // Web frontend structure: { teamMembers: { items: [...], totalCount: number } }
+        const teamMembersData = teamMembersRes.data?.teamMembers || {};
+        const membersList = teamMembersData?.items || teamMembersData?.teamMembers || [];
+        setTeamMembers(membersList);
         setTeamMemberStats({
-          totalMembers: statsRes.data?.totalMembers || 0,
-          activeMembers: statsRes.data?.activeMembers || 0,
-          inactiveMembers: statsRes.data?.inactiveMembers || 0,
+          totalMembers: teamMembersData?.totalCount ?? membersList.length,
+          activeMembers: membersList.filter(m => m?.status === 'active').length,
+          inactiveMembers: membersList.filter(m => m?.status !== 'active').length,
         });
-        setTeamMembers(statsRes.data?.members || []);
       } else {
-        setTeamMembersError(statsRes?.error || statsRes?.message || 'Failed to load team members');
+        setTeamMembersError(teamMembersRes?.error || teamMembersRes?.message || 'Failed to load team members');
       }
 
       if (sharedRes?.success && sharedRes.status !== 'error') {
@@ -646,11 +650,9 @@ export default function DashboardScreen() {
       );
     }
 
-    const preview = teamMembers.slice(0, 3);
-
     return (
       <View style={styles.cardList}>
-        {preview.map((m, index) => (
+        {teamMembers.map((m, index) => (
           <Surface key={m?._id || m?.email || index} style={styles.memberPreviewCard} elevation={0}>
             <View style={styles.memberPreviewRow}>
               <View style={styles.memberAvatar}>
@@ -665,41 +667,15 @@ export default function DashboardScreen() {
                 <Text style={styles.memberEmail} numberOfLines={1}>
                   {m?.email || ''}
                 </Text>
-                <View style={styles.memberBadgesRow}>
-                  <View style={[styles.pill, { backgroundColor: '#EEF2FF' }]}>
-                    <Text style={[styles.pillText, { color: '#4F46E5' }]}>
-                      {(m?.role || 'member').toUpperCase()}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.pill,
-                      { backgroundColor: m?.status === 'active' ? '#DCFCE7' : '#F1F5F9' },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.pillText,
-                        { color: m?.status === 'active' ? '#16A34A' : '#64748B' },
-                      ]}
-                    >
-                      {(m?.status || 'inactive').toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
+              </View>
+              <View style={[styles.pill, { backgroundColor: '#EEF2FF' }]}>
+                <Text style={[styles.pillText, { color: '#4F46E5' }]}>
+                  {(m?.role || 'member').toUpperCase()}
+                </Text>
               </View>
             </View>
           </Surface>
         ))}
-
-        <TouchableOpacity
-          style={styles.viewAllRow}
-          onPress={() => navigation.navigate('MoreTab', { screen: 'TeamMember' })}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.viewAllText}>View all team members</Text>
-          <Icon name="chevron-right" size={18} color={colors.primary.main} />
-        </TouchableOpacity>
       </View>
     );
   };
@@ -731,7 +707,7 @@ export default function DashboardScreen() {
 
     return (
       <View style={styles.cardList}>
-        {sharedAccounts.slice(0, 5).map((row, index) => {
+        {sharedAccounts.map((row, index) => {
           const key = row?._id || `${row?.email}-${row?.settingId}-${index}`;
           const isLoadingRow = accessingSharedId === (row?._id || `${row?.email}-${row?.settingId}`);
           const isReadOnly = row?.role === 'manager';
@@ -1521,6 +1497,11 @@ const styles = StyleSheet.create({
   },
   memberMeta: {
     flex: 1,
+  },
+  memberNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   memberName: {
     fontSize: 13,

@@ -57,14 +57,16 @@ const ContactBottomSheet = ({
     wa: 'Added by Message',
   };
 
-  // Get initials
+  // Get initials (handles multiple spaces)
   const getInitials = () => {
     if (hasName) {
-      const parts = contact.name.trim().split(' ');
+      const parts = contact.name.trim().split(/\s+/).filter(part => part.length > 0);
       if (parts.length >= 2) {
-        return (parts[0][0] + parts[1][0]).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
       }
-      return contact.name.substring(0, 2).toUpperCase();
+      if (parts.length === 1) {
+        return parts[0].substring(0, 2).toUpperCase();
+      }
     }
     if (phoneNumber) {
       return phoneNumber.slice(-2);

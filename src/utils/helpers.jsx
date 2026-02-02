@@ -74,15 +74,15 @@ export const stringHelpers = {
     return str.charAt(0).toUpperCase() + str.slice(1);
   },
 
-  // Get initials from name
+  // Get initials from name (handles multiple spaces)
   getInitials: (name) => {
     if (!name) return '';
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2);
+    const parts = name.trim().split(/\s+/).filter(part => part.length > 0);
+    if (parts.length === 0) return '';
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0].substring(0, 2).toUpperCase();
   },
 
   // Format phone number

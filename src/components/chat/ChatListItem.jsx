@@ -19,14 +19,18 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
   const lastMessage = chat?.lastMessage;
   const unreadCount = chat?.unreadCount || 0;
 
-  // Get initials for avatar
+  // Get initials for avatar (handles multiple spaces between names)
   const getInitials = (name) => {
     if (!name) return 'U';
-    const parts = name.trim().split(' ');
+    // Split by any whitespace and filter out empty strings
+    const parts = name.trim().split(/\s+/).filter(part => part.length > 0);
+    if (parts.length === 0) return 'U';
     if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
+      // First letter of first name + first letter of last name
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
-    return name.substring(0, 2).toUpperCase();
+    // Single name - return first 2 characters
+    return parts[0].substring(0, 2).toUpperCase();
   };
 
   // Format timestamp to WhatsApp style
