@@ -59,20 +59,25 @@ const TIER_LABELS = {
 
 /**
  * Format credit numbers
- * - Very large numbers (>= 10^15) show as "Unlimited"
+ * - Very large numbers (>= 10^15) show in scientific notation (e.g., 3.2e+109)
  * - All other numbers show full value with comma separators (e.g., 55,000)
  */
 const formatCreditValue = (value) => {
   if (value === null || value === undefined) return '0';
   if (typeof value === 'string') {
+    // Check if already in scientific notation format
+    if (/^\d+(\.\d+)?e[+-]?\d+$/i.test(value)) return value;
     if (value.toLowerCase() === 'unlimited') return 'Unlimited';
     const parsed = parseFloat(value);
     if (isNaN(parsed)) return value;
     value = parsed;
   }
   if (!isFinite(value)) return 'Unlimited';
-  if (value >= 1e15) return 'Unlimited';
   if (value < 0) return '0';
+  // Very large numbers (10^15 or more) - show in scientific notation
+  if (value >= 1e15) {
+    return value.toExponential(1).replace('e+', 'e+');
+  }
   return Math.round(value).toLocaleString();
 };
 

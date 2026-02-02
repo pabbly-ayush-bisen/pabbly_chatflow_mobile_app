@@ -7,7 +7,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /**
  * Format credit numbers
- * - Very large numbers (>= 10^15 or special "unlimited" values) show as "Unlimited"
+ * - Very large numbers (>= 10^15) show in scientific notation (e.g., 3.2e+109)
  * - All other numbers show full value with comma separators (e.g., 55,000)
  */
 const formatCreditValue = (value) => {
@@ -15,7 +15,8 @@ const formatCreditValue = (value) => {
 
   // Handle string values
   if (typeof value === 'string') {
-    // Check if already formatted or special string
+    // Check if already in scientific notation format
+    if (/^\d+(\.\d+)?e[+-]?\d+$/i.test(value)) return value;
     if (value.toLowerCase() === 'unlimited') return 'Unlimited';
     const parsed = parseFloat(value);
     if (isNaN(parsed)) return value;
@@ -25,12 +26,13 @@ const formatCreditValue = (value) => {
   // Handle non-finite numbers
   if (!isFinite(value)) return 'Unlimited';
 
-  // Very large numbers (10^15 or more) are considered "Unlimited"
-  // This handles values like 3.2e+109 which are effectively unlimited
-  if (value >= 1e15) return 'Unlimited';
-
   // Negative numbers (shouldn't happen but handle gracefully)
   if (value < 0) return '0';
+
+  // Very large numbers (10^15 or more) - show in scientific notation
+  if (value >= 1e15) {
+    return value.toExponential(1).replace('e+', 'e+');
+  }
 
   // Show full number with comma separators
   return Math.round(value).toLocaleString();

@@ -478,7 +478,7 @@ export default function ContactsScreen() {
         <FlatList
           data={filteredContacts}
           renderItem={renderContactItem}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item, index) => `${item._id}-${index}`}
           contentContainerStyle={styles.contactsList}
           refreshControl={
             <RefreshControl
