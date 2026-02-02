@@ -10,6 +10,7 @@ import TemplateMessage from './messages/TemplateMessage';
 import WebFormTableMessage from './messages/WebFormTableMessage';
 import AskAddressReplyMessage from './messages/AskAddressReplyMessage';
 import InteractiveMessage from './messages/interactive/InteractiveMessage';
+import AudioMessage from './messages/AudioMessage';
 import {
   getMessageText,
   getMessageCaption,
@@ -249,6 +250,9 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
       <Text
         style={[
           isEmoji ? styles.emojiText : styles.messageText,
+          isEmoji
+            ? (isOutgoing ? styles.emojiTextOutgoing : styles.emojiTextIncoming)
+            : (isOutgoing ? styles.messageTextOutgoing : styles.messageTextIncoming),
           isOutgoing && styles.outgoingText,
         ]}
       >
@@ -969,7 +973,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
       case 'video':
         return renderVideoMessage();
       case 'audio':
-        return renderAudioMessage();
+        return <AudioMessage message={message} isOutgoing={isOutgoing} />;
       case 'document':
       case 'file':
         return renderDocumentMessage();
@@ -1121,7 +1125,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 2,
+    marginVertical: 6,
     marginHorizontal: 8,
   },
   outgoingContainer: {
@@ -1167,10 +1171,21 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: colors.text.primary,
   },
+  messageTextOutgoing: {
+    textAlign: 'right',
+  },
+  messageTextIncoming: {
+    textAlign: 'left',
+  },
   emojiText: {
     fontSize: 30,
     lineHeight: 36,
-    textAlign: 'center',
+  },
+  emojiTextOutgoing: {
+    textAlign: 'right',
+  },
+  emojiTextIncoming: {
+    textAlign: 'left',
   },
   outgoingText: {
     color: colors.text.primary,

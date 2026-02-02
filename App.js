@@ -8,7 +8,7 @@ import Toast from 'react-native-toast-message';
 import { lightTheme } from './src/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import store from './src/redux/store';
-import { setUser, setSettingId, checkSession } from './src/redux/slices/userSlice';
+import { setUser, setSettingId, setTeamMemberStatus, checkSession } from './src/redux/slices/userSlice';
 import { SocketProvider } from './src/contexts/SocketContext';
 import { CacheProvider } from './src/contexts/CacheContext';
 import { NetworkProvider } from './src/contexts/NetworkContext';
@@ -56,6 +56,12 @@ function AppContent() {
             dispatch(setSettingId(session.settingId));
           }
 
+          // Restore team member status from storage
+          const teamMemberStatus = await sessionManager.getTeamMemberStatus();
+          if (teamMemberStatus && teamMemberStatus.loggedIn) {
+            dispatch(setTeamMemberStatus(teamMemberStatus));
+          }
+
           // Background verify session with server
           const shouldVerify = await sessionManager.shouldVerifyWithServer();
           if (shouldVerify) {
@@ -75,12 +81,19 @@ function AppContent() {
             dispatch(setSettingId(session.settingId));
           }
 
+          // Restore team member status from storage for instant UI
+          const teamMemberStatus = await sessionManager.getTeamMemberStatus();
+          if (teamMemberStatus && teamMemberStatus.loggedIn) {
+            dispatch(setTeamMemberStatus(teamMemberStatus));
+          }
+
           try {
             await dispatch(checkSession()).unwrap();
             sessionManager.markSessionVerified();
           } catch (err) {
             // Session is invalid - clear it
             dispatch(setUser(null));
+            dispatch(setTeamMemberStatus({ loggedIn: false, name: '', email: '', role: '' }));
             await sessionManager.destroySession();
           }
         } else if (hasToken && !hasUser) {

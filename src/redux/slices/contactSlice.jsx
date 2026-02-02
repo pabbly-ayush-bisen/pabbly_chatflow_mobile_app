@@ -46,6 +46,7 @@ export const createContact = createAsyncThunk(
         : endpoints.contacts.createContact;
 
       const response = await callApi(url, httpMethods.POST, bodyData);
+
       if (response.status === 'error') {
         if (isSingleContact && response.data?.failedContacts?.[0]?.error) {
           return rejectWithValue(response.data.failedContacts[0].error);

@@ -10,6 +10,7 @@ const InboxHeader = ({
   onMenuPress,
   onSearchChange,
   onSearchClose,
+  onAddContact,
   connectionStatus,
 }) => {
   const insets = useSafeAreaInsets();
@@ -96,10 +97,10 @@ const InboxHeader = ({
               style={styles.actionButton}
             />
             <IconButton
-              icon="dots-vertical"
+              icon="account-plus"
               iconColor={colors.common.white}
               size={24}
-              onPress={() => {}}
+              onPress={onAddContact}
               style={styles.actionButton}
             />
           </View>

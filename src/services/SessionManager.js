@@ -26,6 +26,7 @@ const STORAGE_KEYS = {
   SHOULD_CHECK_SESSION: 'shouldCheckSession',
   TOKEN_EXPIRES_AT: 'tokenExpiresAt',
   TIMEZONE: 'timezone',
+  TEAM_MEMBER_STATUS: '@pabbly_chatflow_team_member_status',
 };
 
 class SessionManager {
@@ -303,6 +304,7 @@ class SessionManager {
         AsyncStorage.removeItem(STORAGE_KEYS.SHOULD_CHECK_SESSION),
         AsyncStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRES_AT),
         AsyncStorage.removeItem(STORAGE_KEYS.TIMEZONE),
+        AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_STATUS),
         AsyncStorage.removeItem('selectedFolderId'),
         AsyncStorage.removeItem('notifiedThresholds'),
       ]);
@@ -312,6 +314,51 @@ class SessionManager {
     } catch (error) {
       // Still clear cache even on error
       this.cachedSession = null;
+    }
+  }
+
+  /**
+   * Save team member status to storage
+   * @param {Object} teamMemberStatus - Team member status object
+   * @returns {Promise<void>}
+   */
+  async saveTeamMemberStatus(teamMemberStatus) {
+    try {
+      if (teamMemberStatus && teamMemberStatus.loggedIn) {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.TEAM_MEMBER_STATUS,
+          JSON.stringify(teamMemberStatus)
+        );
+      } else {
+        await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_STATUS);
+      }
+    } catch (error) {
+      // Silently fail - not critical
+    }
+  }
+
+  /**
+   * Get stored team member status
+   * @returns {Promise<Object|null>}
+   */
+  async getTeamMemberStatus() {
+    try {
+      const statusStr = await AsyncStorage.getItem(STORAGE_KEYS.TEAM_MEMBER_STATUS);
+      return statusStr ? JSON.parse(statusStr) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Clear team member status from storage
+   * @returns {Promise<void>}
+   */
+  async clearTeamMemberStatus() {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_STATUS);
+    } catch (error) {
+      // Silently fail
     }
   }
 

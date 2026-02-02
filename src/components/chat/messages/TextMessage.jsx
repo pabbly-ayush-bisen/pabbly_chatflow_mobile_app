@@ -34,8 +34,8 @@ const TextMessage = ({ message, isOutgoing }) => {
   // Emoji-only message (large emoji display like web app)
   if (isEmoji) {
     return (
-      <View style={styles.emojiContainer}>
-        <RNText style={styles.emojiText}>{text}</RNText>
+      <View style={[styles.emojiContainer, isOutgoing ? styles.emojiContainerOutgoing : styles.emojiContainerIncoming]}>
+        <RNText style={[styles.emojiText, isOutgoing ? styles.emojiTextOutgoing : styles.emojiTextIncoming]}>{text}</RNText>
       </View>
     );
   }
@@ -46,6 +46,7 @@ const TextMessage = ({ message, isOutgoing }) => {
       <RNText
         style={[
           styles.messageText,
+          isOutgoing ? styles.messageTextOutgoing : styles.messageTextIncoming,
           isOutgoing && styles.outgoingText,
         ]}
       >
@@ -182,6 +183,12 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: colors.text.primary,
   },
+  messageTextOutgoing: {
+    textAlign: 'left',
+  },
+  messageTextIncoming: {
+    textAlign: 'left',
+  },
   messageTextInner: {
     fontSize: 15,
     lineHeight: 21,
@@ -194,14 +201,24 @@ const styles = StyleSheet.create({
     color: colors.common.white,
   },
   emojiContainer: {
-    alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
+  },
+  emojiContainerOutgoing: {
+    alignItems: 'flex-start',
+  },
+  emojiContainerIncoming: {
+    alignItems: 'flex-start',
   },
   emojiText: {
     fontSize: 48,
     lineHeight: 56,
-    textAlign: 'center',
+  },
+  emojiTextOutgoing: {
+    textAlign: 'left',
+  },
+  emojiTextIncoming: {
+    textAlign: 'left',
   },
   boldText: {
     fontWeight: 'bold',

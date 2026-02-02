@@ -6,7 +6,7 @@ import {
   ScrollView,
   Platform,
   Dimensions,
-  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { Text, TextInput, ActivityIndicator } from 'react-native-paper';
 import Modal from 'react-native-modal';
@@ -14,8 +14,9 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { colors, chatColors } from '../../theme/colors';
 import { createContact, gotoChat, setShouldFetchContacts } from '../../redux/slices/contactSlice';
+import { setShouldRefreshChats } from '../../redux/slices/inboxSlice';
 import { getSettings } from '../../redux/slices/settingsSlice';
-import CountryCodePicker from './CountryCodePicker';
+import CountryCodeDropdown from './CountryCodeDropdown';
 import { DEFAULT_COUNTRY } from '../../data/countries';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -36,11 +37,33 @@ const AddContactBottomSheet = ({
   const dispatch = useDispatch();
   const scrollViewRef = useRef(null);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Keyboard listeners
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+      }
+    );
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, []);
 
   // Form state
   const [formData, setFormData] = useState({
     phoneNumber: '',
-    optStatus: 'not_set',
+    optStatus: 'opted_in',
     name: '',
   });
   const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY);
@@ -71,7 +94,7 @@ const AddContactBottomSheet = ({
   const resetForm = () => {
     setFormData({
       phoneNumber: '',
-      optStatus: 'not_set',
+      optStatus: 'opted_in',
       name: '',
     });
     setSelectedCountry(DEFAULT_COUNTRY);
@@ -152,43 +175,36 @@ const AddContactBottomSheet = ({
     const countryCode = selectedCountry.phone;
     const mobile = `${countryCode}${phoneNumber}`;
 
+    // Determine optin status - default to true if not set
+    let optinValue = true;
+    if (formData.optStatus === 'opted_out') {
+      optinValue = false;
+    } else if (formData.optStatus === 'opted_in') {
+      optinValue = true;
+    }
+
+    // Build tags array
+    const tagsArray = selectedTags.map((tag) => tag.name || tag);
+
+    // Build attributes array
+    const attributesArray = userAttributes.map((attr) => ({
+      name: attr.name || attr.key,
+      __id: attr.__id || attr._id,
+      value: customFields[attr.name || attr.key] || '',
+    }));
+
     const bodyData = {
+      optin: optinValue,
       mobile,
       countryCode,
       source: 'manual',
+      tags: tagsArray,
+      attributes: attributesArray,
     };
 
     // Add name if provided
     if (formData.name.trim()) {
       bodyData.name = formData.name.trim();
-    }
-
-    // Add opt-in status (web app uses 'optin' boolean)
-    if (formData.optStatus && formData.optStatus !== 'not_set') {
-      bodyData.optin = formData.optStatus === 'opted_in';
-    }
-
-    // Add tags
-    if (selectedTags.length > 0) {
-      bodyData.tags = selectedTags.map((tag) => tag._id || tag.name);
-    }
-
-    // Add custom fields/attributes
-    const filledAttributes = [];
-    Object.entries(customFields).forEach(([key, value]) => {
-      if (value && value.toString().trim()) {
-        const attr = userAttributes.find((a) => a.name === key || a.key === key);
-        if (attr) {
-          filledAttributes.push({
-            name: key,
-            __id: attr.__id || attr._id,
-            value: value.toString().trim(),
-          });
-        }
-      }
-    });
-    if (filledAttributes.length > 0) {
-      bodyData.attributes = filledAttributes;
     }
 
     try {
@@ -212,8 +228,9 @@ const AddContactBottomSheet = ({
 
       const createdContactId = createdContact?._id || createdContact?.id;
 
-      // Trigger contacts refresh
+      // Trigger contacts and chats refresh
       dispatch(setShouldFetchContacts(true));
+      dispatch(setShouldRefreshChats(true));
 
       // If openChat is true, navigate to chat
       if (openChat && createdContactId && navigation) {
@@ -256,13 +273,10 @@ const AddContactBottomSheet = ({
       onClose();
       onSuccess && onSuccess(createdContact);
     } catch (error) {
-      // Error:('Failed to create contact:', error);
+      const errorMessage = typeof error === 'string' ? error : error?.message || 'Failed to create contact';
       setErrors((prev) => ({
         ...prev,
-        phoneNumber:
-          typeof error === 'string'
-            ? error
-            : error?.message || 'Failed to create contact',
+        phoneNumber: errorMessage,
       }));
     } finally {
       setIsSubmitting(false);
@@ -283,13 +297,9 @@ const AddContactBottomSheet = ({
       backdropOpacity={0.5}
       animationIn="slideInUp"
       animationOut="slideOutDown"
-      avoidKeyboard={true}
+      avoidKeyboard={false}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardView}
-      >
-        <View style={styles.container}>
+      <View style={styles.container}>
           {/* Handle Bar */}
           <View style={styles.handleBar} />
 
@@ -312,7 +322,10 @@ const AddContactBottomSheet = ({
           <ScrollView
             ref={scrollViewRef}
             style={styles.scrollContent}
-            contentContainerStyle={styles.scrollContentContainer}
+            contentContainerStyle={[
+              styles.scrollContentContainer,
+              keyboardHeight > 0 && { paddingBottom: keyboardHeight },
+            ]}
             onScroll={handleOnScroll}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={true}
@@ -328,28 +341,31 @@ const AddContactBottomSheet = ({
                 </Text>
               </View>
               <View style={styles.phoneInputContainer}>
-                <CountryCodePicker
+                <CountryCodeDropdown
                   selectedCountry={selectedCountry}
                   onSelectCountry={setSelectedCountry}
                   disabled={isSubmitting}
                 />
-                <TextInput
-                  value={formData.phoneNumber}
-                  onChangeText={(value) => {
-                    // Only allow digits
-                    const numericValue = value.replace(/\D/g, '');
-                    handleInputChange('phoneNumber', numericValue);
-                  }}
-                  mode="outlined"
-                  style={styles.phoneInput}
-                  outlineStyle={[styles.inputOutline, errors.phoneNumber && styles.inputOutlineError]}
-                  error={!!errors.phoneNumber}
-                  disabled={isSubmitting}
-                  placeholder="Enter mobile number"
-                  placeholderTextColor={colors.text.tertiary}
-                  keyboardType="phone-pad"
-                  maxLength={15}
-                />
+                <View style={styles.phoneInputWrapper}>
+                  <TextInput
+                    value={formData.phoneNumber}
+                    onChangeText={(value) => {
+                      // Only allow digits
+                      const numericValue = value.replace(/\D/g, '');
+                      handleInputChange('phoneNumber', numericValue);
+                    }}
+                    mode="outlined"
+                    style={styles.phoneInput}
+                    outlineStyle={[styles.inputOutline, errors.phoneNumber && styles.inputOutlineError]}
+                    contentStyle={styles.inputContent}
+                    error={!!errors.phoneNumber}
+                    disabled={isSubmitting}
+                    placeholder="Enter mobile number"
+                    placeholderTextColor={colors.text.tertiary}
+                    keyboardType="phone-pad"
+                    maxLength={15}
+                  />
+                </View>
               </View>
               {errors.phoneNumber ? (
                 <Text style={styles.errorText}>{errors.phoneNumber}</Text>
@@ -604,7 +620,6 @@ const AddContactBottomSheet = ({
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -613,10 +628,6 @@ const styles = StyleSheet.create({
   modal: {
     justifyContent: 'flex-end',
     margin: 0,
-  },
-  keyboardView: {
-    flex: 1,
-    justifyContent: 'flex-end',
   },
   container: {
     backgroundColor: colors.common.white,
@@ -720,15 +731,23 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: colors.common.white,
     fontSize: 15,
+    height: 48,
   },
   phoneInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  phoneInputWrapper: {
+    flex: 1,
   },
   phoneInput: {
-    flex: 1,
     backgroundColor: colors.common.white,
     fontSize: 15,
+    height: 48,
+  },
+  inputContent: {
+    paddingLeft: 14,
   },
   inputOutline: {
     borderRadius: 12,
