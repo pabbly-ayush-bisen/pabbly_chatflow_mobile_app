@@ -861,10 +861,13 @@ export default function DashboardScreen() {
 
     const elements = [];
 
+    // Create a unique key combining folder id, index, and level to prevent duplicates
+    const uniqueKey = `folder-${id}-${index}-${level}`;
+
     // Add the parent folder pill
     elements.push(
       <View
-        key={id || index}
+        key={uniqueKey}
         onLayout={(e) => {
           if (!id) return;
           const { x, width } = e.nativeEvent.layout;
