@@ -241,11 +241,12 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
   const getInitials = (name) => {
     if (!name) return 'U';
-    const parts = name.trim().split(' ');
+    const parts = name.trim().split(/\s+/).filter(part => part.length > 0);
+    if (parts.length === 0) return 'U';
     if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
-    return name.substring(0, 2).toUpperCase();
+    return parts[0].substring(0, 2).toUpperCase();
   };
 
   const formatDate = (dateString) => {

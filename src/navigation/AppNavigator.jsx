@@ -32,7 +32,6 @@ import InboxSettingsScreen from '../screens/settings/InboxSettingsScreen';
 import ContactCustomFieldScreen from '../screens/settings/ContactCustomFieldScreen';
 import TagsScreen from '../screens/settings/TagsScreen';
 import QuickRepliesScreen from '../screens/settings/QuickRepliesScreen';
-import TeamMemberScreen from '../screens/settings/TeamMemberScreen';
 import ChatRulesScreen from '../screens/settings/ChatRulesScreen';
 import ConfigureSLAScreen from '../screens/settings/ConfigureSLAScreen';
 import TimeZoneScreen from '../screens/settings/TimeZoneScreen';
@@ -548,11 +547,6 @@ function MoreStackNavigator() {
         name="QuickReplies"
         component={QuickRepliesScreen}
         options={({ navigation }) => getChildScreenOptions(navigation, 'Quick Replies')}
-      />
-      <MoreStack.Screen
-        name="TeamMember"
-        component={TeamMemberScreen}
-        options={({ navigation }) => getChildScreenOptions(navigation, 'Team Members')}
       />
       <MoreStack.Screen
         name="ChatRules"

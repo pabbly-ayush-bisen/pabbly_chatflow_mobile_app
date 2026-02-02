@@ -5,39 +5,27 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 
 /**
- * Format large numbers to display in human-readable format
- * Uses K, M, B, T suffixes for thousands, millions, billions, trillions
+ * Format large numbers - show exact number up to 10 lakh, scientific notation above
  * @param {number|string} num - The number to format
- * @returns {string} Formatted number string (e.g., "1.2K", "3.5M", "2.1B")
+ * @returns {string} Formatted number string
  */
 const formatLargeNumber = (num) => {
   if (num === null || num === undefined) return '0';
 
-  const numStr = String(num);
-
-  // Parse the number (handles both regular and scientific notation)
-  const parsed = parseFloat(numStr);
+  const parsed = parseFloat(String(num));
   if (!isFinite(parsed)) return '0';
 
   const absNum = Math.abs(parsed);
-  const sign = parsed < 0 ? '-' : '';
 
-  // Format based on magnitude with appropriate suffix
-  if (absNum >= 1e12) {
-    // Trillions
-    return `${sign}${(absNum / 1e12).toFixed(1)}T`;
-  } else if (absNum >= 1e9) {
-    // Billions
-    return `${sign}${(absNum / 1e9).toFixed(1)}B`;
-  } else if (absNum >= 1e6) {
-    // Millions
-    return `${sign}${(absNum / 1e6).toFixed(1)}M`;
-  } else if (absNum >= 1e3) {
-    // Thousands
-    return `${sign}${(absNum / 1e3).toFixed(1)}K`;
+  // For numbers > 10 lakh (1,000,000), show scientific notation only
+  if (absNum > 1e6) {
+    const exponent = Math.floor(Math.log10(absNum));
+    const mantissa = absNum / Math.pow(10, exponent);
+    const sign = parsed < 0 ? '-' : '';
+    return `${sign}${mantissa.toFixed(1)}e+${exponent}`;
   }
 
-  // For smaller numbers, use locale formatting with commas
+  // For numbers up to 10 lakh, show exact number with commas
   return parsed.toLocaleString();
 };
 
@@ -56,7 +44,8 @@ const AVATAR_COLORS = [
  */
 const getInitials = (name) => {
   if (!name) return '?';
-  const nameParts = name.split(' ');
+  const nameParts = name.trim().split(/\s+/).filter(part => part.length > 0);
+  if (nameParts.length === 0) return '?';
   if (nameParts.length === 1) {
     return nameParts[0].charAt(0).toUpperCase();
   }
