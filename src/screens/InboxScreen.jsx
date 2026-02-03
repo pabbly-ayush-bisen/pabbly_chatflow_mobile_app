@@ -4,7 +4,7 @@ import { Text, ActivityIndicator, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { fetchChats, resetUnreadCount, resetPagination, setShouldRefreshChats } from '../redux/slices/inboxSlice';
+import { fetchChats, resetUnreadCount, resetPagination, setShouldRefreshChats, searchChats, clearSearch, setSearchQuery } from '../redux/slices/inboxSlice';
 import { getAssistants, getFlows } from '../redux/slices/assistantSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
@@ -19,7 +19,7 @@ export default function InboxScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch();
   const { isOffline, isNetworkAvailable } = useNetwork();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [showQuickAddContact, setShowQuickAddContact] = useState(false);
   const [isSilentRefresh, setIsSilentRefresh] = useState(false);
@@ -31,6 +31,12 @@ export default function InboxScreen() {
     selectedChatId,
     isLoadingMore,
     shouldRefreshChats,
+    // Search state
+    searchResults,
+    searchStatus,
+    searchError,
+    isSearchActive,
+    searchQuery,
   } = useSelector((state) => state.inbox);
   const { teamMemberStatus } = useSelector((state) => state.user);
   const { connectionStatus } = useSocket();
@@ -39,6 +45,7 @@ export default function InboxScreen() {
 
   // Only show loading if online and actually loading
   const isLoading = isNetworkAvailable && status === 'loading';
+  const isSearchLoading = searchStatus === 'loading';
   // Don't show refresh indicator for silent refreshes (e.g., after creating a new contact)
   const isRefreshing = isNetworkAvailable && status === 'loading' && chats.length > 0 && !isSilentRefresh;
 
@@ -140,9 +147,22 @@ export default function InboxScreen() {
     navigation.openDrawer();
   }, [navigation]);
 
+  // Update local search query (for input display)
   const handleSearchChange = useCallback((text) => {
-    setSearchQuery(text);
+    setLocalSearchQuery(text);
   }, []);
+
+  // Trigger API search when Enter is pressed
+  const handleSearchSubmit = useCallback((query) => {
+    if (!query?.trim() || isOffline) return;
+    dispatch(searchChats({ search: query.trim() }));
+  }, [dispatch, isOffline]);
+
+  // Clear search and return to normal chat list
+  const handleSearchClose = useCallback(() => {
+    setLocalSearchQuery('');
+    dispatch(clearSearch());
+  }, [dispatch]);
 
   const handleNewChat = useCallback(() => {
     // Navigate to contacts to start new chat
@@ -153,22 +173,19 @@ export default function InboxScreen() {
     setShowQuickAddContact(true);
   }, []);
 
-  // Filter chats based on search
-  const filteredChats = visibleChats.filter((chat) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const contactName = chat.contact?.name?.toLowerCase() || '';
-    const phoneNumber = chat.contact?.phoneNumber || '';
-    const lastMessage = typeof chat.lastMessage === 'string'
-      ? chat.lastMessage.toLowerCase()
-      : (chat.lastMessage?.message?.body || chat.lastMessage?.text || '').toLowerCase();
-
-    return (
-      contactName.includes(query) ||
-      phoneNumber.includes(query) ||
-      lastMessage.includes(query)
-    );
-  });
+  // Display search results when search is active, otherwise show all chats
+  // Client-side filtering is removed - search is now API-based (triggered on Enter)
+  const displayedChats = useMemo(() => {
+    if (isSearchActive && searchResults.length > 0) {
+      return searchResults;
+    }
+    // When search is active but no results yet, show empty
+    if (isSearchActive && searchStatus === 'succeeded') {
+      return [];
+    }
+    // Default: show all chats
+    return visibleChats;
+  }, [isSearchActive, searchResults, searchStatus, visibleChats]);
 
   const renderChatItem = useCallback(({ item }) => (
     <ChatListItem
@@ -179,11 +196,57 @@ export default function InboxScreen() {
   ), [handleChatPress, selectedChatId]);
 
   const renderEmptyState = () => {
+    // Show skeleton while loading search results
+    if (isSearchLoading) {
+      return (
+        <View style={styles.skeletonInListContainer}>
+          <ConversationsListSkeleton count={10} />
+        </View>
+      );
+    }
+
     // Show skeleton while loading (not during refresh) - only if online
     if (isLoading && !isRefreshing && isNetworkAvailable) {
       return (
         <View style={styles.skeletonInListContainer}>
           <ConversationsListSkeleton count={10} />
+        </View>
+      );
+    }
+
+    // Show search error
+    if (searchError) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Icon name="alert-circle-outline" size={80} color={colors.error.main} />
+          <Text variant="headlineSmall" style={styles.emptyTitle}>
+            Search Failed
+          </Text>
+          <Text variant="bodyMedium" style={styles.emptyText}>
+            {typeof searchError === 'string' ? searchError : 'Failed to search chats. Please try again.'}
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleSearchClose}>
+            <Text style={styles.retryButtonText}>Clear Search</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Show no search results state
+    if (isSearchActive && searchStatus === 'succeeded' && searchResults.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Icon name="magnify" size={80} color={colors.grey[300]} />
+          <Text variant="headlineSmall" style={styles.emptyTitle}>
+            No results found
+          </Text>
+          <Text variant="bodyMedium" style={styles.emptyText}>
+            No chats found matching "{searchQuery}".{'\n'}Try a different search term.
+          </Text>
+          <TouchableOpacity style={styles.startChatButton} onPress={handleSearchClose}>
+            <Icon name="close" size={20} color={colors.common.white} />
+            <Text style={styles.startChatButtonText}>Clear Search</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -239,8 +302,11 @@ export default function InboxScreen() {
         <InboxHeader
           onMenuPress={handleMenuPress}
           onSearchChange={handleSearchChange}
+          onSearchSubmit={handleSearchSubmit}
+          onSearchClose={handleSearchClose}
           onAddContact={handleAddContact}
           connectionStatus={connectionStatus}
+          isSearchLoading={isSearchLoading}
         />
         <View style={styles.skeletonContainer}>
           <ConversationsListSkeleton count={10} />
@@ -254,20 +320,23 @@ export default function InboxScreen() {
       <InboxHeader
         onMenuPress={handleMenuPress}
         onSearchChange={handleSearchChange}
+        onSearchSubmit={handleSearchSubmit}
+        onSearchClose={handleSearchClose}
         onAddContact={handleAddContact}
         connectionStatus={connectionStatus}
+        isSearchLoading={isSearchLoading}
       />
 
       {error && !chats.length ? (
         renderError()
       ) : (
         <FlatList
-          data={filteredChats}
+          data={displayedChats}
           renderItem={renderChatItem}
           keyExtractor={(item) => item._id}
           contentContainerStyle={[
             styles.listContent,
-            filteredChats.length === 0 && styles.emptyListContent,
+            displayedChats.length === 0 && styles.emptyListContent,
           ]}
           refreshControl={
             <RefreshControl

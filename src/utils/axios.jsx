@@ -39,6 +39,7 @@ export const endpoints = {
   inbox: {
     root: 'chats',
     getChats: 'chats',
+    searchChats: 'chats/search',
     getConversation: 'chats/fetchConversation',
     updateChat: 'chats/chat',
     deleteChat: 'chats/chat',

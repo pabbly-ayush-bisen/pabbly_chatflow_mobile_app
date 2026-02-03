@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated, TextInput, StatusBar, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated, TextInput, StatusBar, Platform, ActivityIndicator } from 'react-native';
 import { Text, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,9 +9,11 @@ const InboxHeader = ({
   title = 'Chats',
   onMenuPress,
   onSearchChange,
+  onSearchSubmit,
   onSearchClose,
   onAddContact,
   connectionStatus,
+  isSearchLoading = false,
 }) => {
   const insets = useSafeAreaInsets();
   const [isSearchMode, setIsSearchMode] = useState(false);
@@ -45,12 +47,26 @@ const InboxHeader = ({
     setIsSearchMode(false);
     setSearchText('');
     onSearchClose?.();
-    onSearchChange?.('');
   };
 
+  // Update local text without triggering search
   const handleSearchTextChange = (text) => {
     setSearchText(text);
+    // Only notify parent of text change for local filtering (optional)
     onSearchChange?.(text);
+  };
+
+  // Trigger actual search when Enter/Submit is pressed
+  const handleSearchSubmitEditing = () => {
+    if (searchText.trim()) {
+      onSearchSubmit?.(searchText.trim());
+    }
+  };
+
+  // Clear search text and results
+  const handleClearSearch = () => {
+    setSearchText('');
+    onSearchClose?.();
   };
 
   const getConnectionStatusText = () => {
@@ -116,21 +132,28 @@ const InboxHeader = ({
             <TextInput
               ref={searchInputRef}
               style={styles.searchInput}
-              placeholder="Search..."
+              placeholder="Search and press Enter..."
               placeholderTextColor="rgba(255, 255, 255, 0.7)"
               value={searchText}
               onChangeText={handleSearchTextChange}
+              onSubmitEditing={handleSearchSubmitEditing}
+              returnKeyType="search"
               autoCapitalize="none"
               autoCorrect={false}
+              editable={!isSearchLoading}
             />
-            {searchText.length > 0 && (
+            {isSearchLoading ? (
+              <View style={styles.loadingIndicator}>
+                <ActivityIndicator size="small" color={colors.common.white} />
+              </View>
+            ) : searchText.length > 0 ? (
               <TouchableOpacity
-                onPress={() => handleSearchTextChange('')}
+                onPress={handleClearSearch}
                 style={styles.clearButton}
               >
                 <Icon name="close" size={20} color={colors.common.white} />
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
         </View>
       )}
@@ -213,6 +236,9 @@ const styles = StyleSheet.create({
     }),
   },
   clearButton: {
+    padding: 4,
+  },
+  loadingIndicator: {
     padding: 4,
   },
 });
