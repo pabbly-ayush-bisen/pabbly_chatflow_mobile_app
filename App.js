@@ -12,9 +12,20 @@ import { setUser, setSettingId, setTeamMemberStatus, checkSession } from './src/
 import { SocketProvider } from './src/contexts/SocketContext';
 import { CacheProvider } from './src/contexts/CacheContext';
 import { NetworkProvider } from './src/contexts/NetworkContext';
+import { UpdateProvider } from './src/contexts/UpdateContext';
 import { sessionManager } from './src/services/SessionManager';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import toastConfig from './src/components/ToastConfig';
+
+// OTA Update configuration
+// autoApply: true enables automatic refresh when updates are available
+const UPDATE_CONFIG = {
+  checkOnStart: true,        // Check for updates when app starts
+  checkOnForeground: true,   // Check when app comes to foreground
+  autoDownload: true,        // Auto-download updates in background
+  autoApply: true,           // Auto-reload with loading overlay when update is ready
+  minCheckInterval: 5 * 60 * 1000, // 5 minutes between checks
+};
 
 function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
@@ -125,13 +136,15 @@ function AppContent() {
   }
 
   return (
-    <NetworkProvider>
-      <CacheProvider>
-        <SocketProvider>
-          <AppNavigator />
-        </SocketProvider>
-      </CacheProvider>
-    </NetworkProvider>
+    <UpdateProvider config={UPDATE_CONFIG}>
+      <NetworkProvider>
+        <CacheProvider>
+          <SocketProvider>
+            <AppNavigator />
+          </SocketProvider>
+        </CacheProvider>
+      </NetworkProvider>
+    </UpdateProvider>
   );
 }
 
