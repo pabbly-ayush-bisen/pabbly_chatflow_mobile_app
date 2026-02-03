@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "654810924775",
+    "project_id": "pabbly-chatflow",
+    "storage_bucket": "pabbly-chatflow.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:654810924775:android:d7c53e2826591699c40442",
+        "android_client_info": {
+          "package_name": "com.pabbly.chatflow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCWPc4SAiXdnFluGa5X8IWQESNWvV_4Z4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
