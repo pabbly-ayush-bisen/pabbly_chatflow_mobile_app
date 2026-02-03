@@ -234,7 +234,7 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
             {button.type === 'COPY_CODE' && (
               <Icon name="content-copy" size={16} color={chatColors.primary} style={styles.buttonIcon} />
             )}
-            <Text style={styles.buttonText}>{button.text}</Text>
+            <Text style={styles.buttonText} numberOfLines={1}>{button.text}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -253,7 +253,7 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
           size={12}
           color={colors.grey[500]}
         />
-        <Text style={styles.templateBadgeText}>
+        <Text style={styles.templateBadgeText} numberOfLines={1}>
           Template: {templateName}
         </Text>
       </View>
@@ -283,19 +283,24 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
 
 const styles = StyleSheet.create({
   container: {
-    width: 260,
+    width: '100%',
+    minWidth: 200,
     maxWidth: 280,
+    overflow: 'hidden',
   },
   templateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
     gap: 4,
+    width: '100%',
   },
   templateBadgeText: {
     fontSize: 11,
     color: colors.grey[500],
     fontStyle: 'italic',
+    flex: 1,
+    flexShrink: 1,
   },
   headerTextContainer: {
     marginBottom: 8,
@@ -400,6 +405,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.1)',
     paddingTop: 8,
+    width: '100%',
   },
   button: {
     flexDirection: 'row',
@@ -410,6 +416,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.03)',
     borderRadius: 8,
     marginTop: 4,
+    width: '100%',
   },
   buttonIcon: {
     marginRight: 6,
@@ -418,6 +425,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: chatColors.primary,
     fontWeight: '500',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   errorContainer: {
     flexDirection: 'row',

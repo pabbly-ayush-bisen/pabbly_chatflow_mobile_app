@@ -976,6 +976,18 @@ const inboxSlice = createSlice({
     setShouldRefreshChats: (state, action) => {
       state.shouldRefreshChats = action.payload;
     },
+    // Clear current conversation (used when navigating between chats to prevent stale data)
+    clearCurrentConversation: (state) => {
+      state.currentConversation = null;
+      state.conversationStatus = 'idle';
+      state.conversationError = null;
+      state.messagesSkip = 0;
+      state.hasMoreMessages = true;
+      state.isLoadingMoreMessages = false;
+      state.loadMoreMessagesError = null;
+      state.chatStatus = null;
+      state.aiAssistantStatus = false;
+    },
     // Clear all inbox data (used when switching accounts/team members)
     clearInboxData: (state) => {
       state.chats = [];
@@ -1482,6 +1494,8 @@ export const {
   addOptimisticMessage,
   updateOptimisticMessage,
   markOptimisticMessageFailed,
+  // Clear current conversation (for navigation)
+  clearCurrentConversation,
   // Clear inbox data (for account switching)
   clearInboxData,
   // Trigger chat refresh
