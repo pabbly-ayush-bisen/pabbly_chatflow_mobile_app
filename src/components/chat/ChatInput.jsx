@@ -79,9 +79,12 @@ const ChatInput = ({
   const sendButtonScale = useRef(new Animated.Value(1)).current;
 
   // Calculate 24-hour window status
+  // Web app uses chat?.contact?.lastActive (chat-message-input.jsx line 417)
+  // Mobile app also checks lastActiveTime prop as fallback since API may return it differently
+  const resolvedLastActive = chat?.contact?.lastActive || lastActiveTime || chat?.lastActive;
   const { isActive, hoursLeft } = useMemo(() => {
-    return MessageStatus(lastActiveTime || chat?.contact?.lastActive);
-  }, [lastActiveTime, chat?.contact?.lastActive]);
+    return MessageStatus(resolvedLastActive);
+  }, [resolvedLastActive]);
 
   // Determine if intervened state
   const intervened = useMemo(() => {
@@ -91,14 +94,14 @@ const ChatInput = ({
   // Determine what to show based on chat state
   // Logic aligned with web app chat-message-input.jsx lines 631-681
   const showStopAiButton = aiAssistantStatus === true;
+  // 24-hour window expiry takes precedence - WhatsApp restriction, not optional
+  // When window is expired, ONLY templates can be sent regardless of intervened status
+  const showSendTemplateOnly = !showStopAiButton && !isActive;
   // Show intervene button when: AI not active, within 24-hour window, not intervened
   // This matches web app behavior: !aiAssistantStatus && isActive && !intervene
-  // When chatStatus is 'open' or any other non-intervened status, show intervene button
-  const showInterveneButton = !showStopAiButton && isActive && !intervened;
-  // Show template only when outside 24-hour window and not intervened
-  const showSendTemplateOnly = !showStopAiButton && !isActive && !intervened;
-  // Show normal chat input when intervened (or when AI is stopped and intervened)
-  const showChatInput = !showStopAiButton && !showInterveneButton && !showSendTemplateOnly;
+  const showInterveneButton = !showStopAiButton && !showSendTemplateOnly && isActive && !intervened;
+  // Show normal chat input when intervened AND within 24-hour window
+  const showChatInput = !showStopAiButton && !showSendTemplateOnly && isActive && intervened;
 
   const hasText = message.trim().length > 0;
   const hasFile = filePreview !== null;

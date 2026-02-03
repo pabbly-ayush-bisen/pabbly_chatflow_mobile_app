@@ -16,6 +16,7 @@ import {
   clearInboxError,
   addOptimisticMessage,
   markOptimisticMessageFailed,
+  clearCurrentConversation,
 } from '../redux/slices/inboxSlice';
 import { fetchAllTemplates } from '../redux/slices/templateSlice';
 import { getSettings } from '../redux/slices/settingsSlice';
@@ -111,6 +112,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
   useEffect(() => {
     if (chatId) {
+      // Clear previous conversation immediately to prevent showing stale data
+      dispatch(clearCurrentConversation());
+
       // Fetch all messages at once (no pagination)
       dispatch(fetchConversation({ chatId, all: true }));
 
@@ -125,9 +129,10 @@ export default function ChatDetailsScreen({ route, navigation }) {
     dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
     dispatch(getSettings('quickReplies'));
 
-    // Clear current chat ID when leaving the screen
+    // Clear current chat ID and conversation when leaving the screen
     return () => {
       setCurrentChatId(null);
+      dispatch(clearCurrentConversation());
     };
   }, [chatId, dispatch, setCurrentChatId]);
 
