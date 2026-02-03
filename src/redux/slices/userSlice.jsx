@@ -5,6 +5,7 @@ import { callApi, endpoints, httpMethods } from '../../utils/axios';
 import { sessionManager } from '../../services/SessionManager';
 import { cacheManager } from '../../database/CacheManager';
 import { APP_CONFIG } from '../../config/app.config';
+import { forceRegisterFCMToken } from '../../services/fcmService';
 
 // ============================================================================
 // ASYNC THUNKS - Pabbly Accounts Authentication
@@ -760,6 +761,11 @@ const userSlice = createSlice({
           AsyncStorage.setItem('settingId', userSettingId);
           AsyncStorage.setItem('@pabbly_chatflow_settingId', userSettingId);
 
+          // Register FCM token for push notifications now that settingId is available
+          forceRegisterFCMToken().catch(err => {
+            console.log('[UserSlice] FCM registration error (non-blocking):', err);
+          });
+
           // Store timezone
           if (action.payload?.data?.timeZone) {
             AsyncStorage.setItem('timezone', action.payload?.data?.timeZone);
@@ -881,6 +887,11 @@ const userSlice = createSlice({
           // Store under both keys for compatibility with all services
           AsyncStorage.setItem('settingId', settingIdFromPayload);
           AsyncStorage.setItem('@pabbly_chatflow_settingId', settingIdFromPayload);
+
+          // Register FCM token for push notifications
+          forceRegisterFCMToken().catch(err => {
+            console.log('[UserSlice] FCM registration error (non-blocking):', err);
+          });
         }
 
         // After team member login, checkSession should be called to update full state
@@ -930,6 +941,11 @@ const userSlice = createSlice({
           // Store under both keys for compatibility with socketService
           AsyncStorage.setItem('settingId', whatsappNumberId);
           AsyncStorage.setItem('@pabbly_chatflow_settingId', whatsappNumberId);
+
+          // Register FCM token for push notifications
+          forceRegisterFCMToken().catch(err => {
+            console.log('[UserSlice] FCM registration error (non-blocking):', err);
+          });
         }
         state.error = null;
       })
