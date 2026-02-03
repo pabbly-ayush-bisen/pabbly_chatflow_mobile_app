@@ -4,6 +4,10 @@ import { Platform, Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { APP_CONFIG } from '../config/app.config';
+import { getMessagePreview, getMessageText, getMessageCaption } from '../utils/messageHelpers';
+
+// Import the notification sound
+const notificationSoundFile = require('../../assets/sounds/notification.wav');
 
 // Notification preferences storage key
 const NOTIFICATION_PREFS_KEY = '@pabbly_notification_prefs';
@@ -151,8 +155,8 @@ export const getNotificationPreferences = async () => {
 };
 
 /**
- * Play WhatsApp-like notification sound
- * Uses a pleasant pop/chime sound similar to WhatsApp
+ * Play notification sound
+ * Uses the custom notification sound from assets
  */
 export const playNotificationSound = async () => {
   try {
@@ -170,12 +174,10 @@ export const playNotificationSound = async () => {
       shouldDuckAndroid: true,
     });
 
-    // Load and play the notification sound
-    // Using a built-in system sound URI that works across platforms
+    // Load and play the local notification sound
     const { sound } = await Audio.Sound.createAsync(
-      // WhatsApp-like notification sound - using a web URL for a pleasant pop sound
-      { uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' },
-      { shouldPlay: true, volume: 0.8 }
+      notificationSoundFile,
+      { shouldPlay: true, volume: 1.0 }
     );
 
     notificationSound = sound;
@@ -188,22 +190,8 @@ export const playNotificationSound = async () => {
       }
     });
   } catch (error) {
-    // Fallback: try using system default
-    try {
-      const { sound } = await Audio.Sound.createAsync(
-        require('../../assets/notification.mp3'),
-        { shouldPlay: true, volume: 0.8 }
-      );
-      notificationSound = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) {
-          sound.unloadAsync();
-          notificationSound = null;
-        }
-      });
-    } catch (fallbackError) {
-      // Fallback sound also failed
-    }
+    // Error playing notification sound - silently fail
+    console.warn('Failed to play notification sound:', error);
   }
 };
 
@@ -245,6 +233,141 @@ export const triggerNotificationFeedback = async () => {
 };
 
 /**
+ * Get notification preview text for a message
+ * Handles all message types and returns appropriate preview text
+ * @param {Object} message - Message object
+ * @returns {string} Preview text for notification
+ */
+const getNotificationPreviewText = (message) => {
+  if (!message) return 'New message';
+
+  const messageType = message.type || 'text';
+
+  // Handle system messages
+  if (messageType === 'system' || message?.from?.type === 'system') {
+    return '🔔 System notification';
+  }
+
+  // Handle reaction messages
+  if (messageType === 'reaction') {
+    const emoji = message?.message?.emoji || message?.reaction?.emoji || '👍';
+    return `Reacted with ${emoji}`;
+  }
+
+  // Use getMessagePreview helper for consistent message type display
+  const preview = getMessagePreview(message);
+
+  // For text messages, get the actual text content and truncate
+  if (messageType === 'text') {
+    const textContent = getMessageText(message);
+    if (textContent && typeof textContent === 'string') {
+      // Truncate to single line (max 80 characters for notification)
+      const cleanText = textContent.replace(/\n/g, ' ').trim();
+      if (cleanText.length > 80) {
+        return cleanText.substring(0, 77) + '...';
+      }
+      return cleanText;
+    }
+    return preview.text || 'Message';
+  }
+
+  // For media messages, show type with emoji
+  switch (messageType) {
+    case 'image': {
+      const caption = getMessageCaption(message);
+      if (caption) {
+        const truncatedCaption = caption.length > 50 ? caption.substring(0, 47) + '...' : caption;
+        return `📷 Photo: ${truncatedCaption}`;
+      }
+      return '📷 Photo';
+    }
+    case 'video': {
+      const caption = getMessageCaption(message);
+      if (caption) {
+        const truncatedCaption = caption.length > 50 ? caption.substring(0, 47) + '...' : caption;
+        return `🎥 Video: ${truncatedCaption}`;
+      }
+      return '🎥 Video';
+    }
+    case 'audio':
+      return '🎵 Voice message';
+    case 'document':
+    case 'file': {
+      const filename = message?.message?.filename || message?.filename || 'Document';
+      const truncatedName = filename.length > 40 ? filename.substring(0, 37) + '...' : filename;
+      return `📄 ${truncatedName}`;
+    }
+    case 'sticker':
+      return '🎨 Sticker';
+    case 'location': {
+      const locationName = message?.message?.name || message?.location?.name;
+      if (locationName) {
+        const truncatedName = locationName.length > 40 ? locationName.substring(0, 37) + '...' : locationName;
+        return `📍 Location: ${truncatedName}`;
+      }
+      return '📍 Location';
+    }
+    case 'contact':
+    case 'contacts': {
+      const contacts = message?.waResponse?.contacts || message?.contacts || [];
+      if (contacts.length > 0) {
+        const contactName = contacts[0]?.name?.formatted_name || contacts[0]?.name?.first_name || 'Contact';
+        if (contacts.length > 1) {
+          return `👤 ${contactName} and ${contacts.length - 1} more contacts`;
+        }
+        return `👤 Contact: ${contactName}`;
+      }
+      return '👤 Contact';
+    }
+    case 'template': {
+      const templateName = message?.message?.template?.templateName || message?.message?.templateName;
+      if (templateName) {
+        return `📋 Template: ${templateName}`;
+      }
+      return '📋 Template message';
+    }
+    case 'interactive': {
+      const interactiveType = message?.message?.type || message?.interactive?.type;
+      switch (interactiveType) {
+        case 'button':
+          return '🔘 Interactive buttons';
+        case 'list':
+          return '📋 Interactive list';
+        case 'button_reply':
+        case 'list_reply': {
+          const replyTitle = message?.interactive?.button_reply?.title ||
+            message?.interactive?.list_reply?.title || 'Reply';
+          return `↩️ ${replyTitle}`;
+        }
+        case 'product':
+          return '🛍️ Product';
+        case 'product_list':
+          return '🛒 Product catalog';
+        case 'catalog_message':
+          return '📦 Catalog';
+        case 'address_message':
+          return '🏠 Address request';
+        default:
+          return '📱 Interactive message';
+      }
+    }
+    case 'order': {
+      const orderData = message?.waResponse?.order || message?.order;
+      const totalItems = orderData?.product_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
+      return `🛒 Order (${totalItems} items)`;
+    }
+    case 'payment':
+      return '💳 Payment';
+    case 'unsupported':
+    case 'unknown':
+    case 'fallback':
+      return '⚠️ Unsupported message';
+    default:
+      return preview.text || 'New message';
+  }
+};
+
+/**
  * Show a local notification for a new message
  * @param {Object} message - Message object
  * @param {Object} contact - Contact object
@@ -262,47 +385,9 @@ export const showMessageNotification = async (message, contact, chatId) => {
     await triggerNotificationFeedback();
 
     const contactName = contact?.name || contact?.phoneNumber || 'Unknown';
-    let messageText = 'New message';
 
-    // Determine message content based on type
-    const messageType = message.type || 'text';
-    switch (messageType) {
-      case 'text':
-        messageText = message.message?.body?.text || message.message?.body || message.text || 'Message';
-        break;
-      case 'image':
-        messageText = '📷 Photo';
-        break;
-      case 'video':
-        messageText = '🎥 Video';
-        break;
-      case 'audio':
-        messageText = '🎵 Voice message';
-        break;
-      case 'document':
-        messageText = '📄 Document';
-        break;
-      case 'sticker':
-        messageText = '🎨 Sticker';
-        break;
-      case 'location':
-        messageText = '📍 Location';
-        break;
-      case 'contact':
-      case 'contacts':
-        messageText = '👤 Contact';
-        break;
-      case 'template':
-        messageText = '📋 Template message';
-        break;
-      default:
-        messageText = 'New message';
-    }
-
-    // Truncate long messages
-    if (typeof messageText === 'string' && messageText.length > 100) {
-      messageText = messageText.substring(0, 100) + '...';
-    }
+    // Get message preview text based on message type
+    const messageText = getNotificationPreviewText(message);
 
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -312,6 +397,7 @@ export const showMessageNotification = async (message, contact, chatId) => {
           chatId,
           contactId: contact?._id,
           type: 'message',
+          messageType: message?.type || 'text',
         },
         sound: 'default',
         badge: 1,
@@ -323,6 +409,7 @@ export const showMessageNotification = async (message, contact, chatId) => {
     });
   } catch (error) {
     // Error showing notification
+    console.warn('Failed to show notification:', error);
   }
 };
 
