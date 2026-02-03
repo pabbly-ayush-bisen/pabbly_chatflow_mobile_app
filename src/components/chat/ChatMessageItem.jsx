@@ -12,6 +12,7 @@ import {
   getMessageCaption,
   getInteractiveData,
   getSenderInfo,
+  getSystemMessageLabel,
 } from '../../utils/messageHelpers';
 
 // Import individual message components
@@ -331,18 +332,15 @@ const ChatMessageItem = ({
     }
   };
 
-  // Render system message (centered, different styling)
+  // Render system message (centered, chip-like styling matching web app)
   if (messageType === 'system' || message?.from?.type === 'system') {
-    const systemText =
-      message?.message?.body?.text ||
-      (typeof message?.message?.body === 'string' ? message?.message?.body : null) ||
-      message?.text ||
-      'System message';
+    // Use the getSystemMessageLabel helper to format the message with team member names
+    const systemLabel = getSystemMessageLabel(message);
 
     return (
       <View style={styles.systemMessageWrapper}>
         <View style={styles.systemMessageContainer}>
-          <Text style={styles.systemMessageText}>{systemText}</Text>
+          <Text style={styles.systemMessageText}>{systemLabel}</Text>
         </View>
       </View>
     );
@@ -597,24 +595,28 @@ const styles = StyleSheet.create({
     }),
   },
 
-  // System message styles
+  // System message styles (chip-like design matching web app)
   systemMessageWrapper: {
     alignItems: 'center',
-    marginVertical: 8,
+    justifyContent: 'center',
+    marginVertical: 12,
     paddingHorizontal: 16,
   },
   systemMessageContainer: {
-    backgroundColor: chatColors.systemMessage,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.info.lighter,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 16,
-    maxWidth: '80%',
+    maxWidth: '90%',
   },
   systemMessageText: {
     fontSize: 12,
-    fontWeight: '400',
-    color: colors.text.secondary,
+    fontWeight: '600',
+    color: colors.info.dark,
     textAlign: 'center',
+    textTransform: 'capitalize',
     ...Platform.select({
       android: { includeFontPadding: false },
       ios: {},

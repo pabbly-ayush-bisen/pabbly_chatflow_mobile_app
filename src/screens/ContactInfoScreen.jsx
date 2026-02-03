@@ -20,6 +20,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { colors, chatColors, getAvatarColor } from '../theme/colors';
 import { format, formatDistanceToNow } from 'date-fns';
 import { updateContactChat, setChatStatus, updateChatInList } from '../redux/slices/inboxSlice';
+import { EnableAiAssistantDialog } from '../components/chat';
 import { updateContact } from '../redux/slices/contactSlice';
 import { getSettings } from '../redux/slices/settingsSlice';
 import { showSuccess, showError } from '../utils/toast';
@@ -62,6 +63,9 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(chat?.status || 'open');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // AI Assistant selection dialog state
+  const [showAiAssistantDialog, setShowAiAssistantDialog] = useState(false);
 
   // Chat owner state
   const [showOwnerPicker, setShowOwnerPicker] = useState(false);
@@ -204,6 +208,13 @@ const ContactInfoScreen = ({ route, navigation }) => {
       return;
     }
 
+    // If AI Assistant is selected, show the AI assistant selection dialog
+    if (newStatus === 'aiAssistant') {
+      setShowStatusPicker(false);
+      setShowAiAssistantDialog(true);
+      return;
+    }
+
     setIsUpdatingStatus(true);
     try {
       const result = await dispatch(updateContactChat({
@@ -216,17 +227,24 @@ const ContactInfoScreen = ({ route, navigation }) => {
       if (result.status === 'success' || result.response?.status === 'success') {
         setCurrentStatus(newStatus);
         dispatch(setChatStatus(newStatus));
-        showSuccess( `Chat status updated to ${getStatusLabel(newStatus)}`);
+        showSuccess(`Chat status updated to ${getStatusLabel(newStatus)}`);
       } else {
-        showError( result.message || 'Failed to update chat status');
+        showError(result.message || 'Failed to update chat status');
       }
     } catch (error) {
-      showError( error?.message || error || 'Failed to update chat status');
+      showError(error?.message || error || 'Failed to update chat status');
     } finally {
       setIsUpdatingStatus(false);
       setShowStatusPicker(false);
     }
   }, [chatId, chat, currentStatus, dispatch]);
+
+  // Handle AI assistant selection success
+  const handleAiAssistantSuccess = useCallback((assistant) => {
+    setCurrentStatus('aiAssistant');
+    dispatch(setChatStatus('aiAssistant'));
+    showSuccess(`AI Assistant "${assistant.name}" enabled for this chat`);
+  }, [dispatch]);
 
   // Get status label from value
   const getStatusLabel = (statusValue) => {
@@ -1185,6 +1203,14 @@ const ContactInfoScreen = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* AI Assistant Selection Dialog */}
+      <EnableAiAssistantDialog
+        visible={showAiAssistantDialog}
+        onDismiss={() => setShowAiAssistantDialog(false)}
+        chatId={chatId}
+        onSuccess={handleAiAssistantSuccess}
+      />
     </View>
   );
 };

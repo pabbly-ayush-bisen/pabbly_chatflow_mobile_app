@@ -11,7 +11,6 @@ import {
   Platform,
   Animated,
   Dimensions,
-  Alert,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
@@ -20,6 +19,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { colors, chatColors } from '../../theme/colors';
 import { uploadFile } from '../../services/fileUploadService';
 import { showError, showWarning, showInfo } from '../../utils/toast';
+import { CustomDialog } from '../common';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -76,6 +76,11 @@ const TemplatePreviewDialog = ({
   // Media upload state
   const [uploadedMedia, setUploadedMedia] = useState(null); // { uri, type, fileName, fileSize, fileUrl, mediaId }
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+
+  // Remove media confirmation dialog state
+  const [showRemoveMediaDialog, setShowRemoveMediaDialog] = useState(false);
+  const [showRemoveCarouselMediaDialog, setShowRemoveCarouselMediaDialog] = useState(false);
+  const [carouselMediaToRemove, setCarouselMediaToRemove] = useState(null);
 
   // Carousel-specific state
   const [currentCarouselIndex, setCurrentCarouselIndex] = useState(0);
@@ -960,18 +965,13 @@ const TemplatePreviewDialog = ({
 
   // Handle remove media
   const handleRemoveMedia = useCallback(() => {
-    Alert.alert(
-      'Remove Media',
-      'Are you sure you want to remove the uploaded media?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => setUploadedMedia(null),
-        },
-      ]
-    );
+    setShowRemoveMediaDialog(true);
+  }, []);
+
+  // Confirm remove media
+  const confirmRemoveMedia = useCallback(() => {
+    setUploadedMedia(null);
+    setShowRemoveMediaDialog(false);
   }, []);
 
   // Handle carousel card media upload (image or video based on carouselHeaderFormat)
@@ -1050,25 +1050,22 @@ const TemplatePreviewDialog = ({
 
   // Handle remove carousel card media
   const handleRemoveCarouselMedia = useCallback((cardIndex) => {
-    Alert.alert(
-      'Remove Media',
-      `Remove media from Card ${cardIndex + 1}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            setCarouselMedia(prev => {
-              const newMedia = { ...prev };
-              delete newMedia[cardIndex];
-              return newMedia;
-            });
-          },
-        },
-      ]
-    );
+    setCarouselMediaToRemove(cardIndex);
+    setShowRemoveCarouselMediaDialog(true);
   }, []);
+
+  // Confirm remove carousel media
+  const confirmRemoveCarouselMedia = useCallback(() => {
+    if (carouselMediaToRemove !== null) {
+      setCarouselMedia(prev => {
+        const newMedia = { ...prev };
+        delete newMedia[carouselMediaToRemove];
+        return newMedia;
+      });
+    }
+    setShowRemoveCarouselMediaDialog(false);
+    setCarouselMediaToRemove(null);
+  }, [carouselMediaToRemove]);
 
   // Handle carousel body variable change
   const handleCarouselVariableChange = useCallback((cardIndex, varNum, value) => {
@@ -1107,6 +1104,7 @@ const TemplatePreviewDialog = ({
   });
 
   return (
+    <>
     <Modal
       visible={visible}
       transparent
@@ -2216,6 +2214,55 @@ const TemplatePreviewDialog = ({
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
+
+      {/* Remove Media Confirmation Dialog */}
+      <CustomDialog
+        visible={showRemoveMediaDialog}
+        onDismiss={() => setShowRemoveMediaDialog(false)}
+        icon="image-remove"
+        iconColor={colors.error.main}
+        title="Remove Media"
+        message="Are you sure you want to remove the uploaded media?"
+        actions={[
+          {
+            label: 'Cancel',
+            onPress: () => setShowRemoveMediaDialog(false),
+          },
+          {
+            label: 'Remove',
+            onPress: confirmRemoveMedia,
+            destructive: true,
+          },
+        ]}
+      />
+
+      {/* Remove Carousel Media Confirmation Dialog */}
+      <CustomDialog
+        visible={showRemoveCarouselMediaDialog}
+        onDismiss={() => {
+          setShowRemoveCarouselMediaDialog(false);
+          setCarouselMediaToRemove(null);
+        }}
+        icon="image-remove"
+        iconColor={colors.error.main}
+        title="Remove Card Media"
+        message="Are you sure you want to remove the media from this carousel card?"
+        actions={[
+          {
+            label: 'Cancel',
+            onPress: () => {
+              setShowRemoveCarouselMediaDialog(false);
+              setCarouselMediaToRemove(null);
+            },
+          },
+          {
+            label: 'Remove',
+            onPress: confirmRemoveCarouselMedia,
+            destructive: true,
+          },
+        ]}
+      />
+    </>
   );
 };
 

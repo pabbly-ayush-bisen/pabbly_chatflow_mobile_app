@@ -9,7 +9,6 @@ import {
   Platform,
   Dimensions,
   TextInput as RNTextInput,
-  Alert,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
@@ -19,6 +18,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { colors, chatColors } from '../../theme/colors';
 import { uploadFile, validateFileSize } from '../../services/fileUploadService';
 import { showError, showWarning } from '../../utils/toast';
+import { CustomDialog } from '../common';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -49,6 +49,7 @@ const AddQuickReplyModal = ({
   const [showTypeSelector, setShowTypeSelector] = useState(false);
   const [uploadedMedia, setUploadedMedia] = useState(null);
   const [fileSize, setFileSize] = useState('');
+  const [showRemoveMediaDialog, setShowRemoveMediaDialog] = useState(false);
 
   // Scroll handling for bottom sheet
   const scrollViewRef = useRef(null);
@@ -395,18 +396,13 @@ const AddQuickReplyModal = ({
 
   // Handle remove media with confirmation
   const handleRemoveMedia = useCallback(() => {
-    Alert.alert(
-      'Remove Media',
-      'Are you sure you want to remove the uploaded media?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: handleClearFile,
-        },
-      ]
-    );
+    setShowRemoveMediaDialog(true);
+  }, []);
+
+  // Confirm remove media
+  const confirmRemoveMedia = useCallback(() => {
+    handleClearFile();
+    setShowRemoveMediaDialog(false);
   }, [handleClearFile]);
 
   const handleSave = async () => {
@@ -463,6 +459,7 @@ const AddQuickReplyModal = ({
   const typeConfig = getTypeConfig(messageType);
 
   return (
+    <>
     <Modal
       isVisible={visible}
       onBackdropPress={handleClose}
@@ -903,6 +900,28 @@ const AddQuickReplyModal = ({
         </View>
       </KeyboardAvoidingView>
     </Modal>
+
+      {/* Remove Media Confirmation Dialog */}
+      <CustomDialog
+        visible={showRemoveMediaDialog}
+        onDismiss={() => setShowRemoveMediaDialog(false)}
+        icon="image-remove"
+        iconColor={colors.error.main}
+        title="Remove Media"
+        message="Are you sure you want to remove the uploaded media?"
+        actions={[
+          {
+            label: 'Cancel',
+            onPress: () => setShowRemoveMediaDialog(false),
+          },
+          {
+            label: 'Remove',
+            onPress: confirmRemoveMedia,
+            destructive: true,
+          },
+        ]}
+      />
+    </>
   );
 };
 
