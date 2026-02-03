@@ -682,6 +682,187 @@ export const getSenderInfo = (message, options = {}) => {
   }
 };
 
+/**
+ * Check if a message is a system message
+ * Matches web app implementation (chat-message-list.jsx isSystemMessage function)
+ * @param {Object} message - Message object
+ * @returns {boolean}
+ */
+export const isSystemMessage = (message) => {
+  if (!message) return false;
+
+  // Direct type check
+  if (message?.type === 'system') return true;
+
+  // Check from.type
+  if (message?.from?.type === 'system') return true;
+
+  // Check from.name or from.id (case-insensitive)
+  const fromNameLower = message?.from?.name?.toLowerCase?.();
+  const fromIdLower = message?.from?.id?.toLowerCase?.();
+  if (fromNameLower === 'system' || fromIdLower === 'system') return true;
+
+  // Check message body content for system keywords
+  const messageBody = getMessageText(message);
+  if (messageBody && typeof messageBody === 'string') {
+    const systemKeywords = [
+      'Contact updated',
+      'opted-out',
+      'opted-in',
+      'Removed tags',
+      'Added tags',
+      'Chat status changed',
+    ];
+    const hasSystemContent = systemKeywords.some((keyword) =>
+      messageBody.includes(keyword)
+    );
+
+    if (hasSystemContent) {
+      // Additional validation for unsupported messages
+      if (!message?.type || message?.type === 'unsupported') {
+        if (!message?.from?.type || !message?.from) {
+          return true;
+        }
+      } else {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Format system message type label
+ * Converts snake_case/kebab-case to Title Case
+ * @param {string} type - System message type
+ * @returns {string}
+ */
+const formatSystemMessageTypeLabel = (type) => {
+  if (!type || typeof type !== 'string') {
+    return 'System update';
+  }
+
+  return type
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+/**
+ * Get formatted system message label
+ * Matches web app implementation (chat-message-list.jsx getSystemMessageLabel function)
+ * @param {Object} message - Message object
+ * @param {string} previousMemberFromHistory - Previous member name from message history (optional)
+ * @returns {string}
+ */
+export const getSystemMessageLabel = (message, previousMemberFromHistory = null) => {
+  const messageBody = getMessageText(message);
+  const actorName = message?.systemMetadata?.actorName;
+
+  // Handle assigned_to_member system message type
+  if (message?.systemMessageType === 'assigned_to_member') {
+    const newMemberName = message?.systemMetadata?.memberName;
+    // First check if backend provides previousMemberName, otherwise use history
+    const previousMemberName =
+      message?.systemMetadata?.previousMemberName || previousMemberFromHistory;
+
+    if (previousMemberName && newMemberName) {
+      if (actorName) {
+        return `${actorName} assigned chat from ${previousMemberName} to ${newMemberName}`;
+      }
+      return `Chat assigned from ${previousMemberName} to ${newMemberName}`;
+    }
+    if (newMemberName) {
+      if (actorName) {
+        return `${actorName} assigned chat to ${newMemberName}`;
+      }
+      return `Chat assigned to ${newMemberName}`;
+    }
+  }
+
+  // Handle unassigned_from_member system message type
+  if (message?.systemMessageType === 'unassigned_from_member') {
+    const memberName = message?.systemMetadata?.memberName;
+    if (memberName) {
+      if (actorName) {
+        return `${actorName} unassigned chat from ${memberName}`;
+      }
+      return `Chat unassigned from ${memberName}`;
+    }
+  }
+
+  // Handle contact name update
+  if (
+    typeof messageBody === 'string' &&
+    messageBody.toLowerCase().includes('contact name updated')
+  ) {
+    return 'Contact name updated';
+  }
+  if (
+    typeof messageBody === 'string' &&
+    messageBody.toLowerCase().includes('contact updated: name changed from to')
+  ) {
+    return 'Contact name updated';
+  }
+  if (
+    typeof messageBody === 'string' &&
+    messageBody.toLowerCase().includes('contact updated: number changed to')
+  ) {
+    return 'Contact number updated';
+  }
+
+  // Handle chat status change
+  if (
+    typeof messageBody === 'string' &&
+    messageBody.toLowerCase().includes('chat status changed')
+  ) {
+    let cleanMessage = messageBody.replace(/📊/g, '').trim();
+    // Replace "Chat status changed" (case-insensitive) with "change chat status"
+    cleanMessage = cleanMessage.replace(/Chat status changed/gi, 'change chat status');
+    // Replace "on_hold" with "On Hold"
+    cleanMessage = cleanMessage.replace(/on_hold/gi, 'On Hold');
+    if (actorName) {
+      return `${actorName} ${cleanMessage}`;
+    }
+    return cleanMessage;
+  }
+
+  // Default: format the system message type
+  return formatSystemMessageTypeLabel(message?.systemMessageType) || messageBody || 'System message';
+};
+
+/**
+ * Find the previous assigned member from message history
+ * Searches backwards through messages to find the last assignment state
+ * Matches web app implementation (chat-message-list.jsx findPreviousAssignedMember function)
+ * @param {Array} messages - Array of messages
+ * @param {number} currentMessageIndex - Index of current message
+ * @returns {string|null} - Previous member name or null
+ */
+export const findPreviousAssignedMember = (messages, currentMessageIndex) => {
+  if (!messages || currentMessageIndex <= 0) return null;
+
+  // Search backwards from the current message
+  // Find the most recent assignment or unassignment event
+  for (let i = currentMessageIndex - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+
+    // If chat was unassigned before this assignment, return null
+    // because the chat was in unassigned state
+    if (msg?.systemMessageType === 'unassigned_from_member') {
+      return null;
+    }
+
+    // If we find a previous assignment, return that member's name
+    if (msg?.systemMessageType === 'assigned_to_member' && msg?.systemMetadata?.memberName) {
+      return msg.systemMetadata.memberName;
+    }
+  }
+  return null;
+};
+
 export default {
   getMessageText,
   getMessageCaption,
@@ -708,4 +889,7 @@ export default {
   formatWhatsAppMessage,
   getTimeLeftDisplay,
   getSenderInfo,
+  isSystemMessage,
+  getSystemMessageLabel,
+  findPreviousAssignedMember,
 };

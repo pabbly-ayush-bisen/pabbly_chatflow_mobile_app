@@ -8,6 +8,8 @@ export { default as DateSeparator } from './DateSeparator';
 export { default as EmojiPicker } from './EmojiPicker';
 export { default as QuickRepliesDialog } from './QuickRepliesDialog';
 export { default as TemplatePickerDialog } from './TemplatePickerDialog';
+export { default as EnableAiAssistantDialog } from './EnableAiAssistantDialog';
+export { default as StopAiAssistantDialog } from './StopAiAssistantDialog';
 
 // Main Message Item Component
 export { default as ChatMessageItem } from './ChatMessageItem';

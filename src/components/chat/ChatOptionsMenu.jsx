@@ -5,7 +5,6 @@ import {
   Modal,
   TouchableOpacity,
   FlatList,
-  Alert,
 } from 'react-native';
 import { Text, ActivityIndicator, Avatar } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
@@ -13,6 +12,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { colors, chatColors, getAvatarColor } from '../../theme/colors';
 import { showError, showSuccess } from '../../utils/toast';
+import { CustomDialog } from '../common';
 import {
   deleteChat,
   toggleChatNotifications,
@@ -35,6 +35,7 @@ const ChatOptionsMenu = ({
   const teamMembers = settings?.teamMembers?.items || [];
 
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
 
@@ -62,29 +63,22 @@ const ChatOptionsMenu = ({
 
   // Handle delete chat
   const handleDeleteChat = useCallback(() => {
-    Alert.alert(
-      'Delete Chat',
-      'Are you sure you want to delete this conversation? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setIsDeleting(true);
-            try {
-              await dispatch(deleteChat(chatId)).unwrap();
-              onClose();
-              navigation?.goBack();
-            } catch (error) {
-              showError(error || 'Failed to delete chat');
-            } finally {
-              setIsDeleting(false);
-            }
-          },
-        },
-      ]
-    );
+    setShowDeleteDialog(true);
+  }, []);
+
+  // Confirm delete action
+  const confirmDeleteChat = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      await dispatch(deleteChat(chatId)).unwrap();
+      setShowDeleteDialog(false);
+      onClose();
+      navigation?.goBack();
+    } catch (error) {
+      showError(error || 'Failed to delete chat');
+    } finally {
+      setIsDeleting(false);
+    }
   }, [chatId, dispatch, onClose, navigation]);
 
   // Handle assign to member - using updateContactChat pattern like ContactInfoScreen
@@ -326,6 +320,28 @@ const ChatOptionsMenu = ({
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Delete Chat Confirmation Dialog */}
+      <CustomDialog
+        visible={showDeleteDialog}
+        onDismiss={() => setShowDeleteDialog(false)}
+        icon="delete-outline"
+        iconColor={colors.error.main}
+        title="Delete Conversation"
+        message="Are you sure you want to delete this conversation? This action cannot be undone and all messages will be permanently removed."
+        actions={[
+          {
+            label: 'Cancel',
+            onPress: () => setShowDeleteDialog(false),
+          },
+          {
+            label: 'Delete',
+            onPress: confirmDeleteChat,
+            destructive: true,
+            loading: isDeleting,
+          },
+        ]}
+      />
     </>
   );
 };

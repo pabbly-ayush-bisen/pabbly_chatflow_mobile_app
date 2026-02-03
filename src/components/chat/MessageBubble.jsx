@@ -29,6 +29,7 @@ import {
   isEmojiOnly,
   getErrorInfo,
   getSenderInfo,
+  getSystemMessageLabel,
 } from '../../utils/messageHelpers';
 
 const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, onLongPress, onContactPress }) => {
@@ -723,14 +724,19 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
     );
   };
 
-  // Render system message
-  const renderSystemMessage = () => (
-    <View style={styles.systemMessageContainer}>
-      <Text style={styles.systemMessageText}>
-        {messageText || 'System message'}
-      </Text>
-    </View>
-  );
+  // Render system message with team member names (like web app)
+  const renderSystemMessage = () => {
+    // Use the getSystemMessageLabel helper to format the message
+    const systemLabel = getSystemMessageLabel(message);
+
+    return (
+      <View style={styles.systemMessageContainer}>
+        <Text style={styles.systemMessageText}>
+          {systemLabel}
+        </Text>
+      </View>
+    );
+  };
 
   // Reply preview content (for replied-to messages) - aligned with web behavior
   const renderReplyPreviewContent = () => {
@@ -1684,22 +1690,27 @@ const styles = StyleSheet.create({
     color: colors.common.white,
   },
 
-  // System message styles
+  // System message styles (chip-like design matching web app)
   systemMessageWrapper: {
     alignItems: 'center',
-    marginVertical: 8,
+    justifyContent: 'center',
+    marginVertical: 12,
   },
   systemMessageContainer: {
-    backgroundColor: chatColors.systemMessage,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    maxWidth: '80%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.info.lighter,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    maxWidth: '90%',
   },
   systemMessageText: {
     fontSize: 12,
-    color: colors.text.secondary,
+    fontWeight: '600',
+    color: colors.info.dark,
     textAlign: 'center',
+    textTransform: 'capitalize',
   },
 
   // Reply reference styles

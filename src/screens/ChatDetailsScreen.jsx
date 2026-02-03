@@ -766,8 +766,8 @@ export default function ChatDetailsScreen({ route, navigation }) {
     }
   }, [chatId, dispatch]);
 
-  // Handle stop AI assistant
-  const handleStopAiAssistant = useCallback(async () => {
+  // Handle stop AI assistant with selected status
+  const handleStopAiAssistant = useCallback(async (selectedStatus = 'intervened') => {
     try {
       const assistantId = currentConversation?.aiAssistant?.assistantId;
 
@@ -780,14 +780,26 @@ export default function ChatDetailsScreen({ route, navigation }) {
       // Update local state
       dispatch(setAiAssistantStatus(false));
 
-      // Also update chat status to intervened
+      // Update chat status to the selected status
       await dispatch(updateContactChat({
         id: chatId,
-        status: 'intervened',
+        status: selectedStatus,
       })).unwrap();
 
-      dispatch(setChatStatus('intervened'));
-      showSuccess('AI Assistant has been stopped for this conversation.', 'AI Stopped');
+      dispatch(setChatStatus(selectedStatus));
+
+      // Get readable status label for success message
+      const statusLabels = {
+        open: 'Open',
+        intervened: 'Intervened',
+        on_hold: 'On Hold',
+        replied: 'Replied',
+        pending: 'Pending',
+        resolved: 'Resolved',
+        closed: 'Closed',
+      };
+      const statusLabel = statusLabels[selectedStatus] || selectedStatus;
+      showSuccess(`AI Assistant stopped. Chat status changed to "${statusLabel}".`, 'AI Stopped');
     } catch (error) {
       showError(error || 'Failed to stop AI Assistant. Please try again.');
     }

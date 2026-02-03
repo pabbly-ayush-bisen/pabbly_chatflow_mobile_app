@@ -351,7 +351,25 @@ export const toggleAiAssistant = createAsyncThunk(
       if (response.status === 'error') {
         return rejectWithValue(response.message || 'Failed to toggle AI Assistant');
       }
-      return { chatId, isActive, response };
+      return { chatId, assistantId, isActive, response };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// Fetch AI Assistants list
+// Returns list of active AI assistants for selection
+export const fetchAiAssistants = createAsyncThunk(
+  'inbox/fetchAiAssistants',
+  async (_, { rejectWithValue }) => {
+    try {
+      const url = endpoints.assistants.getAssistants;
+      const response = await callApi(url, httpMethods.GET, { status: 'active' });
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to fetch AI assistants');
+      }
+      return response;
     } catch (error) {
       return rejectWithValue(error.message);
     }
@@ -617,6 +635,10 @@ const initialState = {
   aiAssistantStatus: false,
   selectedAssistantId: null,
   chatStatus: null, // Current chat status: 'open', 'intervened', 'aiAssistant', etc.
+  // AI Assistants list (for selection)
+  aiAssistants: [],
+  aiAssistantsStatus: 'idle',
+  aiAssistantsError: null,
   // Templates and quick replies
   templates: [],
   templatesStatus: 'idle',
@@ -1300,16 +1322,34 @@ const inboxSlice = createSlice({
       .addCase(updateContactChat.fulfilled, (state, action) => {
         state.updateContactChatStatus = 'succeeded';
         const { id, status } = action.payload;
+        // Determine AI assistant status based on chat status
+        const isAiAssistantActive = status === 'aiAssistant';
         // Update chat status in state
         state.chatStatus = status;
+        // Update AI assistant status in state
+        state.aiAssistantStatus = isAiAssistantActive;
         // Update in chats list
         const chatIndex = state.chats.findIndex(chat => chat._id === id);
         if (chatIndex !== -1) {
-          state.chats[chatIndex] = { ...state.chats[chatIndex], status };
+          state.chats[chatIndex] = {
+            ...state.chats[chatIndex],
+            status,
+            aiAssistant: {
+              ...state.chats[chatIndex].aiAssistant,
+              isActive: isAiAssistantActive,
+            },
+          };
+          // Move chat to top of list after status update
+          const [updatedChat] = state.chats.splice(chatIndex, 1);
+          state.chats.unshift(updatedChat);
         }
         // Update current conversation
         if (state.currentConversation && state.currentConversation._id === id) {
           state.currentConversation.status = status;
+          state.currentConversation.aiAssistant = {
+            ...state.currentConversation.aiAssistant,
+            isActive: isAiAssistantActive,
+          };
         }
       })
       .addCase(updateContactChat.rejected, (state, action) => {
@@ -1325,30 +1365,64 @@ const inboxSlice = createSlice({
       })
       .addCase(toggleAiAssistant.fulfilled, (state, action) => {
         state.toggleAiAssistantStatus = 'succeeded';
-        const { chatId, isActive } = action.payload;
+        const { chatId, assistantId, isActive } = action.payload;
         state.aiAssistantStatus = isActive;
+        state.selectedAssistantId = isActive ? assistantId : null;
+        // Update chat status based on AI assistant toggle
+        if (isActive) {
+          state.chatStatus = 'aiAssistant';
+        }
         // Update AI assistant in current conversation
         if (state.currentConversation && state.currentConversation._id === chatId) {
           state.currentConversation.aiAssistant = {
             ...state.currentConversation.aiAssistant,
             isActive,
+            assistantId: isActive ? assistantId : null,
           };
+          if (isActive) {
+            state.currentConversation.status = 'aiAssistant';
+          }
         }
         // Update in chats list
         const chatIndex = state.chats.findIndex(chat => chat._id === chatId);
         if (chatIndex !== -1) {
           state.chats[chatIndex] = {
             ...state.chats[chatIndex],
+            status: isActive ? 'aiAssistant' : state.chats[chatIndex].status,
             aiAssistant: {
               ...state.chats[chatIndex].aiAssistant,
               isActive,
+              assistantId: isActive ? assistantId : null,
             },
           };
+          // Move chat to top of list
+          const [updatedChat] = state.chats.splice(chatIndex, 1);
+          state.chats.unshift(updatedChat);
         }
       })
       .addCase(toggleAiAssistant.rejected, (state, action) => {
         state.toggleAiAssistantStatus = 'failed';
         state.toggleAiAssistantError = action.payload;
+      });
+
+    // Fetch AI Assistants
+    builder
+      .addCase(fetchAiAssistants.pending, (state) => {
+        state.aiAssistantsStatus = 'loading';
+        state.aiAssistantsError = null;
+      })
+      .addCase(fetchAiAssistants.fulfilled, (state, action) => {
+        state.aiAssistantsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        // Filter to only active assistants
+        const assistants = data.assistants || data || [];
+        state.aiAssistants = Array.isArray(assistants)
+          ? assistants.filter(a => a.status === 'active')
+          : [];
+      })
+      .addCase(fetchAiAssistants.rejected, (state, action) => {
+        state.aiAssistantsStatus = 'failed';
+        state.aiAssistantsError = action.payload;
       });
 
     // Fetch Templates

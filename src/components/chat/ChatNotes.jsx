@@ -8,13 +8,13 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, chatColors } from '../../theme/colors';
+import { CustomDialog } from '../common';
 import {
   fetchChatNotes,
   addChatNote,
@@ -30,6 +30,9 @@ const ChatNotes = ({ visible, onClose, chatId }) => {
   const { user } = useSelector((state) => state.user);
 
   const [newNote, setNewNote] = useState('');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [noteToDelete, setNoteToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch notes when modal opens
   useEffect(() => {
@@ -55,25 +58,24 @@ const ChatNotes = ({ visible, onClose, chatId }) => {
 
   // Handle delete note
   const handleDeleteNote = useCallback((noteId) => {
-    Alert.alert(
-      'Delete Note',
-      'Are you sure you want to delete this note?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await dispatch(deleteChatNote({ chatId, noteId })).unwrap();
-            } catch (error) {
-              showError(error || 'Failed to delete note');
-            }
-          },
-        },
-      ]
-    );
-  }, [chatId, dispatch]);
+    setNoteToDelete(noteId);
+    setShowDeleteDialog(true);
+  }, []);
+
+  // Confirm delete note
+  const confirmDeleteNote = useCallback(async () => {
+    if (!noteToDelete) return;
+    setIsDeleting(true);
+    try {
+      await dispatch(deleteChatNote({ chatId, noteId: noteToDelete })).unwrap();
+      setShowDeleteDialog(false);
+      setNoteToDelete(null);
+    } catch (error) {
+      showError(error || 'Failed to delete note');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [chatId, noteToDelete, dispatch]);
 
   // Format date
   const formatDate = useCallback((dateString) => {
@@ -201,6 +203,34 @@ const ChatNotes = ({ visible, onClose, chatId }) => {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Delete Note Confirmation Dialog */}
+      <CustomDialog
+        visible={showDeleteDialog}
+        onDismiss={() => {
+          setShowDeleteDialog(false);
+          setNoteToDelete(null);
+        }}
+        icon="note-remove-outline"
+        iconColor={colors.error.main}
+        title="Delete Note"
+        message="Are you sure you want to delete this note? This action cannot be undone."
+        actions={[
+          {
+            label: 'Cancel',
+            onPress: () => {
+              setShowDeleteDialog(false);
+              setNoteToDelete(null);
+            },
+          },
+          {
+            label: 'Delete',
+            onPress: confirmDeleteNote,
+            destructive: true,
+            loading: isDeleting,
+          },
+        ]}
+      />
     </Modal>
   );
 };

@@ -8,7 +8,6 @@ import {
   Keyboard,
   Modal,
   Image,
-  Alert,
   Platform,
 } from 'react-native';
 import { Text } from 'react-native-paper';
@@ -22,6 +21,8 @@ import QuickRepliesDialog from './QuickRepliesDialog';
 import TemplatePickerDialog from './TemplatePickerDialog';
 import TemplatePreviewDialog from './TemplatePreviewDialog';
 import VoiceRecorder from './VoiceRecorder';
+import StopAiAssistantDialog from './StopAiAssistantDialog';
+import { CustomDialog } from '../common';
 import { MessageStatus, formatWhatsAppMessage, getTimeLeftDisplay } from '../../utils/messageHelpers';
 
 /**
@@ -73,6 +74,10 @@ const ChatInput = ({
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
+
+  // Confirmation dialog state
+  const [showInterveneDialog, setShowInterveneDialog] = useState(false);
+  const [showStopAiDialog, setShowStopAiDialog] = useState(false);
 
   // Refs
   const inputRef = useRef(null);
@@ -317,34 +322,24 @@ const ChatInput = ({
 
   // Handle intervene button press
   const handleIntervene = useCallback(() => {
-    Alert.alert(
-      'Intervene',
-      'This will disable AI replies and automation flow. Are you sure you want to take over this conversation?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Intervene',
-          onPress: () => onIntervene?.(),
-          style: 'default',
-        },
-      ]
-    );
+    setShowInterveneDialog(true);
+  }, []);
+
+  // Confirm intervene action
+  const confirmIntervene = useCallback(() => {
+    setShowInterveneDialog(false);
+    onIntervene?.();
   }, [onIntervene]);
 
   // Handle stop AI assistant
   const handleStopAi = useCallback(() => {
-    Alert.alert(
-      'Stop AI Assistant',
-      'Are you sure you want to stop the AI Assistant for this conversation?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Stop',
-          onPress: () => onStopAiAssistant?.(),
-          style: 'destructive',
-        },
-      ]
-    );
+    setShowStopAiDialog(true);
+  }, []);
+
+  // Confirm stop AI action with selected status
+  const confirmStopAi = useCallback((selectedStatus) => {
+    setShowStopAiDialog(false);
+    onStopAiAssistant?.(selectedStatus);
   }, [onStopAiAssistant]);
 
   // Toggle formatting
@@ -715,47 +710,79 @@ const ChatInput = ({
   // Render Stop AI Assistant button
   if (showStopAiButton) {
     return (
-      <View style={styles.container}>
-        <View style={styles.actionButtonContainer}>
-          <TouchableOpacity
-            style={[styles.actionButtonLarge, styles.stopAiButton]}
-            onPress={handleStopAi}
-            activeOpacity={0.7}
-          >
-            <Icon name="stop-circle" size={20} color={colors.error.main} />
-            <Text style={[styles.actionButtonText, { color: colors.error.main }]}>
-              Stop AI Assistant
-            </Text>
-          </TouchableOpacity>
+      <>
+        <View style={styles.container}>
+          <View style={styles.actionButtonContainer}>
+            <TouchableOpacity
+              style={[styles.actionButtonLarge, styles.stopAiButton]}
+              onPress={handleStopAi}
+              activeOpacity={0.7}
+            >
+              <Icon name="stop-circle" size={20} color={colors.error.main} />
+              <Text style={[styles.actionButtonText, { color: colors.error.main }]}>
+                Stop AI Assistant
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+
+        {/* Stop AI Assistant Dialog with Status Selection */}
+        <StopAiAssistantDialog
+          visible={showStopAiDialog}
+          onDismiss={() => setShowStopAiDialog(false)}
+          onConfirm={confirmStopAi}
+        />
+      </>
     );
   }
 
   // Render Intervene button
   if (showInterveneButton) {
     return (
-      <View style={styles.container}>
-        <View style={styles.actionButtonContainer}>
-          <Text style={styles.windowStatusText}>
-            {isActive ? `${getTimeLeftDisplay(hoursLeft)} - ` : ''}
-            Chat is being handled by automation
-          </Text>
-          <TouchableOpacity
-            style={[styles.actionButtonLarge, styles.interveneButton]}
-            onPress={handleIntervene}
-            activeOpacity={0.7}
-          >
-            <Icon name="account-voice" size={20} color={chatColors.primary} />
-            <Text style={[styles.actionButtonText, { color: chatColors.primary }]}>
-              Intervene
+      <>
+        <View style={styles.container}>
+          <View style={styles.actionButtonContainer}>
+            <Text style={styles.windowStatusText}>
+              {isActive ? `${getTimeLeftDisplay(hoursLeft)} - ` : ''}
+              Chat is being handled by automation
             </Text>
-          </TouchableOpacity>
-          <Text style={styles.interveneHint}>
-            Click to reply manually. AI and automation will be disabled.
-          </Text>
+            <TouchableOpacity
+              style={[styles.actionButtonLarge, styles.interveneButton]}
+              onPress={handleIntervene}
+              activeOpacity={0.7}
+            >
+              <Icon name="account-voice" size={20} color={chatColors.primary} />
+              <Text style={[styles.actionButtonText, { color: chatColors.primary }]}>
+                Intervene
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.interveneHint}>
+              Click to reply manually. AI and automation will be disabled.
+            </Text>
+          </View>
         </View>
-      </View>
+
+        {/* Intervene Confirmation Dialog */}
+        <CustomDialog
+          visible={showInterveneDialog}
+          onDismiss={() => setShowInterveneDialog(false)}
+          icon="account-voice"
+          iconColor={chatColors.primary}
+          title="Take Over Conversation"
+          message="This will disable AI replies and automation flow. Are you sure you want to manually handle this conversation?"
+          actions={[
+            {
+              label: 'Cancel',
+              onPress: () => setShowInterveneDialog(false),
+            },
+            {
+              label: 'Intervene',
+              onPress: confirmIntervene,
+              primary: true,
+            },
+          ]}
+        />
+      </>
     );
   }
 
@@ -1078,6 +1105,34 @@ const ChatInput = ({
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Intervene Confirmation Dialog */}
+      <CustomDialog
+        visible={showInterveneDialog}
+        onDismiss={() => setShowInterveneDialog(false)}
+        icon="account-voice"
+        iconColor={chatColors.primary}
+        title="Take Over Conversation"
+        message="This will disable AI replies and automation flow. Are you sure you want to manually handle this conversation?"
+        actions={[
+          {
+            label: 'Cancel',
+            onPress: () => setShowInterveneDialog(false),
+          },
+          {
+            label: 'Intervene',
+            onPress: confirmIntervene,
+            primary: true,
+          },
+        ]}
+      />
+
+      {/* Stop AI Assistant Dialog with Status Selection */}
+      <StopAiAssistantDialog
+        visible={showStopAiDialog}
+        onDismiss={() => setShowStopAiDialog(false)}
+        onConfirm={confirmStopAi}
+      />
     </View>
   );
 };
