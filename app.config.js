@@ -47,6 +47,7 @@ export default ({ config }) => {
     },
     android: {
       package: 'com.pabbly.chatflow',
+      googleServicesFile: './google-services.json',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',

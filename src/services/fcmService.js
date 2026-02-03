@@ -9,8 +9,11 @@
 
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Debug flag - set to true to see alerts during FCM registration
+const FCM_DEBUG = true;
 
 // Notification server URL - change this to your deployed notification server URL
 const NOTIFICATION_SERVER_URL = __DEV__
@@ -91,6 +94,9 @@ export const registerFCMToken = async (retryCount = 0) => {
     const fcmToken = await getDevicePushToken();
     if (!fcmToken) {
       console.log('[FCM] No token available');
+      if (FCM_DEBUG) {
+        Alert.alert('FCM Error', 'Could not get device push token. Check notification permissions.');
+      }
       return false;
     }
 
@@ -104,7 +110,10 @@ export const registerFCMToken = async (retryCount = 0) => {
       settingId = await AsyncStorage.getItem('settingId');
     }
 
-    if (!user?._id || !settingId) {
+    // Use email as user identifier (backend doesn't return _id)
+    const userId = user?._id || user?.id || user?.email || null;
+
+    if (!userId || !settingId) {
       console.log(`[FCM] Missing user or settingId (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
 
       // Retry with delay if we haven't exceeded max retries
@@ -131,17 +140,24 @@ export const registerFCMToken = async (retryCount = 0) => {
     }
 
     // Check if we already sent this token for this user/setting combo
-    const tokenSentKey = `${FCM_TOKEN_SENT_KEY}_${user._id}_${settingId}`;
+    const tokenSentKey = `${FCM_TOKEN_SENT_KEY}_${userId}_${settingId}`;
     const previousToken = await AsyncStorage.getItem(tokenSentKey);
 
     if (previousToken === fcmToken) {
       console.log('[FCM] Token already registered, skipping');
-      return true;
+      if (FCM_DEBUG) {
+        Alert.alert('FCM Skipped', 'Token already registered locally. Clearing cache and retrying...');
+        // Clear local cache to force re-registration
+        await AsyncStorage.removeItem(tokenSentKey);
+        // Don't return - continue to register
+      } else {
+        return true;
+      }
     }
 
     // Send token to notification server
     console.log('[FCM] Registering token with notification server...');
-    console.log(`[FCM] User: ${user._id}, Setting: ${settingId}`);
+    console.log(`[FCM] User: ${userId}, Setting: ${settingId}`);
 
     const response = await fetch(`${NOTIFICATION_SERVER_URL}/api/register-token`, {
       method: 'POST',
@@ -149,7 +165,7 @@ export const registerFCMToken = async (retryCount = 0) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        userId: user._id,
+        userId: userId,
         settingId: settingId,
         fcmToken: fcmToken,
         platform: Platform.OS,
@@ -162,13 +178,22 @@ export const registerFCMToken = async (retryCount = 0) => {
     if (result.success) {
       console.log('[FCM] Token registered successfully!');
       await AsyncStorage.setItem(tokenSentKey, fcmToken);
+      if (FCM_DEBUG) {
+        Alert.alert('FCM Success', 'Token registered successfully!');
+      }
       return true;
     } else {
       console.error('[FCM] Failed to register token:', result.error);
+      if (FCM_DEBUG) {
+        Alert.alert('FCM Failed', `Registration failed: ${result.error || 'Unknown error'}`);
+      }
       return false;
     }
   } catch (error) {
     console.error('[FCM] Error registering FCM token:', error);
+    if (FCM_DEBUG) {
+      Alert.alert('FCM Error', `Network error: ${error.message}`);
+    }
     return false;
   }
 };
@@ -178,11 +203,13 @@ export const registerFCMToken = async (retryCount = 0) => {
  */
 export const forceRegisterFCMToken = async () => {
   console.log('[FCM] Force registering token...');
+
   // Clear any pending retry and start fresh
   if (retryTimeout) {
     clearTimeout(retryTimeout);
     retryTimeout = null;
   }
+
   return registerFCMToken(0);
 };
 
