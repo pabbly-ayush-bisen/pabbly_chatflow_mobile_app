@@ -743,12 +743,18 @@ const userSlice = createSlice({
           // IMPORTANT: If we have valid user data from checkSession but no token was stored,
           // create a session marker so the app knows user is logged in on restart.
           // The actual session is cookie-based, but we need something in AsyncStorage.
+          // Chain FCM registration after session is created to avoid race condition
           sessionManager.createSession({
             token: 'session_cookie_auth', // Marker to indicate cookie-based session
             user: userData,
             settingId: userData.settingId,
             tokenExpiresAt: action.payload?.data?.tokenExpiresAt,
-          }).catch(() => {});
+          }).then(() => {
+            // Register FCM token AFTER user data is stored in AsyncStorage
+            return forceRegisterFCMToken();
+          }).catch(err => {
+            console.log('[UserSlice] Session/FCM error (non-blocking):', err);
+          });
         }
 
         // Set settingId and other data if user has a settingId
@@ -760,11 +766,6 @@ const userSlice = createSlice({
           // Store under both keys for compatibility with socketService
           AsyncStorage.setItem('settingId', userSettingId);
           AsyncStorage.setItem('@pabbly_chatflow_settingId', userSettingId);
-
-          // Register FCM token for push notifications now that settingId is available
-          forceRegisterFCMToken().catch(err => {
-            console.log('[UserSlice] FCM registration error (non-blocking):', err);
-          });
 
           // Store timezone
           if (action.payload?.data?.timeZone) {
