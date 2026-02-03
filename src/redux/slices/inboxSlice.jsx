@@ -435,6 +435,38 @@ export const fetchMoreChats = createAsyncThunk(
   }
 );
 
+// Search chats via API (triggered on Enter key press)
+// Matches web app behavior: calls chats/search endpoint with search query
+export const searchChats = createAsyncThunk(
+  'inbox/searchChats',
+  async ({ search, lastChatUpdatedAt }, { rejectWithValue }) => {
+    try {
+      const filters = {
+        search: search?.trim() || undefined,
+        lastChatUpdatedAt: lastChatUpdatedAt || undefined,
+      };
+
+      const response = await callApi(endpoints.inbox.searchChats, httpMethods.GET, filters);
+
+      if (response.status === 'error') {
+        return rejectWithValue(response.message || 'Failed to search chats');
+      }
+
+      // Extract chats from response
+      const chats = response.data?.chats || response.chats || response._raw?.chats || [];
+      const hasMoreChats = response.data?.hasMoreChats || response.hasMoreChats || response._raw?.hasMoreChats || false;
+
+      return {
+        chats,
+        hasMoreChats,
+        search,
+      };
+    } catch (error) {
+      return rejectWithValue(error.message || 'Search failed');
+    }
+  }
+);
+
 // Fetch chat notes
 export const fetchChatNotes = createAsyncThunk(
   'inbox/fetchChatNotes',
@@ -612,6 +644,14 @@ const initialState = {
   teamMembersStatus: 'idle',
   // Flag to trigger chat list refresh (e.g., after creating a new chat)
   shouldRefreshChats: false,
+  // Search state
+  searchQuery: '',
+  searchResults: [],
+  searchStatus: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+  searchError: null,
+  isSearchActive: false,
+  searchHasMore: false,
+  searchLastChatDate: null,
 };
 
 // Slice
@@ -1018,6 +1058,28 @@ const inboxSlice = createSlice({
       state.teamMembersStatus = 'idle';
       state.error = null;
       state.conversationError = null;
+      // Clear search state
+      state.searchQuery = '';
+      state.searchResults = [];
+      state.searchStatus = 'idle';
+      state.searchError = null;
+      state.isSearchActive = false;
+      state.searchHasMore = false;
+      state.searchLastChatDate = null;
+    },
+    // Set search query (for controlled input)
+    setSearchQuery: (state, action) => {
+      state.searchQuery = action.payload;
+    },
+    // Clear search and return to normal chat list
+    clearSearch: (state) => {
+      state.searchQuery = '';
+      state.searchResults = [];
+      state.searchStatus = 'idle';
+      state.searchError = null;
+      state.isSearchActive = false;
+      state.searchHasMore = false;
+      state.searchLastChatDate = null;
     },
   },
   extraReducers: (builder) => {
@@ -1456,6 +1518,32 @@ const inboxSlice = createSlice({
           state.currentConversation.hideNotification = hideNotification;
         }
       });
+
+    // Search Chats
+    builder
+      .addCase(searchChats.pending, (state) => {
+        state.searchStatus = 'loading';
+        state.searchError = null;
+        state.isSearchActive = true;
+      })
+      .addCase(searchChats.fulfilled, (state, action) => {
+        state.searchStatus = 'succeeded';
+        const { chats, hasMoreChats, search } = action.payload;
+        // Normalize chats for consistent display
+        state.searchResults = (chats || []).map(normalizeChatForList);
+        state.searchHasMore = hasMoreChats;
+        state.searchQuery = search || '';
+        // Store last chat date for pagination
+        if (chats && chats.length > 0) {
+          const lastChat = chats[chats.length - 1];
+          state.searchLastChatDate = lastChat.updatedAt || lastChat.createdAt || null;
+        }
+      })
+      .addCase(searchChats.rejected, (state, action) => {
+        state.searchStatus = 'failed';
+        state.searchError = action.payload;
+        state.searchResults = [];
+      });
   },
 });
 
@@ -1500,6 +1588,9 @@ export const {
   clearInboxData,
   // Trigger chat refresh
   setShouldRefreshChats,
+  // Search actions
+  setSearchQuery,
+  clearSearch,
 } = inboxSlice.actions;
 
 export default inboxSlice.reducer;

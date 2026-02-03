@@ -1171,9 +1171,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     color: colors.text.primary,
+    textAlign: 'left',
   },
   messageTextOutgoing: {
-    textAlign: 'right',
+    textAlign: 'left',
   },
   messageTextIncoming: {
     textAlign: 'left',
@@ -1183,7 +1184,7 @@ const styles = StyleSheet.create({
     lineHeight: 36,
   },
   emojiTextOutgoing: {
-    textAlign: 'right',
+    textAlign: 'left',
   },
   emojiTextIncoming: {
     textAlign: 'left',
