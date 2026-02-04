@@ -17,6 +17,20 @@ import { sessionManager } from './src/services/SessionManager';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import toastConfig from './src/components/ToastConfig';
 
+// OneSignal Push Notifications (conditionally loaded - skipped in Expo Go)
+import {
+  initializeOneSignal,
+  requestNotificationPermission,
+  setupNotificationClickHandler,
+  setupForegroundNotificationHandler,
+  setupSubscriptionListener,
+  isOneSignalAvailable,
+} from './src/services/oneSignalService';
+import { navigate } from './src/navigation/navigationUtils';
+
+// Initialize OneSignal (will skip automatically if running in Expo Go)
+initializeOneSignal();
+
 // OTA Update configuration
 // autoApply: true enables automatic refresh when updates are available
 const UPDATE_CONFIG = {
@@ -39,11 +53,43 @@ function AppContent() {
         // Simple check to ensure the runtime is initialized
         setIsRuntimeReady(true);
       } catch (error) {
-        console.warn('[App] Runtime not ready, retrying...', error);
         setTimeout(checkRuntime, 100);
       }
     };
     checkRuntime();
+  }, []);
+
+  // Setup OneSignal notification handlers (skipped in Expo Go)
+  useEffect(() => {
+    if (!isOneSignalAvailable()) {
+      return;
+    }
+
+    // Request notification permission
+    requestNotificationPermission();
+
+    // Handle notification clicks (when user taps notification)
+    const removeClickHandler = setupNotificationClickHandler((data) => {
+      // Navigate to chat when notification is tapped
+      if (data?.chatId) {
+        navigate('ChatDetails', { chatId: data.chatId });
+      }
+    });
+
+    // Handle foreground notifications
+    const removeForegroundHandler = setupForegroundNotificationHandler((notification) => {
+      // Notification received in foreground
+    });
+
+    // Listen for subscription changes (token refresh)
+    const removeSubscriptionListener = setupSubscriptionListener();
+
+    // Cleanup on unmount
+    return () => {
+      if (removeClickHandler) removeClickHandler();
+      if (removeForegroundHandler) removeForegroundHandler();
+      if (removeSubscriptionListener) removeSubscriptionListener();
+    };
   }, []);
 
   useEffect(() => {

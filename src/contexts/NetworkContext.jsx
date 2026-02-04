@@ -53,7 +53,6 @@ export function NetworkProvider({ children }) {
 
       // Network went offline
       if (wasConnected && !isNowConnected) {
-        console.log('[NetworkContext] Network went offline');
         if (onNetworkChange) {
           onNetworkChange({ type: 'offline', state });
         }
@@ -61,7 +60,6 @@ export function NetworkProvider({ children }) {
 
       // Network came back online
       if (!wasConnected && isNowConnected) {
-        console.log('[NetworkContext] Network came back online');
         if (onNetworkChange) {
           onNetworkChange({ type: 'online', state });
         }
@@ -112,7 +110,6 @@ export function NetworkProvider({ children }) {
       handleNetworkStateChange(state);
       return state;
     } catch (error) {
-      console.error('[NetworkContext] Error refreshing network state:', error);
       return null;
     }
   }, [handleNetworkStateChange]);

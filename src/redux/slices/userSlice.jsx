@@ -343,25 +343,10 @@ export const signInDirect = createAsyncThunk(
   'user/signInDirect',
   async ({ email, password }, { dispatch, rejectWithValue }) => {
     try {
-      console.log('[signInDirect] ====== LOGIN START ======');
-      console.log('[signInDirect] Email:', email);
-      console.log('[signInDirect] API URL:', APP_CONFIG.apiUrl);
-      console.log('[signInDirect] Endpoint:', endpoints.auth.signIn);
-
       // Direct API call to auth/signin endpoint (same as web app)
       const response = await callApi(endpoints.auth.signIn, httpMethods.POST, { email, password });
 
-      console.log('[signInDirect] ====== RESPONSE ======');
-      console.log('[signInDirect] Full Response:', JSON.stringify(response, null, 2));
-      console.log('[signInDirect] Response type:', typeof response);
-      console.log('[signInDirect] Response keys:', Object.keys(response || {}));
-
-      if (response.data) {
-        console.log('[signInDirect] response.data keys:', Object.keys(response.data || {}));
-      }
-
       if (response.status === 'error') {
-        console.log('[signInDirect] Error status:', response.message);
         return rejectWithValue(response.message || 'Invalid email or password');
       }
 
@@ -372,7 +357,6 @@ export const signInDirect = createAsyncThunk(
       // Check if response.data is the token itself (string starting with 'eyJ')
       if (typeof response.data === 'string' && response.data.startsWith('eyJ')) {
         accessToken = response.data;
-        console.log('[signInDirect] Token found directly in response.data (JWT string)');
       } else {
         // Try other possible locations
         accessToken = response.data?.accessToken ||
@@ -383,10 +367,7 @@ export const signInDirect = createAsyncThunk(
                       response.jwt;
       }
 
-      console.log('[signInDirect] Token found:', accessToken ? 'YES' : 'NO');
-
       if (!accessToken) {
-        console.log('[signInDirect] ERROR: Token not found!');
         return rejectWithValue('Access token not found in response');
       }
 
@@ -404,8 +385,6 @@ export const signInDirect = createAsyncThunk(
 
       return { status: 'success', accessToken };
     } catch (error) {
-      console.error('[signInDirect] Error:', error);
-
       if (error.response?.data?.message) {
         return rejectWithValue(error.response.data.message);
       }
@@ -551,7 +530,6 @@ export const logout = createAsyncThunk(
         removeOneSignalExternalUserId();
       } catch (oneSignalError) {
         // Ignore OneSignal errors during logout
-        console.log('[Logout] OneSignal cleanup error (non-blocking):', oneSignalError);
       }
 
       const url = endpoints.auth.logout;
@@ -870,8 +848,8 @@ const userSlice = createSlice({
             user: userData,
             settingId: userData.settingId,
             tokenExpiresAt: action.payload?.data?.tokenExpiresAt,
-          }).catch(err => {
-            console.log('[UserSlice] Session error (non-blocking):', err);
+          }).catch(() => {
+            // Session error (non-blocking)
           });
         }
 
@@ -933,11 +911,15 @@ const userSlice = createSlice({
           state.authenticated = true;
 
           // Register OneSignal player ID after successful authentication
-          const userId = action.payload?.data?.user?._id || action.payload?.data?.user?.id;
-          const userSettingIdForOneSignal = action.payload?.data?.user?.settingId;
-          if (userId && userSettingIdForOneSignal) {
+          const userObj = action.payload?.data?.user;
+          const userSettingId = userObj?.settingId;
+          // Use settingId as external user ID - it's unique per workspace
+          // and ideal for targeting push notifications to specific workspaces
+          const userId = userObj?._id || userObj?.id || userObj?.userId || userSettingId;
+
+          if (userId && userSettingId) {
             // Non-blocking call to register device for push notifications
-            setOneSignalExternalUserId(userId, userSettingIdForOneSignal);
+            setOneSignalExternalUserId(userId, userSettingId);
           }
         }
 

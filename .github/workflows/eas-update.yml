@@ -70,13 +70,13 @@ jobs:
             echo "channel=${{ github.event.inputs.channel }}" >> $GITHUB_OUTPUT
             echo "message=${{ github.event.inputs.message }}" >> $GITHUB_OUTPUT
           else
-            # PR merged to master/main = production channel
+            # PR merged to master/main = preview channel
             TARGET_BRANCH="${{ github.event.pull_request.base.ref }}"
             PR_TITLE="${{ github.event.pull_request.title }}"
 
             case $TARGET_BRANCH in
               main|master)
-                echo "channel=production" >> $GITHUB_OUTPUT
+                echo "channel=preview" >> $GITHUB_OUTPUT
                 ;;
               preview)
                 echo "channel=preview" >> $GITHUB_OUTPUT

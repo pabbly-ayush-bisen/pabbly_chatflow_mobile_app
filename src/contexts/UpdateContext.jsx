@@ -83,15 +83,12 @@ export function UpdateProvider({ children, config = {} }) {
       setShowOverlay(true);
       setUpdateMessage('Preparing to refresh...');
 
-      console.log('[UpdateContext] Applying update and reloading...');
-
       // Small delay to show the overlay message
       await new Promise(resolve => setTimeout(resolve, settings.applyDelay));
 
       setUpdateMessage('Refreshing app...');
       await Updates.reloadAsync();
     } catch (error) {
-      console.error('[UpdateContext] Error applying update:', error);
       setUpdateError(error.message);
       setShowOverlay(false);
       setIsApplying(false);
@@ -107,12 +104,9 @@ export function UpdateProvider({ children, config = {} }) {
       setShowOverlay(true);
       setUpdateMessage('A new update is available. Downloading...');
 
-      console.log('[UpdateContext] Downloading update...');
-
       const result = await Updates.fetchUpdateAsync();
       setDownloadedUpdate(result);
 
-      console.log('[UpdateContext] Update downloaded successfully');
       setUpdateMessage('Download complete!');
 
       if (settings.autoApply) {
@@ -125,7 +119,6 @@ export function UpdateProvider({ children, config = {} }) {
 
       return result;
     } catch (error) {
-      console.error('[UpdateContext] Error downloading update:', error);
       setUpdateError(error.message);
       setShowOverlay(false);
       return null;
@@ -137,15 +130,11 @@ export function UpdateProvider({ children, config = {} }) {
   // Check for updates
   const checkForUpdate = useCallback(async (silent = false) => {
     if (!isUpdateSupported) {
-      if (!silent) {
-        console.log('[UpdateContext] Updates not supported in development');
-      }
       return null;
     }
 
     // Respect minimum check interval
     if (lastChecked && Date.now() - lastChecked < settings.minCheckInterval) {
-      console.log('[UpdateContext] Skipping check - too soon since last check');
       return null;
     }
 
@@ -153,26 +142,20 @@ export function UpdateProvider({ children, config = {} }) {
       setIsChecking(true);
       setUpdateError(null);
 
-      console.log('[UpdateContext] Checking for updates...');
       const update = await Updates.checkForUpdateAsync();
 
       setLastChecked(Date.now());
       setIsUpdateAvailable(update.isAvailable);
 
       if (update.isAvailable) {
-        console.log('[UpdateContext] Update available!');
-
         if (settings.autoDownload) {
           // Auto-download and apply the update
           await downloadUpdate();
         }
-      } else {
-        console.log('[UpdateContext] App is up to date');
       }
 
       return update;
     } catch (error) {
-      console.error('[UpdateContext] Error checking for updates:', error);
       setUpdateError(error.message);
       return null;
     } finally {
