@@ -23,7 +23,7 @@
         "NSPhotoLibraryAddUsageDescription": "Pabbly Chatflow needs permission to save photos and videos to your library."
       },
       "associatedDomains": [
-        "applinks:chatflow.pabbly.com"
+        "applinks:testchatflow.pabbly.com"
       ],
       "config": {
         "googleSignIn": {
@@ -55,7 +55,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "chatflow.pabbly.com",
+              "host": "testchatflow.pabbly.com",
               "pathPrefix": "/api/auth/tauth"
             }
           ],
@@ -83,21 +83,35 @@
       ],
       "expo-sqlite",
       "expo-web-browser",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production"
+        }
+      ]
     ],
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/b49e424a-9ca4-4577-a11a-0b5161d62953"
+      "fallbackToCacheTimeout": 0
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "extra": {
-      "eas": {
-        "projectId": "b49e424a-9ca4-4577-a11a-0b5161d62953"
-      }
-    }
+      "API_URL": "https://testchatflow.pabbly.com/api",
+      "SOCKET_URL": "https://testchatflow.pabbly.com/",
+      "PABBLY_ACCOUNTS_URL": "https://accounts.pabbly.com",
+      "PABBLY_ACCOUNTS_BACKEND_URL": "https://accounts.pabbly.com/backend",
+      "PABBLY_PROJECT": "pcf",
+      "APP_ENV": "development",
+      "DEBUG_MODE": "false",
+      "GOOGLE_WEB_CLIENT_ID": "848504831060-uen6psucq9c3ovguk3utheiidi4hpotc.apps.googleusercontent.com",
+      "GOOGLE_ANDROID_CLIENT_ID": "848504831060-p68o8ogq2lrfg7kg2tk42oosqfjnbodi.apps.googleusercontent.com",
+      "GOOGLE_IOS_CLIENT_ID": "848504831060-dt3ve1h090q2979md9eoqq8epc1rd7tr.apps.googleusercontent.com",
+      "EXPO_USERNAME": "aakash-bhelkar-pabbly"
+    },
+    "owner": "aakash-bhelkar-pabbly"
   }
 }

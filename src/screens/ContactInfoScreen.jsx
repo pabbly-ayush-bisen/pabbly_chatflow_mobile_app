@@ -21,11 +21,23 @@ import { colors, chatColors, getAvatarColor } from '../theme/colors';
 import { format, formatDistanceToNow } from 'date-fns';
 import { updateContactChat, setChatStatus, updateChatInList } from '../redux/slices/inboxSlice';
 import { EnableAiAssistantDialog } from '../components/chat';
-import { updateContact } from '../redux/slices/contactSlice';
+import { updateContact, deleteContact } from '../redux/slices/contactSlice';
 import { getSettings } from '../redux/slices/settingsSlice';
+import { getOrderHistories, clearOrderHistories } from '../redux/slices/orderSlice';
 import { showSuccess, showError } from '../utils/toast';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Responsive check for smaller screens
+const isSmallScreen = SCREEN_WIDTH < 360;
+const isLargeScreen = SCREEN_WIDTH > 400;
+
+// Responsive sizing helper
+const getResponsiveSize = (small, normal, large) => {
+  if (isSmallScreen) return small;
+  if (isLargeScreen) return large;
+  return normal;
+};
 
 // Tab configuration
 const TABS = [
@@ -67,6 +79,26 @@ const ContactInfoScreen = ({ route, navigation }) => {
   // AI Assistant selection dialog state
   const [showAiAssistantDialog, setShowAiAssistantDialog] = useState(false);
 
+  // Block Contact dialog state
+  const [showBlockDialog, setShowBlockDialog] = useState(false);
+  const [isBlockingContact, setIsBlockingContact] = useState(false);
+  const [localIncomingBlocked, setLocalIncomingBlocked] = useState(incomingBlocked);
+
+  // Opt-in status state
+  const [showOptInPicker, setShowOptInPicker] = useState(false);
+  const [localOptIn, setLocalOptIn] = useState(optInValue);
+  const [isUpdatingOptIn, setIsUpdatingOptIn] = useState(false);
+
+  // Delete Contact dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeletingContact, setIsDeletingContact] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteConfirmError, setDeleteConfirmError] = useState(false);
+
+  // Invoice dialog state
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+
   // Chat owner state
   const [showOwnerPicker, setShowOwnerPicker] = useState(false);
   const [chatOwner, setChatOwner] = useState(chat?.assignedToMember || null);
@@ -79,39 +111,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const { settings } = useSelector((state) => state.settings);
   const teamMembers = settings?.teamMembers?.items || [];
 
-  // Mock orders data - In real app, this would come from API/Redux
-  const [orders] = useState([
-    {
-      _id: '1',
-      reference_id: 'ORD-2024-001',
-      status: 'delivered',
-      payment_status: 'paid',
-      total: 2499.00,
-      currency: 'INR',
-      items_count: 3,
-      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      _id: '2',
-      reference_id: 'ORD-2024-002',
-      status: 'processing',
-      payment_status: 'pending',
-      total: 899.00,
-      currency: 'INR',
-      items_count: 1,
-      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      _id: '3',
-      reference_id: 'ORD-2024-003',
-      status: 'cancelled',
-      payment_status: 'refunded',
-      total: 1599.00,
-      currency: 'INR',
-      items_count: 2,
-      created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ]);
+  // Get order history from Redux (with safe fallback)
+  const orderState = useSelector((state) => state.order) || {};
+  const { orderHistories = [], orderHistoryStatus = 'idle', totalOrderHistory = 0 } = orderState;
+  const orders = orderHistories || [];
 
   // Get contact data from various sources
   const contactData = contact || chat?.contact || {};
@@ -152,6 +155,34 @@ const ContactInfoScreen = ({ route, navigation }) => {
       dispatch(getSettings('teamMembers'));
     }
   }, [chat?.assignedToMember, settings?.teamMembers, dispatch]);
+
+  // Sync local incoming blocked state
+  useEffect(() => {
+    setLocalIncomingBlocked(incomingBlocked);
+  }, [incomingBlocked]);
+
+  // Sync local opt-in state
+  useEffect(() => {
+    setLocalOptIn(optInValue);
+  }, [optInValue]);
+
+  // Fetch order histories for this chat/contact
+  useEffect(() => {
+    const contactId = contactData._id || contact?._id;
+    if (chatId || contactId) {
+      dispatch(getOrderHistories({
+        chatId: chatId,
+        contactId: contactId,
+        limit: 100,
+        page: 0,
+      }));
+    }
+
+    // Cleanup on unmount
+    return () => {
+      dispatch(clearOrderHistories());
+    };
+  }, [chatId, contactData._id, contact?._id, dispatch]);
 
   // Handle chat owner change
   const handleOwnerChange = useCallback(async (member) => {
@@ -347,9 +378,144 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    // TODO: Refresh contact data and orders
-    setTimeout(() => setIsRefreshing(false), 1000);
-  }, []);
+    try {
+      const contactId = contactData._id || contact?._id;
+      if (chatId || contactId) {
+        await dispatch(getOrderHistories({
+          chatId: chatId,
+          contactId: contactId,
+          limit: 100,
+          page: 0,
+        })).unwrap();
+      }
+    } catch (error) {
+      // Silently handle refresh errors
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [chatId, contactData._id, contact?._id, dispatch]);
+
+  // Handle block/unblock contact
+  const handleToggleBlock = useCallback(async (shouldBlock) => {
+    const contactId = contactData._id || contact?._id;
+    if (!contactId) {
+      showError('Contact ID not found');
+      return;
+    }
+
+    setIsBlockingContact(true);
+    try {
+      const result = await dispatch(updateContact({
+        _id: contactId,
+        bodyData: {
+          updateData: {
+            incomingBlocked: shouldBlock,
+          },
+        },
+      })).unwrap();
+
+      if (result.status === 'success' || result.data) {
+        setLocalIncomingBlocked(shouldBlock);
+        // Update the chat in the list
+        if (chatId) {
+          dispatch(updateChatInList({
+            _id: chatId,
+            contact: {
+              ...contactData,
+              incomingBlocked: shouldBlock,
+            },
+          }));
+        }
+        showSuccess(shouldBlock ? 'Contact blocked successfully' : 'Contact unblocked successfully');
+      } else {
+        showError(result.message || 'Failed to update contact');
+      }
+    } catch (error) {
+      showError(error?.message || error || 'Failed to update contact');
+    } finally {
+      setIsBlockingContact(false);
+      setShowBlockDialog(false);
+    }
+  }, [contactData, contact, chatId, dispatch]);
+
+  // Handle opt-in status change
+  const handleOptInChange = useCallback(async (newOptInValue) => {
+    const contactId = contactData._id || contact?._id;
+    if (!contactId) {
+      showError('Contact ID not found');
+      return;
+    }
+
+    setIsUpdatingOptIn(true);
+    try {
+      const result = await dispatch(updateContact({
+        _id: contactId,
+        bodyData: {
+          updateData: {
+            optin: newOptInValue,
+          },
+        },
+      })).unwrap();
+
+      if (result.status === 'success' || result.data) {
+        setLocalOptIn(newOptInValue);
+        // Update the chat in the list
+        if (chatId) {
+          dispatch(updateChatInList({
+            _id: chatId,
+            contact: {
+              ...contactData,
+              optin: newOptInValue,
+            },
+          }));
+        }
+        showSuccess(newOptInValue ? 'Contact opted in successfully' : 'Contact opted out successfully');
+      } else {
+        showError(result.message || 'Failed to update opt-in status');
+      }
+    } catch (error) {
+      showError(error?.message || error || 'Failed to update opt-in status');
+    } finally {
+      setIsUpdatingOptIn(false);
+      setShowOptInPicker(false);
+    }
+  }, [contactData, contact, chatId, dispatch]);
+
+  // Handle delete contact
+  const handleDeleteContact = useCallback(async () => {
+    if (deleteConfirmText.trim() !== 'DELETE') {
+      setDeleteConfirmError(true);
+      return;
+    }
+
+    const contactId = contactData._id || contact?._id;
+    if (!contactId) {
+      showError('Contact ID not found');
+      return;
+    }
+
+    setDeleteConfirmError(false);
+    setIsDeletingContact(true);
+    try {
+      const result = await dispatch(deleteContact({
+        ids: [contactId],
+      })).unwrap();
+
+      if (result.status === 'success') {
+        showSuccess(result.message || 'Contact deleted successfully');
+        // Navigate back after deletion
+        navigation.goBack();
+      } else {
+        showError(result.message || 'Failed to delete contact');
+      }
+    } catch (error) {
+      showError(error?.message || error || 'Failed to delete contact');
+    } finally {
+      setIsDeletingContact(false);
+      setShowDeleteDialog(false);
+      setDeleteConfirmText('');
+    }
+  }, [deleteConfirmText, contactData, contact, dispatch, navigation]);
 
   const handleCall = useCallback(() => {
     if (contactPhoneNumber) {
@@ -432,8 +598,8 @@ const ContactInfoScreen = ({ route, navigation }) => {
     }
   };
 
-  const optInConfig = getOptInStatusConfig(optInValue);
-  const incomingBlockedConfig = getIncomingBlockedConfig(incomingBlocked);
+  const optInConfig = getOptInStatusConfig(localOptIn);
+  const incomingBlockedConfig = getIncomingBlockedConfig(localIncomingBlocked);
 
   // Header opacity animation
   const headerOpacity = scrollY.interpolate({
@@ -467,83 +633,111 @@ const ContactInfoScreen = ({ route, navigation }) => {
   // Render Overview Tab
   const renderOverviewTab = () => (
     <View style={styles.tabContent}>
-      {/* Contact Info Card */}
+      {/* Contact Details Card - Read-only information */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
-          <Icon name="information-outline" size={20} color={chatColors.primary} />
-          <Text style={styles.sectionTitle}>Contact Information</Text>
+          <Icon name="account-details-outline" size={20} color={chatColors.primary} />
+          <Text style={styles.sectionTitle}>Contact Details</Text>
         </View>
 
         <View style={styles.infoList}>
           {contactPhoneNumber && (
-            <View style={styles.infoItem}>
-              <View style={styles.infoIconContainer}>
-                <Icon name="phone-outline" size={18} color={colors.grey[500]} />
+            <View style={styles.infoItemCompact}>
+              <View style={styles.infoIconSmall}>
+                <Icon name="phone-outline" size={16} color={colors.grey[500]} />
               </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Phone</Text>
-                <Text style={styles.infoValue}>{contactPhoneNumber}</Text>
+              <View style={styles.infoContentCompact}>
+                <Text style={styles.infoLabelSmall}>Phone</Text>
+                <Text style={styles.infoValueCompact} numberOfLines={1}>{contactPhoneNumber}</Text>
               </View>
-              <TouchableOpacity onPress={() => {/* Copy to clipboard */}}>
-                <Icon name="content-copy" size={18} color={colors.grey[400]} />
+              <TouchableOpacity
+                style={styles.copyButton}
+                onPress={() => {/* Copy to clipboard */}}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Icon name="content-copy" size={16} color={colors.grey[400]} />
               </TouchableOpacity>
             </View>
           )}
 
           {contactEmail && (
-            <View style={styles.infoItem}>
-              <View style={styles.infoIconContainer}>
-                <Icon name="email-outline" size={18} color={colors.grey[500]} />
+            <View style={styles.infoItemCompact}>
+              <View style={styles.infoIconSmall}>
+                <Icon name="email-outline" size={16} color={colors.grey[500]} />
               </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Email</Text>
-                <Text style={styles.infoValue}>{contactEmail}</Text>
+              <View style={styles.infoContentCompact}>
+                <Text style={styles.infoLabelSmall}>Email</Text>
+                <Text style={styles.infoValueCompact} numberOfLines={1}>{contactEmail}</Text>
               </View>
-              <TouchableOpacity onPress={() => {/* Copy to clipboard */}}>
-                <Icon name="content-copy" size={18} color={colors.grey[400]} />
+              <TouchableOpacity
+                style={styles.copyButton}
+                onPress={() => {/* Copy to clipboard */}}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Icon name="content-copy" size={16} color={colors.grey[400]} />
               </TouchableOpacity>
             </View>
           )}
 
-          <View style={styles.infoItem}>
-            <View style={styles.infoIconContainer}>
-              <Icon name="shield-check-outline" size={18} color={colors.grey[500]} />
+          <View style={styles.infoItemCompact}>
+            <View style={styles.infoIconSmall}>
+              <Icon name="clock-outline" size={16} color={colors.grey[500]} />
             </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Opt-in Status</Text>
-              <View style={[styles.statusBadge, { backgroundColor: optInConfig.bg }]}>
-                <Icon name={optInConfig.icon} size={12} color={optInConfig.color} />
-                <Text style={[styles.statusBadgeText, { color: optInConfig.color }]}>
+            <View style={styles.infoContentCompact}>
+              <Text style={styles.infoLabelSmall}>Last Active</Text>
+              <Text style={styles.infoValueCompact}>{formatLastActive(lastActive)}</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Contact Settings Card - Interactive settings */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Icon name="cog-outline" size={20} color={chatColors.primary} />
+          <Text style={styles.sectionTitle}>Contact Settings</Text>
+        </View>
+
+        <View style={styles.settingsList}>
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={() => setShowOptInPicker(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIconContainer, { backgroundColor: optInConfig.bg }]}>
+                <Icon name={optInConfig.icon} size={18} color={optInConfig.color} />
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={styles.settingLabel}>Opt-in Status</Text>
+                <Text style={[styles.settingValue, { color: optInConfig.color }]}>
                   {optInConfig.label}
                 </Text>
               </View>
             </View>
-          </View>
+            <Icon name="chevron-right" size={20} color={colors.grey[400]} />
+          </TouchableOpacity>
 
-          <View style={styles.infoItem}>
-            <View style={styles.infoIconContainer}>
-              <Icon name="message-text-lock-outline" size={18} color={colors.grey[500]} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Incoming Messages</Text>
-              <View style={[styles.statusBadge, { backgroundColor: incomingBlockedConfig.bg }]}>
-                <Icon name={incomingBlockedConfig.icon} size={12} color={incomingBlockedConfig.color} />
-                <Text style={[styles.statusBadgeText, { color: incomingBlockedConfig.color }]}>
+          <View style={styles.settingDivider} />
+
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={() => setShowBlockDialog(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIconContainer, { backgroundColor: incomingBlockedConfig.bg }]}>
+                <Icon name={incomingBlockedConfig.icon} size={18} color={incomingBlockedConfig.color} />
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={styles.settingLabel}>Incoming Messages</Text>
+                <Text style={[styles.settingValue, { color: incomingBlockedConfig.color }]}>
                   {incomingBlockedConfig.label}
                 </Text>
               </View>
             </View>
-          </View>
-
-          <View style={styles.infoItem}>
-            <View style={styles.infoIconContainer}>
-              <Icon name="clock-outline" size={18} color={colors.grey[500]} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Last Active</Text>
-              <Text style={styles.infoValue}>{formatLastActive(lastActive)}</Text>
-            </View>
-          </View>
+            <Icon name="chevron-right" size={20} color={colors.grey[400]} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -748,11 +942,21 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
       {/* Danger Zone */}
       <View style={[styles.sectionCard, styles.dangerCard]}>
-        <TouchableOpacity style={styles.dangerButton}>
-          <Icon name="block-helper" size={20} color={colors.error.main} />
-          <Text style={styles.dangerButtonText}>Block Contact</Text>
+        <TouchableOpacity
+          style={styles.dangerButton}
+          onPress={() => setShowBlockDialog(true)}
+          activeOpacity={0.7}
+        >
+          <Icon name={localIncomingBlocked ? 'lock-open-outline' : 'block-helper'} size={20} color={colors.error.main} />
+          <Text style={styles.dangerButtonText}>
+            {localIncomingBlocked ? 'Unblock Contact' : 'Block Contact'}
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.dangerButton}>
+        <TouchableOpacity
+          style={styles.dangerButton}
+          onPress={() => setShowDeleteDialog(true)}
+          activeOpacity={0.7}
+        >
           <Icon name="delete-outline" size={20} color={colors.error.main} />
           <Text style={styles.dangerButtonText}>Delete Contact</Text>
         </TouchableOpacity>
@@ -760,102 +964,279 @@ const ContactInfoScreen = ({ route, navigation }) => {
     </View>
   );
 
-  // Render Orders Tab
-  const renderOrdersTab = () => (
-    <View style={styles.tabContent}>
-      {/* Orders Summary Card */}
-      <View style={styles.ordersSummaryCard}>
-        <View style={styles.ordersSummaryItem}>
-          <Text style={styles.ordersSummaryValue}>{orders.length}</Text>
-          <Text style={styles.ordersSummaryLabel}>Total Orders</Text>
-        </View>
-        <View style={styles.ordersSummaryDivider} />
-        <View style={styles.ordersSummaryItem}>
-          <Text style={styles.ordersSummaryValue}>
-            {orders.filter(o => o.status === 'delivered').length}
-          </Text>
-          <Text style={styles.ordersSummaryLabel}>Completed</Text>
-        </View>
-        <View style={styles.ordersSummaryDivider} />
-        <View style={styles.ordersSummaryItem}>
-          <Text style={[styles.ordersSummaryValue, { color: chatColors.primary }]}>
-            ₹{orders.reduce((sum, o) => o.status !== 'cancelled' ? sum + o.total : sum, 0).toLocaleString()}
-          </Text>
-          <Text style={styles.ordersSummaryLabel}>Total Spent</Text>
-        </View>
-      </View>
+  // Helper to get the final order status (handles expired check like web app)
+  const getOrderStatusLabel = (orderRow) => {
+    const originalStatus = orderRow?.status;
+    const expiryTimestamp =
+      orderRow?.metaOrderDetailMessage?.action?.parameters?.order?.expiration?.timestamp;
 
-      {/* Orders List */}
-      {orders.length > 0 ? (
-        <View style={styles.ordersListContainer}>
-          <Text style={styles.ordersListTitle}>Order History</Text>
-          {orders.map((order) => {
-            const statusConfig = getOrderStatusConfig(order.status);
-            return (
-              <TouchableOpacity
-                key={order._id}
-                style={styles.orderCard}
-                activeOpacity={0.7}
-              >
-                <View style={styles.orderCardHeader}>
-                  <View style={[styles.orderStatusIcon, { backgroundColor: statusConfig.bg }]}>
-                    <Icon name={statusConfig.icon} size={18} color={statusConfig.color} />
-                  </View>
-                  <View style={styles.orderCardInfo}>
-                    <Text style={styles.orderCardId}>{order.reference_id}</Text>
-                    <Text style={styles.orderCardDate}>{formatDate(order.created_at)}</Text>
-                  </View>
-                  <View style={styles.orderCardAmount}>
-                    <Text style={styles.orderCardTotal}>
-                      {order.currency} {order.total.toLocaleString()}
-                    </Text>
-                    <View style={[styles.orderStatusBadge, { backgroundColor: statusConfig.bg }]}>
-                      <Text style={[styles.orderStatusText, { color: statusConfig.color }]}>
-                        {order.status}
+    if (!expiryTimestamp) return originalStatus;
+
+    const UTCTime = new Date().getTime() / 1000;
+
+    if (originalStatus === 'expired') return 'expired';
+
+    if (originalStatus === 'pending' && UTCTime > expiryTimestamp) return 'expired';
+    return originalStatus;
+  };
+
+  // Helper to get order status config for API data
+  const getApiOrderStatusConfig = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'success':
+        return { color: colors.success.main, bg: colors.success.lighter, icon: 'check-circle' };
+      case 'pending':
+        return { color: colors.warning.main, bg: colors.warning.lighter, icon: 'clock-outline' };
+      case 'failed':
+        return { color: colors.error.main, bg: colors.error.lighter, icon: 'close-circle' };
+      case 'expired':
+        return { color: colors.grey[500], bg: colors.grey[100], icon: 'timer-off-outline' };
+      default:
+        return { color: colors.grey[500], bg: colors.grey[100], icon: 'package-variant' };
+    }
+  };
+
+  // Helper to extract amount from object with value/offset format (like web app)
+  const extractAmountFromObject = (amountObj = {}) => {
+    const value = Number(amountObj.value ?? amountObj.amount ?? 0);
+    const offset = Number(amountObj.offset ?? 100);
+    if (!value || !offset) return 0;
+    return value / offset;
+  };
+
+  // Helper to get product quantity from various possible fields
+  const getProductQuantity = (product = {}, orderMsg = null) => {
+    const quantity =
+      product.quantity ??
+      product.qty ??
+      product.count ??
+      orderMsg?.additionalcharges?.perItemQuantity ??
+      1;
+    const parsedQuantity = Number(quantity);
+    return Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : 1;
+  };
+
+  // Helper to get product unit price from various formats
+  const getProductUnitPrice = (product = {}, orderMsg = null) => {
+    // String price (e.g., "₹100" or "100")
+    if (typeof product.price === 'string') {
+      const priceNumber = parseFloat(product.price.replace(/[^0-9.-]+/g, ''));
+      if (priceNumber > 0) return priceNumber;
+    }
+
+    // Direct number price
+    if (typeof product.price === 'number') {
+      return product.price;
+    }
+
+    // Object with value/offset format
+    if (product.price && typeof product.price === 'object') {
+      const derivedPrice = extractAmountFromObject(product.price);
+      if (derivedPrice > 0) return derivedPrice;
+    }
+
+    // Alternative price fields
+    if (product.amount) {
+      const derivedPrice = extractAmountFromObject(product.amount);
+      if (derivedPrice > 0) return derivedPrice;
+    }
+
+    if (product.item_price) {
+      const derivedPrice = extractAmountFromObject(product.item_price);
+      if (derivedPrice > 0) return derivedPrice;
+    }
+
+    if (product.priceAmount) {
+      const derivedPrice = extractAmountFromObject(product.priceAmount);
+      if (derivedPrice > 0) return derivedPrice;
+    }
+
+    // Fallback to order's item price
+    if (orderMsg?.additionalcharges?.itemPrice) {
+      const fallbackPrice = parseFloat(String(orderMsg.additionalcharges.itemPrice).replace(/[^0-9.-]+/g, ''));
+      if (fallbackPrice > 0) return fallbackPrice;
+    }
+
+    return 0;
+  };
+
+  // Helper to get order items/products
+  const getOrderItems = (order) => {
+    const metaOrderDetails = order?.metaOrderDetailMessage || {};
+    const orderHistoryData =
+      metaOrderDetails?.action?.parameters?.order || metaOrderDetails?.order || {};
+    return Array.isArray(orderHistoryData?.items) ? orderHistoryData.items : [];
+  };
+
+  // Helper to calculate invoice totals
+  const calculateInvoiceTotals = (order) => {
+    const metaOrderDetails = order?.metaOrderDetailMessage || {};
+    const orderHistoryData =
+      metaOrderDetails?.action?.parameters?.order || metaOrderDetails?.order || {};
+    const items = getOrderItems(order);
+
+    // Calculate derived subtotal from items
+    const derivedSubtotal = items.reduce((sum, product) => {
+      const quantity = getProductQuantity(product, order);
+      const unitPrice = getProductUnitPrice(product, order);
+      return sum + unitPrice * quantity;
+    }, 0);
+
+    const subtotal = extractAmountFromObject(orderHistoryData?.subtotal) || derivedSubtotal;
+    const itemTax = extractAmountFromObject(orderHistoryData?.tax);
+    const itemShipping = extractAmountFromObject(orderHistoryData?.shipping);
+    const itemDiscount = extractAmountFromObject(orderHistoryData?.discount);
+
+    // Get total from various sources
+    const total =
+      extractAmountFromObject(metaOrderDetails?.total_amount) ||
+      extractAmountFromObject(orderHistoryData?.total) ||
+      (order?.amount ? parseFloat(order.amount) : 0) ||
+      (subtotal + itemTax + itemShipping - itemDiscount);
+
+    return {
+      subtotal,
+      itemTax,
+      itemShipping,
+      itemDiscount,
+      total,
+    };
+  };
+
+  // Helper to format price for display
+  const formatPrice = (amount) => {
+    if (amount === 0 || amount === undefined || amount === null) return '₹0.00';
+    return '₹' + parseFloat(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  // Calculate order statistics (using getOrderStatusLabel for accurate status)
+  const orderStats = {
+    total: orders.length,
+    completed: orders.filter(o => getOrderStatusLabel(o) === 'success').length,
+    totalSpent: orders.reduce((sum, o) => {
+      if (getOrderStatusLabel(o) === 'success' && o.amount) {
+        return sum + parseFloat(o.amount);
+      }
+      return sum;
+    }, 0),
+  };
+
+  // Render Orders Tab
+  const renderOrdersTab = () => {
+    const isLoading = orderHistoryStatus === 'loading';
+
+    return (
+      <View style={styles.tabContent}>
+        {/* Orders Summary Card */}
+        <View style={styles.ordersSummaryCard}>
+          <View style={styles.ordersSummaryItem}>
+            {isLoading ? (
+              <ActivityIndicator size="small" color={chatColors.primary} />
+            ) : (
+              <Text style={styles.ordersSummaryValue}>{orderStats.total}</Text>
+            )}
+            <Text style={styles.ordersSummaryLabel}>Total Orders</Text>
+          </View>
+          <View style={styles.ordersSummaryDivider} />
+          <View style={styles.ordersSummaryItem}>
+            {isLoading ? (
+              <ActivityIndicator size="small" color={chatColors.primary} />
+            ) : (
+              <Text style={styles.ordersSummaryValue}>{orderStats.completed}</Text>
+            )}
+            <Text style={styles.ordersSummaryLabel}>Completed</Text>
+          </View>
+          <View style={styles.ordersSummaryDivider} />
+          <View style={styles.ordersSummaryItem}>
+            {isLoading ? (
+              <ActivityIndicator size="small" color={chatColors.primary} />
+            ) : (
+              <Text style={[styles.ordersSummaryValue, { color: chatColors.primary }]}>
+                ₹{orderStats.totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            )}
+            <Text style={styles.ordersSummaryLabel}>Total Spent</Text>
+          </View>
+        </View>
+
+        {/* Loading State */}
+        {isLoading && orders.length === 0 ? (
+          <View style={styles.emptyOrdersContainer}>
+            <ActivityIndicator size="large" color={chatColors.primary} />
+            <Text style={[styles.emptyOrdersSubtitle, { marginTop: 16 }]}>
+              Loading order history...
+            </Text>
+          </View>
+        ) : orders.length > 0 ? (
+          /* Orders List */
+          <View style={styles.ordersListContainer}>
+            <Text style={styles.ordersListTitle}>Order History</Text>
+            {orders.map((order, index) => {
+              const finalStatus = getOrderStatusLabel(order);
+              const statusConfig = getApiOrderStatusConfig(finalStatus);
+              const orderId = order.orderId || order.reference_id || order._id;
+              const amount = order.amount ? parseFloat(order.amount) : 0;
+              const createdAt = order.createdAt || order.created_at;
+
+              return (
+                <TouchableOpacity
+                  key={order._id || order.id || index}
+                  style={styles.orderCard}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setSelectedOrder({ ...order, finalStatus, statusConfig });
+                    setShowInvoiceDialog(true);
+                  }}
+                >
+                  <View style={styles.orderCardHeader}>
+                    <View style={[styles.orderStatusIcon, { backgroundColor: statusConfig.bg }]}>
+                      <Icon name={statusConfig.icon} size={18} color={statusConfig.color} />
+                    </View>
+                    <View style={styles.orderCardInfo}>
+                      <Text style={styles.orderCardId} numberOfLines={1}>{orderId}</Text>
+                      <Text style={styles.orderCardDate}>{formatDate(createdAt)}</Text>
+                    </View>
+                    <View style={styles.orderCardAmount}>
+                      <Text style={styles.orderCardTotal}>
+                        ₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </Text>
+                      <View style={[styles.orderStatusBadge, { backgroundColor: statusConfig.bg }]}>
+                        <Text style={[styles.orderStatusText, { color: statusConfig.color }]}>
+                          {finalStatus || 'N/A'}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
 
-                <View style={styles.orderCardFooter}>
-                  <View style={styles.orderCardMeta}>
-                    <Icon name="package-variant" size={14} color={colors.grey[400]} />
-                    <Text style={styles.orderCardMetaText}>
-                      {order.items_count} {order.items_count === 1 ? 'item' : 'items'}
-                    </Text>
-                  </View>
-                  <View style={styles.orderCardMeta}>
-                    <Icon
-                      name={order.payment_status === 'paid' ? 'check-circle' : 'clock-outline'}
-                      size={14}
-                      color={order.payment_status === 'paid' ? colors.success.main : colors.warning.main}
-                    />
-                    <Text style={[
-                      styles.orderCardMetaText,
-                      { color: order.payment_status === 'paid' ? colors.success.main : colors.warning.main }
-                    ]}>
-                      {order.payment_status}
-                    </Text>
-                  </View>
-                  <Icon name="chevron-right" size={18} color={colors.grey[400]} />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      ) : (
-        <View style={styles.emptyOrdersContainer}>
-          <View style={styles.emptyOrdersIcon}>
-            <Icon name="shopping-outline" size={48} color={colors.grey[300]} />
+                  {(order.invoiceId && finalStatus === 'success') && (
+                    <View style={styles.orderCardFooter}>
+                      <View style={styles.orderCardMeta}>
+                        <Icon name="receipt" size={14} color={colors.grey[400]} />
+                        <Text style={styles.orderCardMetaText} numberOfLines={1}>
+                          Invoice: {order.invoiceId}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
-          <Text style={styles.emptyOrdersTitle}>No orders yet</Text>
-          <Text style={styles.emptyOrdersSubtitle}>
-            Orders placed by this contact will appear here
-          </Text>
-        </View>
-      )}
-    </View>
-  );
+        ) : (
+          /* Empty State */
+          <View style={styles.emptyOrdersContainer}>
+            <View style={styles.emptyOrdersIcon}>
+              <Icon name="shopping-outline" size={48} color={colors.grey[300]} />
+            </View>
+            <Text style={styles.emptyOrdersTitle}>No orders yet</Text>
+            <Text style={styles.emptyOrdersSubtitle}>
+              Orders placed by this contact will appear here
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   // Render Activity Tab
   const renderActivityTab = () => (
@@ -894,9 +1275,9 @@ const ContactInfoScreen = ({ route, navigation }) => {
             <View style={[styles.activityDot, { backgroundColor: colors.success.main }]} />
             <View style={styles.activityContent}>
               <Text style={styles.activityTitle}>Latest Order</Text>
-              <Text style={styles.activityTime}>{formatDate(orders[0].created_at)}</Text>
+              <Text style={styles.activityTime}>{formatDate(orders[0].createdAt || orders[0].created_at)}</Text>
               <Text style={styles.activityDescription}>
-                {orders[0].reference_id} - {orders[0].currency} {orders[0].total.toLocaleString()}
+                {orders[0].orderId || orders[0].reference_id || 'N/A'} - ₹{orders[0].amount ? parseFloat(orders[0].amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
               </Text>
             </View>
           </View>
@@ -1001,11 +1382,20 @@ const ContactInfoScreen = ({ route, navigation }) => {
             <Text style={styles.phoneNumber}>{contactPhoneNumber}</Text>
           )}
 
-          <View style={[styles.statusPill, { backgroundColor: optInConfig.bg }]}>
-            <Icon name={optInConfig.icon} size={14} color={optInConfig.color} />
-            <Text style={[styles.statusPillText, { color: optInConfig.color }]}>
-              {optInConfig.label}
-            </Text>
+          {/* Status Pills Row - Display only, no interaction */}
+          <View style={styles.statusPillsRow}>
+            <View style={[styles.statusPill, { backgroundColor: optInConfig.bg }]}>
+              <Icon name={optInConfig.icon} size={12} color={optInConfig.color} />
+              <Text style={[styles.statusPillText, { color: optInConfig.color }]}>
+                {optInConfig.label}
+              </Text>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: incomingBlockedConfig.bg }]}>
+              <Icon name={incomingBlockedConfig.icon} size={12} color={incomingBlockedConfig.color} />
+              <Text style={[styles.statusPillText, { color: incomingBlockedConfig.color }]}>
+                {incomingBlockedConfig.label}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -1211,6 +1601,531 @@ const ContactInfoScreen = ({ route, navigation }) => {
         chatId={chatId}
         onSuccess={handleAiAssistantSuccess}
       />
+
+      {/* Block/Unblock Contact Dialog - Bottom Sheet Style */}
+      <Modal
+        visible={showBlockDialog}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowBlockDialog(false)}
+      >
+        <View style={styles.statusPickerOverlay}>
+          <TouchableOpacity
+            style={styles.statusPickerBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowBlockDialog(false)}
+          />
+          <View style={[styles.statusPickerContainer, { paddingBottom: insets.bottom + 10 }]}>
+            <View style={styles.statusPickerHandle} />
+            <Text style={styles.statusPickerTitle}>
+              {localIncomingBlocked ? 'Unblock Contact' : 'Block Contact'}
+            </Text>
+            <Text style={styles.statusPickerSubtitle}>
+              {localIncomingBlocked
+                ? 'Allow this contact to send you messages again'
+                : 'Stop receiving messages from this contact'}
+            </Text>
+
+            <View style={styles.blockPickerOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.blockPickerOption,
+                  { backgroundColor: localIncomingBlocked ? colors.success.lighter : colors.error.lighter }
+                ]}
+                onPress={() => handleToggleBlock(!localIncomingBlocked)}
+                activeOpacity={0.7}
+                disabled={isBlockingContact}
+              >
+                <View style={[
+                  styles.blockPickerOptionIcon,
+                  { backgroundColor: localIncomingBlocked ? colors.success.main : colors.error.main },
+                  isBlockingContact && { opacity: 0.8 },
+                ]}>
+                  {isBlockingContact ? (
+                    <ActivityIndicator size="small" color={colors.common.white} />
+                  ) : (
+                    <Icon
+                      name={localIncomingBlocked ? 'lock-open-outline' : 'block-helper'}
+                      size={22}
+                      color={colors.common.white}
+                    />
+                  )}
+                </View>
+                <View style={styles.blockPickerOptionContent}>
+                  <Text style={[
+                    styles.blockPickerOptionLabel,
+                    { color: localIncomingBlocked ? colors.success.main : colors.error.main }
+                  ]}>
+                    {isBlockingContact
+                      ? (localIncomingBlocked ? 'Unblocking Contact...' : 'Blocking Contact...')
+                      : (localIncomingBlocked ? 'Unblock Contact' : 'Block Contact')}
+                  </Text>
+                  <Text style={styles.blockPickerOptionDescription}>
+                    {isBlockingContact
+                      ? 'Please wait while we update the settings'
+                      : (localIncomingBlocked
+                          ? 'Messages from this contact will be received'
+                          : 'Messages from this contact will be blocked')}
+                  </Text>
+                </View>
+                {!isBlockingContact && (
+                  <Icon
+                    name="chevron-right"
+                    size={20}
+                    color={localIncomingBlocked ? colors.success.main : colors.error.main}
+                  />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Contact Dialog */}
+      <Modal
+        visible={showDeleteDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowDeleteDialog(false);
+          setDeleteConfirmText('');
+          setDeleteConfirmError(false);
+        }}
+      >
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogContainer}>
+            <View style={[styles.dialogIconContainer, { backgroundColor: colors.error.lighter }]}>
+              <Icon name="delete-outline" size={32} color={colors.error.main} />
+            </View>
+            <Text style={styles.dialogTitle}>Delete Contact</Text>
+            <Text style={styles.dialogMessage}>
+              Are you sure you want to delete this contact from all contact lists? If you delete this contact, its respective chats will also get deleted.
+            </Text>
+            <Text style={styles.dialogConfirmLabel}>
+              To confirm, type <Text style={styles.dialogConfirmBold}>DELETE</Text> below:
+            </Text>
+            <TextInput
+              style={[
+                styles.dialogInput,
+                deleteConfirmError && styles.dialogInputError,
+              ]}
+              placeholder="Type DELETE to confirm"
+              placeholderTextColor={colors.grey[400]}
+              value={deleteConfirmText}
+              onChangeText={(text) => {
+                setDeleteConfirmText(text);
+                if (text.trim() === 'DELETE') {
+                  setDeleteConfirmError(false);
+                }
+              }}
+              autoCapitalize="characters"
+              editable={!isDeletingContact}
+            />
+            {deleteConfirmError && (
+              <Text style={styles.dialogErrorText}>
+                Please type DELETE to confirm
+              </Text>
+            )}
+            <View style={styles.dialogActions}>
+              <TouchableOpacity
+                style={[styles.dialogButton, styles.dialogButtonCancel]}
+                onPress={() => {
+                  setShowDeleteDialog(false);
+                  setDeleteConfirmText('');
+                  setDeleteConfirmError(false);
+                }}
+                activeOpacity={0.7}
+                disabled={isDeletingContact}
+              >
+                <Text style={styles.dialogButtonCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dialogButton, styles.dialogButtonDanger]}
+                onPress={handleDeleteContact}
+                activeOpacity={0.7}
+                disabled={isDeletingContact}
+              >
+                {isDeletingContact ? (
+                  <ActivityIndicator size="small" color={colors.common.white} />
+                ) : (
+                  <Text style={styles.dialogButtonDangerText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Opt-in Status Picker Modal - Bottom Sheet Style */}
+      <Modal
+        visible={showOptInPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowOptInPicker(false)}
+      >
+        <View style={styles.statusPickerOverlay}>
+          <TouchableOpacity
+            style={styles.statusPickerBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowOptInPicker(false)}
+          />
+          <View style={[styles.statusPickerContainer, { paddingBottom: insets.bottom + 10 }]}>
+            <View style={styles.statusPickerHandle} />
+            <Text style={styles.statusPickerTitle}>Update Opt-in Status</Text>
+            <Text style={styles.statusPickerSubtitle}>
+              Choose the opt-in status for this contact
+            </Text>
+
+            <View style={styles.optInPickerOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.optInPickerOption,
+                  localOptIn === true && styles.optInPickerOptionSelected,
+                ]}
+                onPress={() => handleOptInChange(true)}
+                activeOpacity={0.7}
+                disabled={isUpdatingOptIn}
+              >
+                <View style={[styles.optInPickerOptionIcon, { backgroundColor: colors.success.lighter }]}>
+                  <Icon name="check-circle" size={22} color={colors.success.main} />
+                </View>
+                <View style={styles.optInPickerOptionContent}>
+                  <Text style={[styles.optInPickerOptionLabel, localOptIn === true && { color: colors.success.main, fontWeight: '600' }]}>
+                    Opted In
+                  </Text>
+                  <Text style={styles.optInPickerOptionDescription}>
+                    Contact can receive messages
+                  </Text>
+                </View>
+                {localOptIn === true && (
+                  <Icon name="check-circle" size={22} color={colors.success.main} />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.optInPickerOption,
+                  localOptIn === false && styles.optInPickerOptionSelected,
+                ]}
+                onPress={() => handleOptInChange(false)}
+                activeOpacity={0.7}
+                disabled={isUpdatingOptIn}
+              >
+                <View style={[styles.optInPickerOptionIcon, { backgroundColor: colors.error.lighter }]}>
+                  <Icon name="close-circle" size={22} color={colors.error.main} />
+                </View>
+                <View style={styles.optInPickerOptionContent}>
+                  <Text style={[styles.optInPickerOptionLabel, localOptIn === false && { color: colors.error.main, fontWeight: '600' }]}>
+                    Opted Out
+                  </Text>
+                  <Text style={styles.optInPickerOptionDescription}>
+                    Contact will not receive messages
+                  </Text>
+                </View>
+                {localOptIn === false && (
+                  <Icon name="check-circle" size={22} color={colors.error.main} />
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {isUpdatingOptIn && (
+              <View style={styles.optInPickerLoading}>
+                <ActivityIndicator size="small" color={chatColors.primary} />
+                <Text style={styles.optInPickerLoadingText}>Updating...</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Invoice/Order Details Dialog - Web App Style */}
+      <Modal
+        visible={showInvoiceDialog}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowInvoiceDialog(false);
+          setSelectedOrder(null);
+        }}
+      >
+        <View style={styles.invoiceModalOverlay}>
+          <TouchableOpacity
+            style={styles.invoiceModalBackdrop}
+            activeOpacity={1}
+            onPress={() => {
+              setShowInvoiceDialog(false);
+              setSelectedOrder(null);
+            }}
+          />
+          <View style={[styles.invoiceModalContainer, { paddingBottom: insets.bottom + 16 }]}>
+            {/* Modal Handle */}
+            <View style={styles.invoiceModalHandle} />
+
+            {/* Invoice Header */}
+            <View style={styles.invoiceHeader}>
+              <View style={styles.invoiceHeaderLeft}>
+                <View style={styles.invoiceHeaderTitleRow}>
+                  <Text style={styles.invoiceTitle}>
+                    {selectedOrder?.finalStatus === 'success' ? 'Order Invoice' : 'Order Receipt'}
+                  </Text>
+                  {selectedOrder?.finalStatus && (
+                    <View style={[
+                      styles.invoiceStatusBadge,
+                      { backgroundColor: selectedOrder?.statusConfig?.bg || colors.grey[100] }
+                    ]}>
+                      <Icon
+                        name={selectedOrder?.statusConfig?.icon || 'package-variant'}
+                        size={14}
+                        color={selectedOrder?.statusConfig?.color || colors.grey[500]}
+                      />
+                      <Text style={[
+                        styles.invoiceStatusBadgeText,
+                        { color: selectedOrder?.statusConfig?.color || colors.grey[500] }
+                      ]}>
+                        {selectedOrder?.finalStatus === 'success' ? 'Paid' :
+                         selectedOrder?.finalStatus === 'pending' ? 'Pending' :
+                         selectedOrder?.finalStatus === 'failed' ? 'Failed' :
+                         selectedOrder?.finalStatus === 'expired' ? 'Expired' : 'N/A'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.invoiceCloseButton}
+                onPress={() => {
+                  setShowInvoiceDialog(false);
+                  setSelectedOrder(null);
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Icon name="close" size={22} color={colors.grey[600]} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.invoiceContent}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              contentContainerStyle={{ paddingBottom: 20 }}
+            >
+              {/* Invoice Receipt Card */}
+              <View style={styles.invoiceReceiptCard}>
+                {/* Order IDs Section */}
+                <View style={styles.invoiceIdsSection}>
+                  <View style={styles.invoiceIdRow}>
+                    <Text style={styles.invoiceIdLabel}>Order ID</Text>
+                    <Text style={styles.invoiceIdValue} numberOfLines={1}>
+                      {selectedOrder?.orderId || '-'}
+                    </Text>
+                  </View>
+                  {selectedOrder?.referenceId && (
+                    <View style={styles.invoiceIdRow}>
+                      <Text style={styles.invoiceIdLabel}>Reference ID</Text>
+                      <Text style={styles.invoiceIdValue} numberOfLines={1}>
+                        {selectedOrder.referenceId}
+                      </Text>
+                    </View>
+                  )}
+                  {selectedOrder?.invoiceId && (
+                    <View style={styles.invoiceIdRow}>
+                      <Text style={styles.invoiceIdLabel}>Invoice ID</Text>
+                      <Text style={styles.invoiceIdValue} numberOfLines={1}>
+                        {selectedOrder.invoiceId}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.invoiceIdRow}>
+                    <Text style={styles.invoiceIdLabel}>Date</Text>
+                    <Text style={styles.invoiceIdValue}>
+                      {selectedOrder?.createdAt
+                        ? format(new Date(selectedOrder.createdAt), 'MMM d, yyyy, h:mm a')
+                        : '-'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.invoiceDivider} />
+
+                {/* Products/Items Section */}
+                {(() => {
+                  const items = getOrderItems(selectedOrder);
+                  if (items.length === 0) return null;
+
+                  return (
+                    <>
+                      <View style={styles.invoiceItemsSection}>
+                        <Text style={styles.invoiceSectionLabel}>Items</Text>
+
+                        {/* Items Header */}
+                        <View style={styles.invoiceItemsHeader}>
+                          <Text style={[styles.invoiceItemsHeaderText, { flex: 2 }]}>Item</Text>
+                          <Text style={[styles.invoiceItemsHeaderText, { flex: 1, textAlign: 'center' }]}>Qty</Text>
+                          <Text style={[styles.invoiceItemsHeaderText, { flex: 1, textAlign: 'right' }]}>Price</Text>
+                          <Text style={[styles.invoiceItemsHeaderText, { flex: 1, textAlign: 'right' }]}>Total</Text>
+                        </View>
+
+                        {/* Items List */}
+                        {items.map((item, index) => {
+                          const quantity = getProductQuantity(item, selectedOrder);
+                          const unitPrice = getProductUnitPrice(item, selectedOrder);
+                          const itemTotal = unitPrice * quantity;
+
+                          return (
+                            <View key={index} style={styles.invoiceItemRow}>
+                              <Text style={[styles.invoiceItemText, { flex: 2 }]} numberOfLines={2}>
+                                {item.name || `Product ${index + 1}`}
+                              </Text>
+                              <Text style={[styles.invoiceItemText, { flex: 1, textAlign: 'center' }]}>
+                                {quantity}
+                              </Text>
+                              <Text style={[styles.invoiceItemText, { flex: 1, textAlign: 'right' }]}>
+                                {formatPrice(unitPrice)}
+                              </Text>
+                              <Text style={[styles.invoiceItemText, { flex: 1, textAlign: 'right', fontWeight: '500' }]}>
+                                {formatPrice(itemTotal)}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.invoiceDivider} />
+                    </>
+                  );
+                })()}
+
+                {/* Totals Section */}
+                {(() => {
+                  const totals = calculateInvoiceTotals(selectedOrder);
+                  const items = getOrderItems(selectedOrder);
+                  const hasItems = items.length > 0;
+
+                  return (
+                    <View style={styles.invoiceTotalSection}>
+                      {hasItems && (
+                        <>
+                          <View style={styles.invoiceTotalsRow}>
+                            <Text style={styles.invoiceTotalsLabel}>Subtotal</Text>
+                            <Text style={styles.invoiceTotalsValue}>
+                              {totals.subtotal > 0 ? formatPrice(totals.subtotal) : 'Not Applied'}
+                            </Text>
+                          </View>
+                          <View style={styles.invoiceTotalsRow}>
+                            <Text style={styles.invoiceTotalsLabel}>Tax</Text>
+                            <Text style={[
+                              styles.invoiceTotalsValue,
+                              totals.itemTax === 0 && styles.invoiceTotalsNotApplied
+                            ]}>
+                              {totals.itemTax > 0 ? formatPrice(totals.itemTax) : 'Not Applied'}
+                            </Text>
+                          </View>
+                          <View style={styles.invoiceTotalsRow}>
+                            <Text style={styles.invoiceTotalsLabel}>Shipping</Text>
+                            <Text style={[
+                              styles.invoiceTotalsValue,
+                              totals.itemShipping === 0 && styles.invoiceTotalsNotApplied
+                            ]}>
+                              {totals.itemShipping > 0 ? formatPrice(totals.itemShipping) : 'Not Applied'}
+                            </Text>
+                          </View>
+                          <View style={styles.invoiceTotalsRow}>
+                            <Text style={styles.invoiceTotalsLabel}>Discount</Text>
+                            <Text style={[
+                              styles.invoiceTotalsValue,
+                              totals.itemDiscount > 0 ? { color: colors.success.main } : styles.invoiceTotalsNotApplied
+                            ]}>
+                              {totals.itemDiscount > 0 ? `-${formatPrice(totals.itemDiscount)}` : 'Not Applied'}
+                            </Text>
+                          </View>
+                          <View style={styles.invoiceTotalsDivider} />
+                        </>
+                      )}
+                      <View style={styles.invoiceTotalRow}>
+                        <Text style={styles.invoiceTotalLabel}>Total</Text>
+                        <Text style={styles.invoiceTotalValue}>
+                          {formatPrice(totals.total)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                <View style={styles.invoiceDivider} />
+
+                {/* Customer Section */}
+                <View style={styles.invoiceCustomerSection}>
+                  <Text style={styles.invoiceSectionLabel}>Customer</Text>
+                  <View style={styles.invoiceCustomerRow}>
+                    <View style={[styles.invoiceCustomerAvatar, { backgroundColor: getAvatarColor(displayName) }]}>
+                      <Text style={styles.invoiceCustomerAvatarText}>{getInitials(displayName)}</Text>
+                    </View>
+                    <View style={styles.invoiceCustomerInfo}>
+                      <Text style={styles.invoiceCustomerName}>{displayName}</Text>
+                      {contactPhoneNumber && (
+                        <Text style={styles.invoiceCustomerPhone}>{contactPhoneNumber}</Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Status Message */}
+                {selectedOrder?.finalStatus === 'pending' && (
+                  <>
+                    <View style={styles.invoiceDivider} />
+                    <View style={styles.invoiceStatusMessage}>
+                      <Icon name="clock-outline" size={18} color={colors.warning.main} />
+                      <Text style={[styles.invoiceStatusMessageText, { color: colors.warning.main }]}>
+                        Payment is pending for this order
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {selectedOrder?.finalStatus === 'expired' && (
+                  <>
+                    <View style={styles.invoiceDivider} />
+                    <View style={styles.invoiceStatusMessage}>
+                      <Icon name="timer-off-outline" size={18} color={colors.grey[500]} />
+                      <Text style={[styles.invoiceStatusMessageText, { color: colors.grey[500] }]}>
+                        This order has expired
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {selectedOrder?.finalStatus === 'failed' && (
+                  <>
+                    <View style={styles.invoiceDivider} />
+                    <View style={styles.invoiceStatusMessage}>
+                      <Icon name="alert-circle-outline" size={18} color={colors.error.main} />
+                      <Text style={[styles.invoiceStatusMessageText, { color: colors.error.main }]}>
+                        Payment failed for this order
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {selectedOrder?.finalStatus === 'success' && (
+                  <>
+                    <View style={styles.invoiceDivider} />
+                    <View style={styles.invoiceStatusMessage}>
+                      <Icon name="check-circle" size={18} color={colors.success.main} />
+                      <Text style={[styles.invoiceStatusMessageText, { color: colors.success.main }]}>
+                        Payment completed successfully
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {/* Thank You Footer */}
+                <View style={styles.invoiceThankYou}>
+                  <Text style={styles.invoiceThankYouText}>Thank you for your business!</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1355,17 +2270,24 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: 4,
   },
+  statusPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 12,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
   },
   statusPillText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
 
@@ -1493,10 +2415,95 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Info List
+  // Info List - Compact style for read-only contact details
   infoList: {
-    gap: 16,
+    gap: 12,
   },
+  infoItemCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  infoIconSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: colors.grey[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  infoContentCompact: {
+    flex: 1,
+    marginRight: 8,
+  },
+  infoLabelSmall: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    marginBottom: 1,
+    ...Platform.select({
+      ios: { fontWeight: '500' },
+      android: { fontWeight: '500' },
+    }),
+  },
+  infoValueCompact: {
+    fontSize: 14,
+    color: colors.text.primary,
+    fontWeight: '500',
+  },
+  copyButton: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: colors.grey[50],
+  },
+
+  // Settings List - Interactive contact settings
+  settingsList: {
+    backgroundColor: colors.grey[50],
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: colors.common.white,
+  },
+  settingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  settingIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  settingContent: {
+    flex: 1,
+  },
+  settingLabel: {
+    fontSize: 14,
+    color: colors.text.primary,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  settingValue: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  settingDivider: {
+    height: 1,
+    backgroundColor: colors.grey[100],
+    marginLeft: 60,
+  },
+
+  // Legacy info styles (kept for compatibility)
   infoItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1991,6 +2998,467 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
+  },
+
+  // Info Edit Chip
+  infoEditChip: {
+    backgroundColor: `${chatColors.primary}15`,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  infoEditChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: chatColors.primary,
+  },
+
+  // Dialog Styles
+  dialogOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  dialogContainer: {
+    backgroundColor: colors.common.white,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  dialogIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.error.lighter,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  dialogTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  dialogMessage: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  dialogConfirmLabel: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  dialogConfirmBold: {
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  dialogInput: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: colors.grey[300],
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.text.primary,
+    backgroundColor: colors.grey[50],
+    marginBottom: 8,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  dialogInputError: {
+    borderColor: colors.error.main,
+    backgroundColor: colors.error.lighter,
+  },
+  dialogErrorText: {
+    fontSize: 12,
+    color: colors.error.main,
+    marginBottom: 12,
+  },
+  dialogActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    width: '100%',
+  },
+  dialogButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialogButtonCancel: {
+    backgroundColor: colors.grey[100],
+  },
+  dialogButtonCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  dialogButtonDanger: {
+    backgroundColor: colors.error.main,
+  },
+  dialogButtonSuccess: {
+    backgroundColor: colors.success.main,
+  },
+  dialogButtonDangerText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.common.white,
+  },
+
+  // Opt-in Picker Styles (Bottom Sheet)
+  optInPickerOptions: {
+    paddingHorizontal: 4,
+    gap: 10,
+  },
+  optInPickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: colors.grey[50],
+  },
+  optInPickerOptionSelected: {
+    backgroundColor: `${chatColors.primary}08`,
+    borderWidth: 1,
+    borderColor: `${chatColors.primary}30`,
+  },
+  optInPickerOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  optInPickerOptionContent: {
+    flex: 1,
+  },
+  optInPickerOptionLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  optInPickerOptionDescription: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  optInPickerLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+  },
+  optInPickerLoadingText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+  },
+
+  // Block Picker Styles (Bottom Sheet)
+  blockPickerOptions: {
+    paddingHorizontal: 4,
+  },
+  blockPickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    minHeight: 72,
+  },
+  blockPickerOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  blockPickerOptionContent: {
+    flex: 1,
+  },
+  blockPickerOptionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 3,
+  },
+  blockPickerOptionDescription: {
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
+
+  // Invoice Dialog Styles
+  invoiceModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  invoiceModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  invoiceModalContainer: {
+    backgroundColor: colors.common.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '75%',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 16,
+      },
+    }),
+  },
+  invoiceModalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.grey[200],
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  invoiceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  invoiceHeaderLeft: {
+    flex: 1,
+  },
+  invoiceHeaderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  invoiceTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  invoiceStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  invoiceStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  invoiceCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.grey[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  invoiceContent: {
+    paddingHorizontal: 20,
+  },
+  invoiceReceiptCard: {
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  invoiceIdsSection: {
+    gap: 12,
+  },
+  invoiceIdRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  invoiceIdLabel: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    fontWeight: '500',
+  },
+  invoiceIdValue: {
+    fontSize: 13,
+    color: colors.text.primary,
+    fontWeight: '600',
+    maxWidth: '60%',
+    textAlign: 'right',
+  },
+  invoiceDivider: {
+    height: 1,
+    backgroundColor: colors.grey[100],
+    marginVertical: 20,
+  },
+  // Invoice Items Section Styles
+  invoiceItemsSection: {
+    gap: 12,
+  },
+  invoiceItemsHeader: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    backgroundColor: colors.grey[50],
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  invoiceItemsHeaderText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  invoiceItemRow: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey[100],
+    alignItems: 'center',
+  },
+  invoiceItemText: {
+    fontSize: 13,
+    color: colors.text.primary,
+  },
+  // Invoice Totals Breakdown Styles
+  invoiceTotalsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  invoiceTotalsLabel: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    fontWeight: '500',
+  },
+  invoiceTotalsValue: {
+    fontSize: 13,
+    color: colors.text.primary,
+    fontWeight: '500',
+  },
+  invoiceTotalsNotApplied: {
+    color: colors.grey[400],
+    fontStyle: 'italic',
+    fontWeight: '400',
+  },
+  invoiceTotalsDivider: {
+    height: 1,
+    backgroundColor: colors.grey[200],
+    marginVertical: 8,
+  },
+  invoiceTotalSection: {
+    paddingVertical: 4,
+  },
+  invoiceTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  invoiceTotalLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  invoiceTotalValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  invoiceCustomerSection: {
+    gap: 12,
+  },
+  invoiceSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  invoiceCustomerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  invoiceCustomerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  invoiceCustomerAvatarText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.common.white,
+  },
+  invoiceCustomerInfo: {
+    flex: 1,
+  },
+  invoiceCustomerName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  invoiceCustomerPhone: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  invoiceStatusMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  invoiceStatusMessageText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  invoiceThankYou: {
+    alignItems: 'center',
+    paddingTop: 20,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey[100],
+  },
+  invoiceThankYouText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    fontStyle: 'italic',
   },
 });
 

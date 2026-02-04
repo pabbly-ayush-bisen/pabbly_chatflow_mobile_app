@@ -141,6 +141,10 @@ export const endpoints = {
     deleteProduct: 'catalogs',
     disconnectCatalogs: 'catalogs/disconnect',
   },
+  order: {
+    getOrderHistories: 'order',
+    getOrderHistoryStats: 'order/stats',
+  },
 };
 
 // Request interceptor

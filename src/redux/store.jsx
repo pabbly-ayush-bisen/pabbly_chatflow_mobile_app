@@ -7,6 +7,7 @@ import templateReducer from './slices/templateSlice';
 import broadcastReducer from './slices/broadcastSlice';
 import assistantReducer from './slices/assistantSlice';
 import settingsReducer from './slices/settingsSlice';
+import orderReducer from './slices/orderSlice';
 
 const store = configureStore({
   reducer: {
@@ -18,6 +19,7 @@ const store = configureStore({
     broadcast: broadcastReducer,
     assistant: assistantReducer,
     settings: settingsReducer,
+    order: orderReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

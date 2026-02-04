@@ -27,8 +27,11 @@ export const APP_CONFIG = {
   appEnv: APP_ENV,
 
   // API Configuration - from environment variables
-  apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
-  socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
+  apiUrl: getEnvVar('API_URL', 'https://testchatflow.pabbly.com/api'),
+  socketUrl: getEnvVar('SOCKET_URL', 'https://testchatflow.pabbly.com/'),
+
+  // OneSignal Configuration
+  oneSignalAppId: getEnvVar('ONESIGNAL_APP_ID', 'f078c1e9-fe64-4ef6-ae44-4546b082f14e'),
 
   // Pabbly Accounts Configuration - from environment variables
   pabblyAccountsUrl: getEnvVar('PABBLY_ACCOUNTS_URL', 'https://accounts.pabbly.com'),
@@ -74,18 +77,18 @@ export const APP_CONFIG = {
 // Environment-specific configuration
 export const ENV = {
   development: {
-    apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
-    socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
+    apiUrl: getEnvVar('API_URL', 'https://testchatflow.pabbly.com/api'),
+    socketUrl: getEnvVar('SOCKET_URL', 'https://testchatflow.pabbly.com/'),
     debug: true,
   },
   preview: {
-    apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
-    socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
+    apiUrl: getEnvVar('API_URL', 'https://testchatflow.pabbly.com/api'),
+    socketUrl: getEnvVar('SOCKET_URL', 'https://testchatflow.pabbly.com/'),
     debug: false,
   },
   production: {
-    apiUrl: getEnvVar('API_URL', 'https://chatflow.pabbly.com/api'),
-    socketUrl: getEnvVar('SOCKET_URL', 'https://chatflow.pabbly.com/'),
+    apiUrl: getEnvVar('API_URL', 'https://testchatflow.pabbly.com/api'),
+    socketUrl: getEnvVar('SOCKET_URL', 'https://testchatflow.pabbly.com/'),
     debug: false,
   },
 };
