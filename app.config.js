@@ -38,11 +38,6 @@ export default ({ config }) => {
         ITSAppUsesNonExemptEncryption: false,
       },
       associatedDomains: ['applinks:testchatflow.pabbly.com'],
-      config: {
-        googleSignIn: {
-          reservedClientId: `com.googleusercontent.apps.${GOOGLE_IOS_CLIENT_ID.split('-')[0]}`,
-        },
-      },
     },
     android: {
       package: 'com.pabbly.chatflow',
@@ -79,7 +74,7 @@ export default ({ config }) => {
       [
         'expo-notifications',
         {
-          icon: './assets/notification-icon.png',
+          icon: './assets/notification_icon.png',
           color: '#25D366',
           sounds: [],
           mode: 'production',
@@ -92,8 +87,7 @@ export default ({ config }) => {
         'onesignal-expo-plugin',
         {
           mode: 'production',
-          // Notification icons for Android
-          smallIcons: ['./assets/notification-icon.png'],
+          smallIcons: ['./assets/notification_icon.png'],
           largeIcons: ['./assets/icon.png'],
         },
       ],

@@ -24,12 +24,7 @@
       },
       "associatedDomains": [
         "applinks:testchatflow.pabbly.com"
-      ],
-      "config": {
-        "googleSignIn": {
-          "reservedClientId": "com.googleusercontent.apps.848504831060-dt3ve1h090q2979md9eoqq8epc1rd7tr"
-        }
-      }
+      ]
     },
     "android": {
       "package": "com.pabbly.chatflow",
@@ -76,7 +71,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/notification_icon.png",
           "color": "#25D366",
           "sounds": [],
           "mode": "production"
