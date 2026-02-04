@@ -36,7 +36,6 @@ export default ({ config }) => {
       bundleIdentifier: 'com.pabbly.chatflow',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
-        UIBackgroundModes: ['remote-notification'],
       },
       associatedDomains: ['applinks:chatflow.pabbly.com'],
       config: {
@@ -55,7 +54,6 @@ export default ({ config }) => {
         'android.permission.RECEIVE_BOOT_COMPLETED',
         'android.permission.VIBRATE',
       ],
-      useNextNotificationsApi: true,
       intentFilters: [
         {
           action: 'VIEW',
