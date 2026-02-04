@@ -76,14 +76,15 @@ export const setupForegroundNotificationHandler = (callback) => {
 
   try {
     OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
-      // Prevent OneSignal from showing notification in foreground
-      // Local Expo notification will handle it instead (with Pabbly icon)
-      event.preventDefault();
-      // Don't call event.notification.display() - let local notification handle it
+      // Allow OneSignal to display notification in foreground
+      // This ensures consistent notification appearance (icon, style) across all states
 
       if (callback) {
         callback(event.notification);
       }
+
+      // Let the notification display normally
+      // event.notification.display() is called automatically if we don't preventDefault
     });
 
     // Return cleanup function
