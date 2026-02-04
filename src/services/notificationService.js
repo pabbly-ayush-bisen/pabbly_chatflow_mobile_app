@@ -3,7 +3,11 @@ import * as Device from 'expo-device';
 import { Platform, Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
+import { Asset } from 'expo-asset';
 import { APP_CONFIG } from '../config/app.config';
+
+// Pabbly logo asset for notification large icon
+const pabblyLogoAsset = require('../../assets/icon.png');
 
 // Notification preferences storage key
 const NOTIFICATION_PREFS_KEY = '@pabbly_notification_prefs';
@@ -245,6 +249,20 @@ export const triggerNotificationFeedback = async () => {
 };
 
 /**
+ * Get Pabbly logo URI for notification
+ * @returns {Promise<string|null>} Local URI of the Pabbly logo
+ */
+const getPabblyLogoUri = async () => {
+  try {
+    const asset = Asset.fromModule(pabblyLogoAsset);
+    await asset.downloadAsync();
+    return asset.localUri || asset.uri;
+  } catch (error) {
+    return null;
+  }
+};
+
+/**
  * Show a local notification for a new message
  * @param {Object} message - Message object
  * @param {Object} contact - Contact object
@@ -271,19 +289,19 @@ export const showMessageNotification = async (message, contact, chatId) => {
         messageText = message.message?.body?.text || message.message?.body || message.text || 'Message';
         break;
       case 'image':
-        messageText = '📷 Photo';
+        messageText = '🖼️ Image';
         break;
       case 'video':
-        messageText = '🎥 Video';
+        messageText = '🎬 Video';
         break;
       case 'audio':
-        messageText = '🎵 Voice message';
+        messageText = '🎵 Audio';
         break;
       case 'document':
         messageText = '📄 Document';
         break;
       case 'sticker':
-        messageText = '🎨 Sticker';
+        messageText = '😀 Sticker';
         break;
       case 'location':
         messageText = '📍 Location';
@@ -293,7 +311,7 @@ export const showMessageNotification = async (message, contact, chatId) => {
         messageText = '👤 Contact';
         break;
       case 'template':
-        messageText = '📋 Template message';
+        messageText = '📋 Template';
         break;
       default:
         messageText = 'New message';
@@ -303,6 +321,9 @@ export const showMessageNotification = async (message, contact, chatId) => {
     if (typeof messageText === 'string' && messageText.length > 100) {
       messageText = messageText.substring(0, 100) + '...';
     }
+
+    // Get Pabbly logo for large icon (Android)
+    const pabblyLogoUri = Platform.OS === 'android' ? await getPabblyLogoUri() : null;
 
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -317,6 +338,8 @@ export const showMessageNotification = async (message, contact, chatId) => {
         badge: 1,
         ...(Platform.OS === 'android' && {
           channelId: 'messages',
+          // Use Pabbly logo as the large icon in notification banner
+          ...(pabblyLogoUri && { largeIcon: pabblyLogoUri }),
         }),
       },
       trigger: null, // Show immediately

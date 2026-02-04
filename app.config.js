@@ -92,6 +92,9 @@ export default ({ config }) => {
         'onesignal-expo-plugin',
         {
           mode: 'production',
+          // Notification icons for Android
+          smallIcons: ['./assets/notification-icon.png'],
+          largeIcons: ['./assets/icon.png'],
         },
       ],
     ],
