@@ -92,7 +92,7 @@ export default ({ config }) => {
         'onesignal-expo-plugin',
         {
           mode: 'production',
-          smallIcons: ['./assets/notification-icon-white.png'],
+          smallIcons: ['./assets/notification-icon.png'],
           largeIcons: ['./assets/icon.png'],
         },
       ],
