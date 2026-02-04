@@ -3,8 +3,8 @@
 
 export default ({ config }) => {
   // Get environment variables with fallbacks
-  const API_URL = process.env.API_URL || 'https://chatflow.pabbly.com/api';
-  const SOCKET_URL = process.env.SOCKET_URL || 'https://chatflow.pabbly.com/';
+  const API_URL = process.env.API_URL || 'https://testchatflow.pabbly.com/api';
+  const SOCKET_URL = process.env.SOCKET_URL || 'https://testchatflow.pabbly.com/';
   const PABBLY_ACCOUNTS_URL = process.env.PABBLY_ACCOUNTS_URL || 'https://accounts.pabbly.com';
   const PABBLY_ACCOUNTS_BACKEND_URL = process.env.PABBLY_ACCOUNTS_BACKEND_URL || 'https://accounts.pabbly.com/backend';
   const PABBLY_PROJECT = process.env.PABBLY_PROJECT || 'pcf';
@@ -37,7 +37,7 @@ export default ({ config }) => {
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
-      associatedDomains: ['applinks:chatflow.pabbly.com'],
+      associatedDomains: ['applinks:testchatflow.pabbly.com'],
       config: {
         googleSignIn: {
           reservedClientId: `com.googleusercontent.apps.${GOOGLE_IOS_CLIENT_ID.split('-')[0]}`,
@@ -46,6 +46,7 @@ export default ({ config }) => {
     },
     android: {
       package: 'com.pabbly.chatflow',
+      googleServicesFile: './google-services.json',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',
@@ -61,7 +62,7 @@ export default ({ config }) => {
           data: [
             {
               scheme: 'https',
-              host: 'chatflow.pabbly.com',
+              host: 'testchatflow.pabbly.com',
               pathPrefix: '/api/auth/tauth',
             },
           ],
@@ -87,10 +88,19 @@ export default ({ config }) => {
       'expo-sqlite',
       'expo-web-browser',
       '@react-native-google-signin/google-signin',
+      [
+        'onesignal-expo-plugin',
+        {
+          mode: 'production',
+          // Notification icons for Android
+          smallIcons: ['./assets/notification-icon.png'],
+          largeIcons: ['./assets/icon.png'],
+        },
+      ],
     ],
     // EAS Update configuration for OTA updates
     updates: {
-      url: 'https://u.expo.dev/b49e424a-9ca4-4577-a11a-0b5161d62953',
+      url: 'https://u.expo.dev/aae850ee-f690-43e6-9b5b-3faa4f60fee7',
       enabled: true,
       fallbackToCacheTimeout: 0,
       checkAutomatically: 'ON_LOAD',
@@ -101,7 +111,7 @@ export default ({ config }) => {
     extra: {
       // EAS project configuration
       eas: {
-        projectId: 'b49e424a-9ca4-4577-a11a-0b5161d62953',
+        projectId: 'aae850ee-f690-43e6-9b5b-3faa4f60fee7',
       },
       // Environment variables available at runtime via expo-constants
       API_URL,

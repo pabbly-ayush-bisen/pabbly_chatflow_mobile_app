@@ -18,8 +18,8 @@
       "env": {
         "NODE_ENV": "development",
         "APP_ENV": "development",
-        "API_URL": "https://chatflow.pabbly.com/api",
-        "SOCKET_URL": "https://chatflow.pabbly.com/",
+        "API_URL": "https://testchatflow.pabbly.com/api",
+        "SOCKET_URL": "https://testchatflow.pabbly.com/",
         "PABBLY_ACCOUNTS_URL": "https://accounts.pabbly.com",
         "PABBLY_ACCOUNTS_BACKEND_URL": "https://accounts.pabbly.com/backend",
         "PABBLY_PROJECT": "pcf",
@@ -38,8 +38,8 @@
       "env": {
         "NODE_ENV": "production",
         "APP_ENV": "preview",
-        "API_URL": "https://chatflow.pabbly.com/api",
-        "SOCKET_URL": "https://chatflow.pabbly.com/",
+        "API_URL": "https://testchatflow.pabbly.com/api",
+        "SOCKET_URL": "https://testchatflow.pabbly.com/",
         "PABBLY_ACCOUNTS_URL": "https://accounts.pabbly.com",
         "PABBLY_ACCOUNTS_BACKEND_URL": "https://accounts.pabbly.com/backend",
         "PABBLY_PROJECT": "pcf",
@@ -57,8 +57,8 @@
       "env": {
         "NODE_ENV": "production",
         "APP_ENV": "production",
-        "API_URL": "https://chatflow.pabbly.com/api",
-        "SOCKET_URL": "https://chatflow.pabbly.com/",
+        "API_URL": "https://testchatflow.pabbly.com/api",
+        "SOCKET_URL": "https://testchatflow.pabbly.com/",
         "PABBLY_ACCOUNTS_URL": "https://accounts.pabbly.com",
         "PABBLY_ACCOUNTS_BACKEND_URL": "https://accounts.pabbly.com/backend",
         "PABBLY_PROJECT": "pcf",

@@ -167,6 +167,7 @@ export default function LoginScreen() {
   // Check if using testchatflow environment (direct API login)
   const isTestEnvironment = APP_CONFIG.apiUrl?.includes('testchatflow');
 
+
   // Handle email/password login
   // - testchatflow: Use direct API signin
   // - production (chatflow): Use WebView-based Pabbly Accounts authentication

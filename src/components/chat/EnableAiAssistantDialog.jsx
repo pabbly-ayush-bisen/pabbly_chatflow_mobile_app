@@ -57,7 +57,6 @@ const EnableAiAssistantDialog = ({
       onDismiss();
     } catch (error) {
       // Error is handled by the parent component
-      console.error('Failed to enable AI Assistant:', error);
     }
   }, [chatId, isToggling, dispatch, onDismiss, onSuccess]);
 
