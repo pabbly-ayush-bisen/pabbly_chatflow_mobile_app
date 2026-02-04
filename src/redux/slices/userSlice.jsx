@@ -5,8 +5,12 @@ import { callApi, endpoints, httpMethods } from '../../utils/axios';
 import { sessionManager } from '../../services/SessionManager';
 import { cacheManager } from '../../database/CacheManager';
 import { APP_CONFIG } from '../../config/app.config';
-import { forceRegisterFCMToken } from '../../services/fcmService';
-
+import {
+  setOneSignalExternalUserId,
+  removeOneSignalExternalUserId,
+  getOneSignalPlayerId,
+  removePlayerIdFromBackend,
+} from '../../services/oneSignalService';
 // ============================================================================
 // ASYNC THUNKS - Pabbly Accounts Authentication
 // ============================================================================
@@ -327,6 +331,93 @@ export const signIn = createAsyncThunk(
 );
 
 /**
+ * Direct Sign In - Same as web app's signInWithPassword
+ * Uses the direct auth/signin endpoint instead of Pabbly Accounts OAuth
+ * Flow:
+ * 1. POST to /api/auth/signin with email/password
+ * 2. Get accessToken
+ * 3. Store session
+ * 4. Call checkSession to get user data
+ */
+export const signInDirect = createAsyncThunk(
+  'user/signInDirect',
+  async ({ email, password }, { dispatch, rejectWithValue }) => {
+    try {
+      console.log('[signInDirect] ====== LOGIN START ======');
+      console.log('[signInDirect] Email:', email);
+      console.log('[signInDirect] API URL:', APP_CONFIG.apiUrl);
+      console.log('[signInDirect] Endpoint:', endpoints.auth.signIn);
+
+      // Direct API call to auth/signin endpoint (same as web app)
+      const response = await callApi(endpoints.auth.signIn, httpMethods.POST, { email, password });
+
+      console.log('[signInDirect] ====== RESPONSE ======');
+      console.log('[signInDirect] Full Response:', JSON.stringify(response, null, 2));
+      console.log('[signInDirect] Response type:', typeof response);
+      console.log('[signInDirect] Response keys:', Object.keys(response || {}));
+
+      if (response.data) {
+        console.log('[signInDirect] response.data keys:', Object.keys(response.data || {}));
+      }
+
+      if (response.status === 'error') {
+        console.log('[signInDirect] Error status:', response.message);
+        return rejectWithValue(response.message || 'Invalid email or password');
+      }
+
+      // Try multiple possible token locations
+      // API returns token directly in response.data as a string (JWT)
+      let accessToken = null;
+
+      // Check if response.data is the token itself (string starting with 'eyJ')
+      if (typeof response.data === 'string' && response.data.startsWith('eyJ')) {
+        accessToken = response.data;
+        console.log('[signInDirect] Token found directly in response.data (JWT string)');
+      } else {
+        // Try other possible locations
+        accessToken = response.data?.accessToken ||
+                      response.accessToken ||
+                      response.data?.token ||
+                      response.token ||
+                      response.data?.jwt ||
+                      response.jwt;
+      }
+
+      console.log('[signInDirect] Token found:', accessToken ? 'YES' : 'NO');
+
+      if (!accessToken) {
+        console.log('[signInDirect] ERROR: Token not found!');
+        return rejectWithValue('Access token not found in response');
+      }
+
+      // Store the token
+      await AsyncStorage.setItem(APP_CONFIG.tokenKey, accessToken);
+
+      // Create session
+      await sessionManager.createSession({
+        token: accessToken,
+        user: null, // Will be fetched by checkSession
+      });
+
+      // Call checkSession to get user data
+      await dispatch(checkSession());
+
+      return { status: 'success', accessToken };
+    } catch (error) {
+      console.error('[signInDirect] Error:', error);
+
+      if (error.response?.data?.message) {
+        return rejectWithValue(error.response.data.message);
+      }
+      if (error.response?.status === 401) {
+        return rejectWithValue('Invalid email or password');
+      }
+      return rejectWithValue(error.message || 'Login failed');
+    }
+  }
+);
+
+/**
  * Google Sign In via Pabbly Accounts
  * Flow:
  * 1. Get Google ID token from native Google Sign-In
@@ -451,6 +542,18 @@ export const logout = createAsyncThunk(
   'user/logout',
   async (_, { rejectWithValue }) => {
     try {
+      // Remove OneSignal player ID before logout (non-blocking)
+      try {
+        const playerId = await getOneSignalPlayerId();
+        if (playerId) {
+          await removePlayerIdFromBackend(playerId);
+        }
+        removeOneSignalExternalUserId();
+      } catch (oneSignalError) {
+        // Ignore OneSignal errors during logout
+        console.log('[Logout] OneSignal cleanup error (non-blocking):', oneSignalError);
+      }
+
       const url = endpoints.auth.logout;
       const response = await callApi(url, httpMethods.GET);
 
@@ -687,6 +790,25 @@ const userSlice = createSlice({
       });
 
     // ========================================================================
+    // Sign In Direct - For testchatflow environment (direct API login)
+    // ========================================================================
+    builder
+      .addCase(signInDirect.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(signInDirect.fulfilled, (state) => {
+        state.loading = false;
+        state.error = null;
+        // The actual user/auth state is set in checkSession.fulfilled
+      })
+      .addCase(signInDirect.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+        state.authenticated = false;
+      });
+
+    // ========================================================================
     // Google Sign In - Native Google OAuth
     // ========================================================================
     builder
@@ -743,17 +865,13 @@ const userSlice = createSlice({
           // IMPORTANT: If we have valid user data from checkSession but no token was stored,
           // create a session marker so the app knows user is logged in on restart.
           // The actual session is cookie-based, but we need something in AsyncStorage.
-          // Chain FCM registration after session is created to avoid race condition
           sessionManager.createSession({
             token: 'session_cookie_auth', // Marker to indicate cookie-based session
             user: userData,
             settingId: userData.settingId,
             tokenExpiresAt: action.payload?.data?.tokenExpiresAt,
-          }).then(() => {
-            // Register FCM token AFTER user data is stored in AsyncStorage
-            return forceRegisterFCMToken();
           }).catch(err => {
-            console.log('[UserSlice] Session/FCM error (non-blocking):', err);
+            console.log('[UserSlice] Session error (non-blocking):', err);
           });
         }
 
@@ -813,6 +931,14 @@ const userSlice = createSlice({
         // Set authenticated if success
         if (action.payload.status === 'success') {
           state.authenticated = true;
+
+          // Register OneSignal player ID after successful authentication
+          const userId = action.payload?.data?.user?._id || action.payload?.data?.user?.id;
+          const userSettingIdForOneSignal = action.payload?.data?.user?.settingId;
+          if (userId && userSettingIdForOneSignal) {
+            // Non-blocking call to register device for push notifications
+            setOneSignalExternalUserId(userId, userSettingIdForOneSignal);
+          }
         }
 
         // Check token expiry - Same as web app
@@ -888,11 +1014,6 @@ const userSlice = createSlice({
           // Store under both keys for compatibility with all services
           AsyncStorage.setItem('settingId', settingIdFromPayload);
           AsyncStorage.setItem('@pabbly_chatflow_settingId', settingIdFromPayload);
-
-          // Register FCM token for push notifications
-          forceRegisterFCMToken().catch(err => {
-            console.log('[UserSlice] FCM registration error (non-blocking):', err);
-          });
         }
 
         // After team member login, checkSession should be called to update full state
@@ -942,11 +1063,6 @@ const userSlice = createSlice({
           // Store under both keys for compatibility with socketService
           AsyncStorage.setItem('settingId', whatsappNumberId);
           AsyncStorage.setItem('@pabbly_chatflow_settingId', whatsappNumberId);
-
-          // Register FCM token for push notifications
-          forceRegisterFCMToken().catch(err => {
-            console.log('[UserSlice] FCM registration error (non-blocking):', err);
-          });
         }
         state.error = null;
       })

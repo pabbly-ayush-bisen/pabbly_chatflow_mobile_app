@@ -17,9 +17,6 @@
       "bundleIdentifier": "com.pabbly.chatflow",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": [
-          "remote-notification"
-        ],
         "NSCameraUsageDescription": "Pabbly Chatflow needs camera access to take photos and videos for sharing in chats.",
         "NSPhotoLibraryUsageDescription": "Pabbly Chatflow needs photo library access to share images and videos in chats.",
         "NSMicrophoneUsageDescription": "Pabbly Chatflow needs microphone access to record voice messages and videos.",
@@ -51,7 +48,6 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
-      "useNextNotificationsApi": true,
       "intentFilters": [
         {
           "action": "VIEW",
