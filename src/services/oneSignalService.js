@@ -159,6 +159,9 @@ export const getPlayerId = async () => {
   }
 };
 
+// Alias for getPlayerId (used by userSlice)
+export const getOneSignalPlayerId = getPlayerId;
+
 // Set external user ID (for targeting specific users)
 export const setExternalUserId = async (userId) => {
   if (!OneSignal) return;
@@ -170,6 +173,9 @@ export const setExternalUserId = async (userId) => {
   }
 };
 
+// Alias for setExternalUserId (used by userSlice)
+export const setOneSignalExternalUserId = setExternalUserId;
+
 // Remove external user ID (on logout)
 export const removeExternalUserId = async () => {
   if (!OneSignal) return;
@@ -178,6 +184,39 @@ export const removeExternalUserId = async () => {
     OneSignal.logout();
   } catch (error) {
     // Error removing external user ID
+  }
+};
+
+// Alias for removeExternalUserId (used by userSlice)
+export const removeOneSignalExternalUserId = removeExternalUserId;
+
+// Remove player ID from backend (called on logout)
+export const removePlayerIdFromBackend = async (playerId) => {
+  if (!playerId) return;
+
+  try {
+    const authToken = await AsyncStorage.getItem(APP_CONFIG.tokenKey);
+    const settingId = await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+
+    if (!authToken || !settingId) {
+      return;
+    }
+
+    await fetch(`${APP_CONFIG.apiUrl}/users/push-token`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+        settingId: settingId,
+      },
+      body: JSON.stringify({
+        playerId,
+        platform: Platform.OS,
+        provider: 'onesignal',
+      }),
+    });
+  } catch (error) {
+    // Error removing player ID from backend
   }
 };
 
@@ -200,7 +239,11 @@ export default {
   setupForegroundNotificationHandler,
   setupSubscriptionListener,
   getPlayerId,
+  getOneSignalPlayerId,
   setExternalUserId,
+  setOneSignalExternalUserId,
   removeExternalUserId,
+  removeOneSignalExternalUserId,
+  removePlayerIdFromBackend,
   setTags,
 };
