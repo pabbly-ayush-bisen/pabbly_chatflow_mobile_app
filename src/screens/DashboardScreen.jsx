@@ -261,42 +261,6 @@ export default function DashboardScreen() {
     }
   }, [dispatch, isNetworkAvailable]);
 
-  // Log full settings object for debugging OneSignal
-  useEffect(() => {
-    const fetchAndLogSettings = async () => {
-      if (!isNetworkAvailable || !settingId) return;
-
-      try {
-        console.log('=== FETCHING FULL SETTINGS ===');
-        console.log('API URL: https://chatflow.pabbly.com/api');
-        console.log('Setting ID:', settingId);
-        console.log('User ID:', user?._id);
-
-        // Fetch full settings object directly
-        const response = await callApi(endpoints.settings.getSettings, httpMethods.GET);
-
-        console.log('=== FULL SETTINGS RESPONSE ===');
-        console.log(JSON.stringify(response, null, 2));
-
-        // Specifically log mobileDevices
-        if (response?.data?.mobileDevices) {
-          console.log('=== MOBILE DEVICES ===');
-          console.log(JSON.stringify(response.data.mobileDevices, null, 2));
-        } else if (response?.mobileDevices) {
-          console.log('=== MOBILE DEVICES ===');
-          console.log(JSON.stringify(response.mobileDevices, null, 2));
-        } else {
-          console.log('=== MOBILE DEVICES: NOT FOUND IN RESPONSE ===');
-        }
-        console.log('==============================');
-      } catch (error) {
-        console.log('Failed to fetch settings:', error.message);
-      }
-    };
-
-    fetchAndLogSettings();
-  }, [settingId, user, isNetworkAvailable]);
-
   const loadTeamMemberWidgets = useCallback(async ({ force = false } = {}) => {
     // When logged in as a team member, these admin endpoints are not allowed.
     // These sections are hidden in UI, so skip fetching entirely.
