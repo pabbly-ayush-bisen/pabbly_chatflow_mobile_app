@@ -314,7 +314,9 @@ export default function GoogleAuthWebView({
 
   // Handle token capture
   const handleTokenCapture = useCallback(async (url) => {
-    if (authCompleted) return;
+    if (authCompleted) {
+      return;
+    }
 
     try {
       setAuthCompleted(true);
@@ -351,7 +353,9 @@ export default function GoogleAuthWebView({
     setCurrentUrl(url);
     setLoading(isLoading);
 
-    if (authCompleted) return;
+    if (authCompleted) {
+      return;
+    }
 
     // Update auth step based on URL
     if (url.includes('google.com') || url.includes('accounts.google.com')) {

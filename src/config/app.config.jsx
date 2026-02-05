@@ -15,17 +15,19 @@ const isProduction = APP_ENV === 'production';
 const isPreview = APP_ENV === 'preview';
 const isDevelopment = APP_ENV === 'development';
 
+// Production API URLs
+const API_URL = 'https://chatflow.pabbly.com/api';
+const SOCKET_URL = 'https://chatflow.pabbly.com/';
+
 // App configuration
-// Default values point to testchatflow for development
-// EAS builds will override via eas.json env variables
 export const APP_CONFIG = {
   appName: 'Pabbly Chatflow',
   appVersion: '1.0.0',
   appEnv: APP_ENV,
 
-  // API Configuration - defaults to testchatflow
-  apiUrl: getExpoEnvVar('API_URL', 'https://testchatflow.pabbly.com/api'),
-  socketUrl: getExpoEnvVar('SOCKET_URL', 'https://testchatflow.pabbly.com/'),
+  // API Configuration
+  apiUrl: API_URL,
+  socketUrl: SOCKET_URL,
 
   // OneSignal Configuration
   oneSignalAppId: 'f078c1e9-fe64-4ef6-ae44-4546b082f14e',
@@ -70,9 +72,9 @@ export const APP_CONFIG = {
   cacheExpiry: 24 * 60 * 60 * 1000, // 24 hours
 };
 
-// Check if using testchatflow API (for direct login)
+// Check if using chatflow API (for direct login)
 export const isTestChatflow = () => {
-  return APP_CONFIG.apiUrl.includes('testchatflow');
+  return APP_CONFIG.apiUrl.includes('chatflow');
 };
 
 // Get current environment config

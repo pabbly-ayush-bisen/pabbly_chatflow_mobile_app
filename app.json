@@ -23,7 +23,7 @@
         "NSPhotoLibraryAddUsageDescription": "Pabbly Chatflow needs permission to save photos and videos to your library."
       },
       "associatedDomains": [
-        "applinks:testchatflow.pabbly.com"
+        "applinks:chatflow.pabbly.com"
       ]
     },
     "android": {
@@ -51,7 +51,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "testchatflow.pabbly.com",
+              "host": "chatflow.pabbly.com",
               "pathPrefix": "/api/auth/tauth"
             }
           ],

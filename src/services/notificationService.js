@@ -7,7 +7,7 @@ import { Asset } from 'expo-asset';
 import { APP_CONFIG } from '../config/app.config';
 
 // Pabbly logo asset for notification large icon
-const pabblyLogoAsset = require('../../assets/icon.png');
+const pabblyLogoAsset = require('../../assets/ios_icon.png');
 
 // Notification preferences storage key
 const NOTIFICATION_PREFS_KEY = '@pabbly_notification_prefs';

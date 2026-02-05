@@ -25,14 +25,10 @@ import {
   setupForegroundNotificationHandler,
   setupSubscriptionListener,
   isOneSignalAvailable,
-  logCurrentState,
 } from './src/services/oneSignalService';
 import { navigate } from './src/navigation/navigationUtils';
 
-const LOG_PREFIX = '[App]';
-
 // Initialize OneSignal (will skip automatically if running in Expo Go)
-console.log(`${LOG_PREFIX} App starting, initializing OneSignal...`);
 initializeOneSignal();
 
 // OTA Update configuration
@@ -65,45 +61,29 @@ function AppContent() {
 
   // Setup OneSignal notification handlers (skipped in Expo Go)
   useEffect(() => {
-    console.log(`${LOG_PREFIX} Setting up OneSignal handlers...`);
-
     if (!isOneSignalAvailable()) {
-      console.log(`${LOG_PREFIX} OneSignal not available (likely running in Expo Go)`);
       return;
     }
-
-    console.log(`${LOG_PREFIX} OneSignal is available, setting up handlers...`);
 
     // Request notification permission
     requestNotificationPermission();
 
     // Handle notification clicks (when user taps notification)
     const removeClickHandler = setupNotificationClickHandler((data) => {
-      console.log(`${LOG_PREFIX} Notification clicked, data:`, data);
       // Navigate to chat when notification is tapped
       if (data?.chatId) {
-        console.log(`${LOG_PREFIX} Navigating to ChatDetails with chatId:`, data.chatId);
         navigate('ChatDetails', { chatId: data.chatId });
       }
     });
 
     // Handle foreground notifications
-    const removeForegroundHandler = setupForegroundNotificationHandler((notification) => {
-      console.log(`${LOG_PREFIX} Foreground notification received:`, notification?.title);
-    });
+    const removeForegroundHandler = setupForegroundNotificationHandler();
 
     // Listen for subscription changes (token refresh)
     const removeSubscriptionListener = setupSubscriptionListener();
 
-    // Log current OneSignal state after setup
-    setTimeout(() => {
-      console.log(`${LOG_PREFIX} Logging OneSignal state after setup...`);
-      logCurrentState();
-    }, 3000);
-
     // Cleanup on unmount
     return () => {
-      console.log(`${LOG_PREFIX} Cleaning up OneSignal handlers`);
       if (removeClickHandler) removeClickHandler();
       if (removeForegroundHandler) removeForegroundHandler();
       if (removeSubscriptionListener) removeSubscriptionListener();
