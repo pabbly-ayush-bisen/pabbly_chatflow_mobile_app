@@ -372,26 +372,42 @@ export const signInDirect = createAsyncThunk(
       }
 
       // Store the token
-      await AsyncStorage.setItem(APP_CONFIG.tokenKey, accessToken);
+      try {
+        await AsyncStorage.setItem(APP_CONFIG.tokenKey, accessToken);
+      } catch (storageError) {
+        return rejectWithValue('Failed to store token: ' + (storageError.message || 'Unknown error'));
+      }
 
       // Create session
-      await sessionManager.createSession({
-        token: accessToken,
-        user: null, // Will be fetched by checkSession
-      });
+      try {
+        await sessionManager.createSession({
+          token: accessToken,
+          user: null, // Will be fetched by checkSession
+        });
+      } catch (sessionError) {
+        return rejectWithValue('Failed to create session: ' + (sessionError.message || 'Unknown error'));
+      }
 
       // Call checkSession to get user data
-      await dispatch(checkSession());
+      try {
+        await dispatch(checkSession()).unwrap();
+      } catch (checkSessionError) {
+        // Session check failed, but we still have token - continue anyway
+        console.warn('checkSession failed:', checkSessionError);
+      }
 
       return { status: 'success', accessToken };
     } catch (error) {
+      // Log the full error for debugging
+      console.error('signInDirect error:', error);
+
       if (error.response?.data?.message) {
         return rejectWithValue(error.response.data.message);
       }
       if (error.response?.status === 401) {
         return rejectWithValue('Invalid email or password');
       }
-      return rejectWithValue(error.message || 'Login failed');
+      return rejectWithValue(error.message || 'Login failed. Please try again.');
     }
   }
 );
