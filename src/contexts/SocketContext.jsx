@@ -87,8 +87,9 @@ export const SocketProvider = ({ children }) => {
         const isChatOpen = currentChatIdRef.current === newChat._id;
 
         if (isInBackground || !isChatOpen) {
-          // OneSignal handles push notifications - no need for local notification
-          // This prevents duplicate notifications
+          // Show local notification for the new message
+          // showMessageNotification expects (message, contact, chatId)
+          await showMessageNotification(lastMessage, newChat.contact, newChat._id);
 
           // Update badge count with total unread messages
           try {
