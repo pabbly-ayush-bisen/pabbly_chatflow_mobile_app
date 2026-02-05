@@ -2,12 +2,14 @@
 
 # dependencies
 node_modules/
+package-lock.json
 
 # Expo
 .expo/
 dist/
 web-build/
 expo-env.d.ts
+.expo-shared/
 
 # Native
 .kotlin/
@@ -30,6 +32,14 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
 # local env files
 .env
 .env.local
@@ -38,7 +48,7 @@ yarn-error.*
 .env.production
 .env.preview
 
-# Firebase Service Account (sensitive - do not commit)
+# Sensitive credentials (do not commit)
 google-service-account.json
 
 # typescript
@@ -47,3 +57,31 @@ google-service-account.json
 # generated native folders
 /ios
 /android
+
+# Build outputs
+build/
+*.apk
+*.aab
+*.ipa
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# EAS
+.easignore

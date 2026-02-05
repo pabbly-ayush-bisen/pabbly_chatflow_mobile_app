@@ -3,8 +3,8 @@
 
 export default ({ config }) => {
   // Get environment variables with fallbacks
-  const API_URL = process.env.API_URL || 'https://testchatflow.pabbly.com/api';
-  const SOCKET_URL = process.env.SOCKET_URL || 'https://testchatflow.pabbly.com/';
+  const API_URL = process.env.API_URL || 'https://chatflow.pabbly.com/api';
+  const SOCKET_URL = process.env.SOCKET_URL || 'https://chatflow.pabbly.com/';
   const PABBLY_ACCOUNTS_URL = process.env.PABBLY_ACCOUNTS_URL || 'https://accounts.pabbly.com';
   const PABBLY_ACCOUNTS_BACKEND_URL = process.env.PABBLY_ACCOUNTS_BACKEND_URL || 'https://accounts.pabbly.com/backend';
   const PABBLY_PROJECT = process.env.PABBLY_PROJECT || 'pcf';
@@ -23,7 +23,7 @@ export default ({ config }) => {
     slug: 'chatflow_mobile_native',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: './assets/ios_icon.png',
     userInterfaceStyle: 'light',
     scheme: 'pabblychatflow',
     splash: {
@@ -37,7 +37,7 @@ export default ({ config }) => {
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
-      associatedDomains: ['applinks:testchatflow.pabbly.com'],
+      associatedDomains: ['applinks:chatflow.pabbly.com'],
     },
     android: {
       package: 'com.pabbly.chatflow',
@@ -57,7 +57,7 @@ export default ({ config }) => {
           data: [
             {
               scheme: 'https',
-              host: 'testchatflow.pabbly.com',
+              host: 'chatflow.pabbly.com',
               pathPrefix: '/api/auth/tauth',
             },
           ],
@@ -88,7 +88,7 @@ export default ({ config }) => {
         {
           mode: 'production',
           smallIcons: ['./assets/notification_icon.png'],
-          largeIcons: ['./assets/icon.png'],
+          largeIcons: ['./assets/ios_icon.png'],
         },
       ],
     ],

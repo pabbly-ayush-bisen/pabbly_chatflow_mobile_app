@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
-import { clearError, signInDirect } from '../../redux/slices/userSlice';
+import { clearError } from '../../redux/slices/userSlice';
 import { colors } from '../../theme';
 import ChatflowLogo from '../../components/ChatflowLogo';
 import { APP_CONFIG } from '../../config/app.config';
@@ -164,29 +164,12 @@ export default function LoginScreen() {
     setGoogleLoading(false);
   };
 
-  // Check if using testchatflow environment (direct API login)
-  const isTestEnvironment = APP_CONFIG.apiUrl?.includes('testchatflow');
-
-
-  // Handle email/password login
-  // - testchatflow: Use direct API signin
-  // - production (chatflow): Use WebView-based Pabbly Accounts authentication
+  // Handle email/password login - WebView-based authentication
   const handleLogin = async () => {
     if (!validateForm()) {
       return;
     }
-
-    if (isTestEnvironment) {
-      // Direct API login for testchatflow
-      try {
-        await dispatch(signInDirect({ email: email.trim(), password })).unwrap();
-      } catch (err) {
-        // Error is handled by Redux and shown via useEffect
-      }
-    } else {
-      // WebView-based Pabbly Accounts login for production
-      setShowAuthWebView(true);
-    }
+    setShowAuthWebView(true);
   };
 
   // Handle successful authentication from WebView

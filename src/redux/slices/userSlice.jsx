@@ -279,7 +279,7 @@ export const signIn = createAsyncThunk(
       }
 
       // Step 6: Use Pabbly token to authenticate with ChatFlow via tauth endpoint
-      const tauthUrl = `${endpoints.auth.tokenAuth}/?token=${encodeURIComponent(pabblyToken)}&s=${APP_CONFIG.pabblyProject}`;
+      const tauthUrl = `${endpoints.auth.tokenAuth}?token=${encodeURIComponent(pabblyToken)}&s=${APP_CONFIG.pabblyProject}`;
 
       const chatflowResponse = await callApi(tauthUrl, httpMethods.GET);
 
@@ -393,14 +393,10 @@ export const signInDirect = createAsyncThunk(
         await dispatch(checkSession()).unwrap();
       } catch (checkSessionError) {
         // Session check failed, but we still have token - continue anyway
-        console.warn('checkSession failed:', checkSessionError);
       }
 
       return { status: 'success', accessToken };
     } catch (error) {
-      // Log the full error for debugging
-      console.error('signInDirect error:', error);
-
       if (error.response?.data?.message) {
         return rejectWithValue(error.response.data.message);
       }
@@ -461,7 +457,7 @@ export const googleSignIn = createAsyncThunk(
       }
 
       // Step 2: Use Pabbly token to authenticate with ChatFlow via tauth endpoint
-      const tauthUrl = `${endpoints.auth.tokenAuth}/?token=${encodeURIComponent(pabblyToken)}&s=${APP_CONFIG.pabblyProject}`;
+      const tauthUrl = `${endpoints.auth.tokenAuth}?token=${encodeURIComponent(pabblyToken)}&s=${APP_CONFIG.pabblyProject}`;
 
       const chatflowResponse = await callApi(tauthUrl, httpMethods.GET);
 
@@ -592,7 +588,7 @@ export const tokenAuth = createAsyncThunk(
   async ({ token, project, paymentLink }, { rejectWithValue }) => {
     try {
       // Call the tauth endpoint with the token from Pabbly Accounts
-      const url = `${endpoints.auth.tokenAuth}/?token=${encodeURIComponent(token)}&s=${encodeURIComponent(project || 'pcf')}${paymentLink ? `&pl=${encodeURIComponent(paymentLink)}` : ''}`;
+      const url = `${endpoints.auth.tokenAuth}?token=${encodeURIComponent(token)}&s=${encodeURIComponent(project || 'pcf')}${paymentLink ? `&pl=${encodeURIComponent(paymentLink)}` : ''}`;
 
       const response = await callApi(url, httpMethods.GET);
 
@@ -784,7 +780,7 @@ const userSlice = createSlice({
       });
 
     // ========================================================================
-    // Sign In Direct - For testchatflow environment (direct API login)
+    // Sign In Direct - Direct API login
     // ========================================================================
     builder
       .addCase(signInDirect.pending, (state) => {
@@ -947,7 +943,7 @@ const userSlice = createSlice({
           }
         }
       })
-      .addCase(checkSession.rejected, (state, action) => {
+      .addCase(checkSession.rejected, (state) => {
         state.checkSessionStatus = 'failed';
         state.authenticated = false;
         state.teamMemberStatus = { loggedIn: false, name: '', email: '', role: '' };
