@@ -88,8 +88,8 @@ export const SocketProvider = ({ children }) => {
 
         if (isInBackground || !isChatOpen) {
           // Show local notification for the new message
-          const contactName = newChat.contact?.name || newChat.contact?.phone || 'Unknown';
-          await showMessageNotification(contactName, lastMessage, newChat._id);
+          // showMessageNotification expects (message, contact, chatId)
+          await showMessageNotification(lastMessage, newChat.contact, newChat._id);
 
           // Update badge count with total unread messages
           try {
