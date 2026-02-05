@@ -24,6 +24,7 @@ import {
   syncWhatsAppBusinessInfo,
   clearDashboardError
 } from '../redux/slices/dashboardSlice';
+import { getSettings } from '../redux/slices/settingsSlice';
 import {
   accessBusinessAccount,
   checkSession,
@@ -258,6 +259,23 @@ export default function DashboardScreen() {
     if (isNetworkAvailable) {
       dispatch(getDashboardStats());
       dispatch(getFolders({ sort: -1 }));
+    }
+  }, [dispatch, isNetworkAvailable]);
+
+  // Log mobileDevices from settings (for OneSignal testing)
+  useEffect(() => {
+    if (isNetworkAvailable) {
+      dispatch(getSettings('mobileDevices'))
+        .unwrap()
+        .then((response) => {
+          console.log('=== MOBILE DEVICES SETTINGS ===');
+          console.log('Full Response:', JSON.stringify(response, null, 2));
+          console.log('Mobile Devices:', JSON.stringify(response?.data?.mobileDevices, null, 2));
+          console.log('===============================');
+        })
+        .catch((error) => {
+          console.log('Failed to fetch mobileDevices settings:', error);
+        });
     }
   }, [dispatch, isNetworkAvailable]);
 
