@@ -173,8 +173,45 @@ export const setExternalUserId = async (userId) => {
   }
 };
 
-// Alias for setExternalUserId (used by userSlice)
-export const setOneSignalExternalUserId = setExternalUserId;
+// Set external user ID and register player ID with backend (used after login)
+export const setOneSignalExternalUserId = async (userId, settingId) => {
+  if (!OneSignal) return;
+
+  try {
+    // Set external user ID with OneSignal
+    OneSignal.login(userId);
+
+    // Get the player ID (subscription ID)
+    const playerId = await OneSignal.User.pushSubscription.getIdAsync();
+
+    if (playerId) {
+      // Get auth token
+      const authToken = await AsyncStorage.getItem(APP_CONFIG.tokenKey);
+      const storedSettingId = settingId || await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+
+      if (authToken && storedSettingId) {
+        // Register player ID with backend for push notifications
+        // Using 'token' field for consistency with existing backend API
+        await fetch(`${APP_CONFIG.apiUrl}/users/push-token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+            settingId: storedSettingId,
+          },
+          body: JSON.stringify({
+            token: playerId,
+            platform: Platform.OS,
+            provider: 'onesignal',
+          }),
+        });
+        console.log('OneSignal: Player ID registered with backend:', playerId);
+      }
+    }
+  } catch (error) {
+    console.warn('OneSignal: Error setting external user ID or registering player:', error);
+  }
+};
 
 // Remove external user ID (on logout)
 export const removeExternalUserId = async () => {
@@ -210,7 +247,7 @@ export const removePlayerIdFromBackend = async (playerId) => {
         settingId: settingId,
       },
       body: JSON.stringify({
-        playerId,
+        token: playerId,
         platform: Platform.OS,
         provider: 'onesignal',
       }),
