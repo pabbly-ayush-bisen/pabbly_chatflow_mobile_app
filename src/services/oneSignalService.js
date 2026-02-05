@@ -177,23 +177,29 @@ export const setExternalUserId = async (userId) => {
 // Set external user ID and register player ID with backend (used after login)
 export const setOneSignalExternalUserId = async (userId, settingId) => {
   if (!OneSignal) {
+    console.log('[OneSignal] SDK not available');
     return;
   }
 
   try {
     // Set external user ID with OneSignal
     OneSignal.login(userId);
+    console.log('[OneSignal] Logged in with userId:', userId);
 
     // Wait a moment for the subscription to be established
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Get the player ID (subscription ID)
     const playerId = await OneSignal.User.pushSubscription.getIdAsync();
+    console.log('[OneSignal] Player ID:', playerId);
 
     if (playerId) {
       // Get auth token
       const authToken = await AsyncStorage.getItem(APP_CONFIG.tokenKey);
       const storedSettingId = settingId || await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+
+      console.log('[OneSignal] Auth token exists:', !!authToken);
+      console.log('[OneSignal] Setting ID:', storedSettingId);
 
       if (authToken && storedSettingId) {
         const endpoint = `${APP_CONFIG.apiUrl}/settings/onesignal-player-id`;
@@ -202,7 +208,10 @@ export const setOneSignalExternalUserId = async (userId, settingId) => {
           platform: Platform.OS,
         };
 
-        await fetch(endpoint, {
+        console.log('[OneSignal] Sending player ID to:', endpoint);
+        console.log('[OneSignal] Payload:', JSON.stringify(payload));
+
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -211,8 +220,12 @@ export const setOneSignalExternalUserId = async (userId, settingId) => {
           },
           body: JSON.stringify(payload),
         });
+
+        const responseData = await response.json();
+        console.log('[OneSignal] Server response:', response.status, JSON.stringify(responseData));
       }
     } else {
+      console.log('[OneSignal] No player ID, requesting permission...');
       // Try requesting permission again
       const permission = await requestNotificationPermission();
 
@@ -220,6 +233,7 @@ export const setOneSignalExternalUserId = async (userId, settingId) => {
         // Try getting player ID again after permission
         await new Promise(resolve => setTimeout(resolve, 1000));
         const retryPlayerId = await OneSignal.User.pushSubscription.getIdAsync();
+        console.log('[OneSignal] Retry player ID:', retryPlayerId);
 
         if (retryPlayerId) {
           await setOneSignalExternalUserId(userId, settingId);
@@ -227,7 +241,7 @@ export const setOneSignalExternalUserId = async (userId, settingId) => {
       }
     }
   } catch (error) {
-    // Silently fail
+    console.log('[OneSignal] Error:', error.message);
   }
 };
 

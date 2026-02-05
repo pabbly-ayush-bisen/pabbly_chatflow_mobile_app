@@ -24,7 +24,6 @@ import {
   syncWhatsAppBusinessInfo,
   clearDashboardError
 } from '../redux/slices/dashboardSlice';
-import { getSettings } from '../redux/slices/settingsSlice';
 import {
   accessBusinessAccount,
   checkSession,
@@ -262,22 +261,14 @@ export default function DashboardScreen() {
     }
   }, [dispatch, isNetworkAvailable]);
 
-  // Log mobileDevices from settings (for OneSignal testing)
+  // Log current API configuration for debugging OneSignal
   useEffect(() => {
-    if (isNetworkAvailable) {
-      dispatch(getSettings('mobileDevices'))
-        .unwrap()
-        .then((response) => {
-          console.log('=== MOBILE DEVICES SETTINGS ===');
-          console.log('Full Response:', JSON.stringify(response, null, 2));
-          console.log('Mobile Devices:', JSON.stringify(response?.data?.mobileDevices, null, 2));
-          console.log('===============================');
-        })
-        .catch((error) => {
-          console.log('Failed to fetch mobileDevices settings:', error);
-        });
-    }
-  }, [dispatch, isNetworkAvailable]);
+    console.log('=== APP CONFIGURATION ===');
+    console.log('API URL: https://chatflow.pabbly.com/api');
+    console.log('Setting ID:', settingId);
+    console.log('User ID:', user?._id);
+    console.log('=========================');
+  }, [settingId, user]);
 
   const loadTeamMemberWidgets = useCallback(async ({ force = false } = {}) => {
     // When logged in as a team member, these admin endpoints are not allowed.
