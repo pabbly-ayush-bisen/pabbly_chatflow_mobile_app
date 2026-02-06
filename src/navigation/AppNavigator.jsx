@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView, Platform, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
-import { getLastNotificationResponse } from '../services/notificationService';
+import { getLastNotificationResponse, clearAllNotifications } from '../services/notificationService';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createDrawerNavigator, DrawerContentScrollView } from '@react-navigation/drawer';
@@ -708,6 +708,7 @@ export default function AppNavigator() {
   const isInitialLoading = authenticated && showLoadingScreen;
 
   // Check if app was opened from a notification
+  // Only handle fresh notifications (within last 30 seconds) to prevent stale navigation after re-login
   useEffect(() => {
     const checkInitialNotification = async () => {
       if (!authenticated) return;
@@ -715,13 +716,25 @@ export default function AppNavigator() {
       try {
         const response = await getLastNotificationResponse();
         if (response?.notification?.request?.content?.data?.chatId) {
-          const chatId = response.notification.request.content.data.chatId;
-          // Log:('[AppNavigator] App opened from notification, navigating to chat:', chatId);
+          // Check if the notification is recent (within 30 seconds)
+          // This prevents navigating to old chats after logout/login
+          const notificationDate = response.notification?.date;
+          const now = Date.now();
+          const notificationAge = notificationDate ? (now - notificationDate * 1000) : Infinity;
+          const isRecentNotification = notificationAge < 30000; // 30 seconds
 
-          // Small delay to ensure navigation is ready
-          setTimeout(() => {
-            navigate('ChatDetails', { chatId });
-          }, 500);
+          if (isRecentNotification) {
+            const chatId = response.notification.request.content.data.chatId;
+            // Log:('[AppNavigator] App opened from notification, navigating to chat:', chatId);
+
+            // Small delay to ensure navigation is ready
+            setTimeout(() => {
+              navigate('ChatDetails', { chatId });
+            }, 500);
+          }
+
+          // Clear notifications after checking to prevent re-handling on next login
+          await clearAllNotifications();
         }
       } catch (error) {
         // Log:('[AppNavigator] Error checking initial notification:', error);

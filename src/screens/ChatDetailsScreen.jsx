@@ -6,7 +6,6 @@ import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { showError, showSuccess, showWarning, toastActions } from '../utils/toast';
 import {
-  fetchConversation,
   resetUnreadCount,
   updateContactChat,
   toggleAiAssistant,
@@ -18,6 +17,7 @@ import {
   markOptimisticMessageFailed,
   clearCurrentConversation,
 } from '../redux/slices/inboxSlice';
+import { fetchConversationWithCache } from '../redux/cacheThunks';
 import { fetchAllTemplates } from '../redux/slices/templateSlice';
 import { getSettings } from '../redux/slices/settingsSlice';
 import { sendMessageViaSocket, resetUnreadCountViaSocket, sendTemplateViaSocket } from '../services/socketService';
@@ -90,9 +90,11 @@ export default function ChatDetailsScreen({ route, navigation }) {
   const quickReplies = settings?.quickReplies?.items || [];
 
   // Get current user info for optimistic messages sender display
+  // Only show team member info if actually logged in as a team member
   const { user, teamMemberStatus } = useSelector((state) => state.user);
-  const currentUserName = teamMemberStatus?.name || user?.name || 'Team Member';
-  const currentUserId = teamMemberStatus?._id || user?._id || null;
+  const isTeamMemberLoggedIn = !!teamMemberStatus?.loggedIn;
+  const currentUserName = isTeamMemberLoggedIn ? teamMemberStatus?.name : null;
+  const currentUserId = isTeamMemberLoggedIn ? teamMemberStatus?._id : null;
 
   const isLoading = conversationStatus === 'loading';
   const messages = currentConversation?.messages || [];
@@ -115,8 +117,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
       // Clear previous conversation immediately to prevent showing stale data
       dispatch(clearCurrentConversation());
 
-      // Fetch all messages at once (no pagination)
-      dispatch(fetchConversation({ chatId, all: true }));
+      // Fetch all messages with cache-first strategy (device-primary like WhatsApp)
+      // If messages already loaded for this chat, returns cached data instantly (no API call)
+      dispatch(fetchConversationWithCache({ chatId }));
 
       // Reset unread count
       dispatch(resetUnreadCount(chatId));
@@ -338,12 +341,14 @@ export default function ChatDetailsScreen({ route, navigation }) {
         sentBy: 'user',
         timestamp,
         createdAt: timestamp,
-        // Include from property for team member name display
-        from: {
-          type: 'teamMember',
-          name: currentUserName,
-          id: currentUserId,
-        },
+        // Only include from property if logged in as a team member
+        ...(isTeamMemberLoggedIn && currentUserName && {
+          from: {
+            type: 'teamMember',
+            name: currentUserName,
+            id: currentUserId,
+          },
+        }),
         ...(messageType === 'text' ? {
           message: { body: text?.trim() || '' },
         } : {
@@ -464,12 +469,14 @@ export default function ChatDetailsScreen({ route, navigation }) {
           sentBy: 'user',
           timestamp,
           createdAt: timestamp,
-          // Include from property for team member name display
-          from: {
-            type: 'teamMember',
-            name: currentUserName,
-            id: currentUserId,
-          },
+          // Only include from property if logged in as a team member
+          ...(isTeamMemberLoggedIn && currentUserName && {
+            from: {
+              type: 'teamMember',
+              name: currentUserName,
+              id: currentUserId,
+            },
+          }),
           message: {
             [messageType]: {
               link: uploadResult.url,
@@ -554,11 +561,14 @@ export default function ChatDetailsScreen({ route, navigation }) {
         sentBy: 'user',
         timestamp,
         createdAt: timestamp,
-        from: {
-          type: 'teamMember',
-          name: currentUserName,
-          id: currentUserId,
-        },
+        // Only include from property if logged in as a team member
+        ...(isTeamMemberLoggedIn && currentUserName && {
+          from: {
+            type: 'teamMember',
+            name: currentUserName,
+            id: currentUserId,
+          },
+        }),
         message: {
           template: {
             name: templateName,
@@ -654,12 +664,14 @@ export default function ChatDetailsScreen({ route, navigation }) {
       sentBy: 'user',
       timestamp,
       createdAt: timestamp,
-      // Include from property for team member name display
-      from: {
-        type: 'teamMember',
-        name: currentUserName,
-        id: currentUserId,
-      },
+      // Only include from property if logged in as a team member
+      ...(isTeamMemberLoggedIn && currentUserName && {
+        from: {
+          type: 'teamMember',
+          name: currentUserName,
+          id: currentUserId,
+        },
+      }),
       message: {
         template: {
           name: templateName,

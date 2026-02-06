@@ -6,12 +6,13 @@
  */
 
 import { databaseManager } from '../DatabaseManager';
-import { Tables, CacheExpiry } from '../schema';
+import { Tables } from '../schema';
 import { generateUUID } from '../../utils/helpers';
 
 class MessageModel {
   /**
    * Convert API message object to database record format
+   * IMPORTANT: We store the FULL original message JSON to return exact same format from cache
    * @param {Object} message - Message object from API
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
@@ -19,10 +20,38 @@ class MessageModel {
    */
   static toDbRecord(message, chatId, settingId) {
     const now = Date.now();
-    const msgData = message.message || message;
 
-    // Extract media info based on message type
-    const mediaInfo = this._extractMediaInfo(msgData);
+    // Store the FULL original API message as JSON - this is the primary data
+    // We will return this exact same object when reading from cache
+    let fullMessageJson = null;
+    try {
+      fullMessageJson = JSON.stringify(message);
+
+      // SQLite can have issues with very large text fields
+      // Limit to 50KB per message to be safe
+      const MAX_SIZE = 50000;
+      if (fullMessageJson && fullMessageJson.length > MAX_SIZE) {
+        const essentialMessage = {
+          _id: message._id,
+          id: message.id,
+          direction: message.direction,
+          isFromMe: message.isFromMe,
+          status: message.status,
+          timestamp: message.timestamp,
+          wamid: message.wamid,
+          message: message.message,
+          senderName: message.senderName,
+          senderPhone: message.senderPhone,
+        };
+        fullMessageJson = JSON.stringify(essentialMessage);
+      }
+    } catch (e) {
+      // Failed to stringify message
+    }
+
+    // Extract basic fields for indexing/querying only
+    const msgData = message.message || message;
+    const messageType = this._extractMessageType(message, msgData);
 
     return {
       id: generateUUID(),
@@ -31,13 +60,13 @@ class MessageModel {
       setting_id: settingId,
       wa_message_id: message.wamid || message.waMessageId || message.wa_message_id || null,
       direction: message.direction || (message.isFromMe ? 'outbound' : 'inbound'),
-      type: msgData.type || 'text',
-      body: this._extractBody(msgData),
-      media_url: mediaInfo.url,
-      media_mime_type: mediaInfo.mimeType,
-      media_filename: mediaInfo.filename,
-      media_caption: mediaInfo.caption,
-      thumbnail_url: mediaInfo.thumbnail,
+      type: messageType,
+      body: this._extractBody(msgData, messageType), // For search only
+      media_url: null, // Simplified - full data is in metadata
+      media_mime_type: null,
+      media_filename: null,
+      media_caption: null,
+      thumbnail_url: null,
       status: message.status || 'sent',
       timestamp: message.timestamp
         ? new Date(message.timestamp).getTime()
@@ -45,12 +74,12 @@ class MessageModel {
       sent_at: message.sentAt ? new Date(message.sentAt).getTime() : null,
       delivered_at: message.deliveredAt ? new Date(message.deliveredAt).getTime() : null,
       read_at: message.readAt ? new Date(message.readAt).getTime() : null,
-      reaction: message.reaction ? JSON.stringify(message.reaction) : null,
+      reaction: null,
       reply_to_id: message.context?.message_id || message.replyTo || null,
-      context_message: message.context ? JSON.stringify(message.context) : null,
-      interactive_data: msgData.interactive ? JSON.stringify(msgData.interactive) : null,
-      template_data: msgData.template ? JSON.stringify(msgData.template) : null,
-      metadata: message.metadata ? JSON.stringify(message.metadata) : null,
+      context_message: null,
+      interactive_data: null,
+      template_data: null,
+      metadata: fullMessageJson, // FULL ORIGINAL MESSAGE - this is the source of truth
       is_from_me: message.isFromMe || message.direction === 'outbound' ? 1 : 0,
       sender_name: message.senderName || message.sender?.name || null,
       sender_phone: message.senderPhone || message.sender?.phone || null,
@@ -66,56 +95,108 @@ class MessageModel {
   }
 
   /**
+   * Extract message type from various API structures
+   */
+  static _extractMessageType(message, msgData) {
+    // Try multiple locations for type
+    if (msgData?.type) return msgData.type;
+    if (message?.type) return message.type;
+
+    // Infer type from content
+    if (msgData?.image || message?.image) return 'image';
+    if (msgData?.video || message?.video) return 'video';
+    if (msgData?.audio || message?.audio) return 'audio';
+    if (msgData?.document || message?.document) return 'document';
+    if (msgData?.sticker || message?.sticker) return 'sticker';
+    if (msgData?.location || message?.location) return 'location';
+    if (msgData?.contacts || message?.contacts) return 'contacts';
+    if (msgData?.interactive || message?.interactive) return 'interactive';
+    if (msgData?.template || message?.template) return 'template';
+    if (msgData?.button || message?.button) return 'button';
+
+    return 'text'; // Default fallback
+  }
+
+  /**
    * Extract body text from message
    */
-  static _extractBody(message) {
+  static _extractBody(message, messageType) {
     if (!message) return null;
 
-    switch (message.type) {
+    const type = messageType || message.type;
+
+    switch (type) {
       case 'text':
-        return message.body || message.text?.body || null;
+        return message.body || message.text?.body || message.text || null;
       case 'image':
-        return message.image?.caption || null;
+        return message.image?.caption || message.caption || null;
       case 'video':
-        return message.video?.caption || null;
+        return message.video?.caption || message.caption || null;
       case 'document':
-        return message.document?.caption || null;
+        return message.document?.caption || message.caption || null;
       case 'interactive':
         return message.interactive?.body?.text || null;
       case 'button':
         return message.button?.text || null;
+      case 'location':
+        return message.location?.name || message.location?.address || '[Location]';
+      case 'contacts':
+        return '[Contact]';
       default:
-        return message.body || null;
+        return message.body || message.text?.body || message.text || null;
     }
   }
 
   /**
    * Extract media information from message
    */
-  static _extractMediaInfo(message) {
+  static _extractMediaInfo(message, messageType) {
     if (!message) return {};
 
-    const type = message.type;
+    const type = messageType || message.type;
     const mediaData = message[type] || {};
 
+    // Also check direct properties on message
     return {
-      url: mediaData.link || mediaData.url || null,
-      mimeType: mediaData.mime_type || mediaData.mimeType || null,
-      filename: mediaData.filename || null,
-      caption: mediaData.caption || null,
-      thumbnail: mediaData.thumbnail || null,
+      url: mediaData.link || mediaData.url || mediaData.id || message.mediaUrl || null,
+      mimeType: mediaData.mime_type || mediaData.mimeType || message.mimeType || null,
+      filename: mediaData.filename || message.filename || null,
+      caption: mediaData.caption || message.caption || null,
+      thumbnail: mediaData.thumbnail || message.thumbnail || null,
     };
   }
 
   /**
    * Convert database record to app-friendly format
+   * RETURNS THE EXACT SAME FORMAT AS THE ORIGINAL API RESPONSE
    * @param {Object} record - Database record
-   * @returns {Object} App-friendly message object
+   * @returns {Object} Original API message object (exact same format)
    */
   static fromDbRecord(record) {
     if (!record) return null;
 
-    const message = {
+    // PRIMARY: Return the EXACT original message stored in metadata
+    if (record.metadata) {
+      try {
+        const originalMessage = JSON.parse(record.metadata);
+
+        // Return exact original message with only cache metadata added
+        return {
+          ...originalMessage,
+          _cached: true, // Mark as from cache
+          _syncedAt: record.synced_at,
+          // Update status from DB in case it changed (e.g., sent -> delivered -> read)
+          status: record.status || originalMessage.status,
+        };
+      } catch (e) {
+        // Fall through to fallback reconstruction
+      }
+    }
+
+    // FALLBACK: Reconstruct basic message if metadata parsing fails
+    // This should rarely happen, but provides safety
+
+    return {
       _id: record.server_id || record.temp_id,
       id: record.server_id || record.temp_id,
       wamid: record.wa_message_id,
@@ -125,100 +206,17 @@ class MessageModel {
       isFromMe: Boolean(record.is_from_me),
       status: record.status,
       timestamp: record.timestamp,
-      sentAt: record.sent_at,
-      deliveredAt: record.delivered_at,
-      readAt: record.read_at,
       senderName: record.sender_name,
       senderPhone: record.sender_phone,
       message: {
         type: record.type,
+        body: record.body,
       },
       _cached: true,
       _syncedAt: record.synced_at,
       isPending: Boolean(record.is_pending),
       tempId: record.temp_id,
     };
-
-    // Reconstruct message content based on type
-    switch (record.type) {
-      case 'text':
-        message.message.body = record.body;
-        message.message.text = { body: record.body };
-        break;
-      case 'image':
-        message.message.image = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-          caption: record.media_caption,
-          thumbnail: record.thumbnail_url,
-        };
-        break;
-      case 'video':
-        message.message.video = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-          caption: record.media_caption,
-          thumbnail: record.thumbnail_url,
-        };
-        break;
-      case 'audio':
-        message.message.audio = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-        };
-        break;
-      case 'document':
-        message.message.document = {
-          link: record.media_url,
-          url: record.media_url,
-          filename: record.media_filename,
-          mime_type: record.media_mime_type,
-          caption: record.media_caption,
-        };
-        break;
-      case 'sticker':
-        message.message.sticker = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-        };
-        break;
-      case 'interactive':
-        message.message.interactive = record.interactive_data
-          ? JSON.parse(record.interactive_data)
-          : null;
-        break;
-      case 'template':
-        message.message.template = record.template_data
-          ? JSON.parse(record.template_data)
-          : null;
-        break;
-      default:
-        message.message.body = record.body;
-    }
-
-    // Add reaction if exists
-    if (record.reaction) {
-      message.reaction = JSON.parse(record.reaction);
-    }
-
-    // Add context if exists
-    if (record.context_message) {
-      message.context = JSON.parse(record.context_message);
-    }
-
-    // Add error info if exists
-    if (record.error_code || record.error_message) {
-      message.error = {
-        code: record.error_code,
-        message: record.error_message,
-      };
-    }
-
-    return message;
   }
 
   /**
@@ -233,8 +231,6 @@ class MessageModel {
 
     const records = messages.map((msg) => this.toDbRecord(msg, chatId, settingId));
     await databaseManager.batchInsert(Tables.MESSAGES, records);
-
-    // Log:(`[MessageModel] Saved ${messages.length} messages for chat: ${chatId}`);
   }
 
   /**
@@ -253,12 +249,12 @@ class MessageModel {
    * Get messages for a chat
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
-   * @param {Object} options - Query options
+   * @param {Object} options - Query options (limit: null or 0 means no limit)
    * @returns {Promise<Array>}
    */
   static async getMessages(chatId, settingId, options = {}) {
     const {
-      limit = 50,
+      limit,
       offset = 0,
       beforeTimestamp,
       afterTimestamp,
@@ -279,7 +275,8 @@ class MessageModel {
 
     sql += ' ORDER BY timestamp DESC';
 
-    if (limit) {
+    // Only apply LIMIT if explicitly provided and > 0
+    if (limit && limit > 0) {
       sql += ' LIMIT ? OFFSET ?';
       params.push(limit, offset);
     }

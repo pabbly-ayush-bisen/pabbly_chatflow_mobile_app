@@ -112,16 +112,50 @@ class DatabaseManager {
    * Run migrations between versions
    */
   async _runMigrations(fromVersion, toVersion) {
-    // For version 1, we just create fresh tables
     if (fromVersion === 0 && toVersion >= 1) {
-      // Log:('[DatabaseManager] Creating initial schema...');
       // Tables will be created in _createTables
     }
 
-    // Add future migrations here
-    // if (fromVersion < 2 && toVersion >= 2) {
-    //   await this._migrateToV2();
-    // }
+    if (fromVersion < 2 && toVersion >= 2) {
+      await this._migrateToV2();
+    }
+
+    if (fromVersion < 3 && toVersion >= 3) {
+      await this._migrateToV3();
+    }
+  }
+
+  /**
+   * Migration to version 3: Remove foreign key constraint from messages table
+   */
+  async _migrateToV3() {
+    try {
+      await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.MESSAGES}`);
+    } catch (error) {
+      // Migration error - table will be recreated
+    }
+  }
+
+  /**
+   * Migration to version 2: Add messages_loaded tracking columns
+   * These columns enable device-primary caching like WhatsApp
+   */
+  async _migrateToV2() {
+    try {
+      // Add messages_loaded column (0 = not loaded, 1 = all messages loaded)
+      await this.db.execAsync(`ALTER TABLE ${Tables.CHATS} ADD COLUMN messages_loaded INTEGER DEFAULT 0`);
+    } catch (error) {
+      // Column may already exist if migration was partially run
+      // Log:('[DatabaseManager] messages_loaded column may already exist');
+    }
+
+    try {
+      // Add messages_loaded_at timestamp column
+      await this.db.execAsync(`ALTER TABLE ${Tables.CHATS} ADD COLUMN messages_loaded_at INTEGER`);
+    } catch (error) {
+      // Column may already exist if migration was partially run
+      // Log:('[DatabaseManager] messages_loaded_at column may already exist');
+    }
   }
 
   /**
@@ -216,7 +250,8 @@ class DatabaseManager {
    */
   async upsert(table, data) {
     const columns = Object.keys(data);
-    const values = Object.values(data);
+    // Sanitize all values for SQLite compatibility
+    const values = Object.values(data).map(v => this._sanitizeValue(v));
     const placeholders = columns.map(() => '?').join(', ');
 
     const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
@@ -224,26 +259,269 @@ class DatabaseManager {
   }
 
   /**
+   * Fix lone surrogate characters in a string (Hermes-compatible)
+   * Lone surrogates cause encoding issues in SQLite
+   * @param {string} str - String to fix
+   * @returns {string} Fixed string
+   */
+  _fixSurrogates(str) {
+    let result = '';
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      // Check if this is a high surrogate (D800-DBFF)
+      if (code >= 0xD800 && code <= 0xDBFF) {
+        // Check if next char is a low surrogate (DC00-DFFF)
+        if (i + 1 < str.length) {
+          const nextCode = str.charCodeAt(i + 1);
+          if (nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
+            // Valid surrogate pair - keep both
+            result += str[i] + str[i + 1];
+            i++; // Skip the low surrogate
+            continue;
+          }
+        }
+        // Lone high surrogate - replace with space
+        result += ' ';
+      } else if (code >= 0xDC00 && code <= 0xDFFF) {
+        // Lone low surrogate (no preceding high surrogate) - replace with space
+        result += ' ';
+      } else {
+        result += str[i];
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Sanitize a value for safe SQLite insertion
+   * Handles edge cases that can cause "undefined reason" errors
+   * @param {any} value - Value to sanitize
+   * @returns {any} Sanitized value
+   */
+  _sanitizeValue(value) {
+    // Handle null/undefined
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    // Handle symbols and functions - not storable
+    if (typeof value === 'symbol' || typeof value === 'function') {
+      return null;
+    }
+
+    // Handle BigInt - convert to string
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+
+    // Handle NaN and Infinity
+    if (typeof value === 'number') {
+      if (Number.isNaN(value) || !Number.isFinite(value)) {
+        return null;
+      }
+      return value;
+    }
+
+    // Handle booleans - convert to 0/1 for SQLite
+    if (typeof value === 'boolean') {
+      return value ? 1 : 0;
+    }
+
+    // Handle Date objects
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    // Handle strings
+    if (typeof value === 'string') {
+      let sanitized = value;
+
+      // Limit string length to prevent SQLite issues with very large text
+      const MAX_STRING_LENGTH = 100000; // 100KB
+      if (sanitized.length > MAX_STRING_LENGTH) {
+        sanitized = sanitized.substring(0, MAX_STRING_LENGTH);
+      }
+
+      // Remove null bytes (most common cause of issues)
+      sanitized = sanitized.replace(/\0/g, '');
+
+      // Remove other problematic control characters (except newlines, tabs, carriage returns)
+      sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+      // Handle lone surrogates (invalid UTF-16) which can cause encoding issues
+      // Replace with a simple character-by-character check (Hermes-compatible)
+      sanitized = this._fixSurrogates(sanitized);
+
+      // Handle invalid UTF-8 by encoding and decoding
+      try {
+        sanitized = decodeURIComponent(encodeURIComponent(sanitized));
+      } catch (e) {
+        // If encoding fails, aggressively strip non-ASCII
+        sanitized = sanitized.replace(/[^\x20-\x7E\n\r\t]/g, '');
+      }
+
+      return sanitized;
+    }
+
+    // Handle ArrayBuffer and TypedArrays
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+      return null; // Can't store binary data directly
+    }
+
+    // Handle objects (shouldn't happen for properly formatted records)
+    if (typeof value === 'object') {
+      // Handle arrays
+      if (Array.isArray(value)) {
+        try {
+          return JSON.stringify(value);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // Handle other objects
+      try {
+        const jsonStr = JSON.stringify(value);
+        // Sanitize the JSON string too
+        return this._sanitizeValue(jsonStr);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    return value;
+  }
+
+  /**
    * Insert multiple records in a batch
+   * Uses individual inserts to handle large JSON fields safely
    * @param {string} table - Table name
    * @param {Array<Object>} records - Array of record objects
+   * @param {number} chunkSize - Records per progress log (default: 100)
    * @returns {Promise<void>}
    */
   async batchInsert(table, records) {
     if (!records || records.length === 0) return;
 
     const db = await this.getDatabase();
+    const totalRecords = records.length;
+    let savedCount = 0;
+    let errorCount = 0;
 
-    await db.withTransactionAsync(async () => {
-      for (const record of records) {
+    for (let i = 0; i < totalRecords; i++) {
+      const record = records[i];
+
+      try {
         const columns = Object.keys(record);
-        const values = Object.values(record);
+        const values = columns.map(col => this._sanitizeValue(record[col]));
         const placeholders = columns.map(() => '?').join(', ');
-
         const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
         await db.runAsync(sql, values);
+        savedCount++;
+      } catch (recordError) {
+        // RETRY 1: Try with stripped metadata
+        if (record.metadata) {
+          try {
+            const columns = Object.keys(record);
+            const values = columns.map(col => {
+              if (col === 'metadata') {
+                try {
+                  const parsed = JSON.parse(record.metadata);
+                  const minimal = {
+                    _id: parsed._id,
+                    id: parsed.id,
+                    direction: parsed.direction,
+                    status: parsed.status,
+                    timestamp: parsed.timestamp,
+                    wamid: parsed.wamid,
+                  };
+                  return this._sanitizeValue(JSON.stringify(minimal));
+                } catch (e) {
+                  return null;
+                }
+              }
+              return this._sanitizeValue(record[col]);
+            });
+            const placeholders = columns.map(() => '?').join(', ');
+            const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
+            await db.runAsync(sql, values);
+            savedCount++;
+            continue;
+          } catch (retryError) {
+            // Retry 1 failed
+          }
+        }
+
+        // RETRY 2: Try with ONLY essential fields
+        let retry2Success = false;
+        try {
+          const minimalColumns = [
+            'id', 'server_id', 'chat_id', 'setting_id', 'direction', 'type',
+            'status', 'timestamp', 'is_from_me', 'created_at', 'updated_at',
+            'synced_at', 'is_dirty', 'is_pending'
+          ];
+          const minimalValues = [
+            this._sanitizeValue(record.id),
+            this._sanitizeValue(record.server_id),
+            this._sanitizeValue(record.chat_id),
+            this._sanitizeValue(record.setting_id),
+            this._sanitizeValue(record.direction) || 'inbound',
+            this._sanitizeValue(record.type) || 'text',
+            this._sanitizeValue(record.status) || 'sent',
+            typeof record.timestamp === 'number' ? record.timestamp : Date.now(),
+            record.is_from_me || 0,
+            typeof record.created_at === 'number' ? record.created_at : Date.now(),
+            typeof record.updated_at === 'number' ? record.updated_at : Date.now(),
+            typeof record.synced_at === 'number' ? record.synced_at : Date.now(),
+            0,
+            record.is_pending || 0,
+          ];
+
+          const placeholders = minimalColumns.map(() => '?').join(', ');
+          const sql = `INSERT OR REPLACE INTO ${table} (${minimalColumns.join(', ')}) VALUES (${placeholders})`;
+          await db.runAsync(sql, minimalValues);
+          savedCount++;
+          retry2Success = true;
+        } catch (minimalError) {
+          // Retry 2 failed
+        }
+
+        if (retry2Success) continue;
+
+        // RETRY 3: Ultimate fallback
+        try {
+          const freshId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          const safeServerId = record.server_id ? String(record.server_id).replace(/[^\w-]/g, '') : null;
+
+          const ultimateColumns = ['id', 'server_id', 'chat_id', 'setting_id', 'direction', 'type', 'status', 'timestamp', 'is_from_me'];
+          const ultimateValues = [
+            freshId,
+            safeServerId,
+            String(record.chat_id || 'unknown'),
+            String(record.setting_id || 'unknown'),
+            String(record.direction || 'inbound'),
+            String(record.type || 'text'),
+            String(record.status || 'sent'),
+            typeof record.timestamp === 'number' ? record.timestamp : Date.now(),
+            record.is_from_me || 0,
+          ];
+
+          const placeholders = ultimateColumns.map(() => '?').join(', ');
+          const sql = `INSERT INTO ${table} (${ultimateColumns.join(', ')}) VALUES (${placeholders})`;
+          await db.runAsync(sql, ultimateValues);
+          savedCount++;
+          continue;
+        } catch (ultimateError) {
+          // All retries failed
+        }
+
+        errorCount++;
       }
-    });
+    }
+
+    if (errorCount > totalRecords * 0.5) {
+      throw new Error(`Too many insert failures: ${errorCount}/${totalRecords}`);
+    }
   }
 
   /**

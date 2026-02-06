@@ -6,7 +6,7 @@
  */
 
 import { databaseManager } from '../DatabaseManager';
-import { Tables, CacheKeys, CacheExpiry } from '../schema';
+import { Tables, CacheKeys } from '../schema';
 import { generateUUID } from '../../utils/helpers';
 
 class ChatModel {
@@ -55,6 +55,8 @@ class ChatModel {
       chat_window_expiry: chat.chatWindowExpiry
         ? new Date(chat.chatWindowExpiry).getTime()
         : null,
+      messages_loaded: chat.messagesLoaded || chat.messages_loaded || 0,
+      messages_loaded_at: chat.messagesLoadedAt || chat.messages_loaded_at || null,
       created_at: chat.createdAt ? new Date(chat.createdAt).getTime() : now,
       updated_at: chat.updatedAt ? new Date(chat.updatedAt).getTime() : now,
       synced_at: now,
@@ -132,6 +134,8 @@ class ChatModel {
       folderId: record.folder_id,
       chatWindowStatus: record.chat_window_status,
       chatWindowExpiry: record.chat_window_expiry,
+      messagesLoaded: Boolean(record.messages_loaded),
+      messagesLoadedAt: record.messages_loaded_at,
       createdAt: record.created_at,
       updatedAt: record.updated_at,
       _cached: true,
@@ -289,22 +293,59 @@ class ChatModel {
   }
 
   /**
-   * Check if cache is valid (not expired)
+   * Check if cache is valid
+   * With device-primary strategy, cache is valid as long as data exists
+   * No time-based expiry - data is refreshed only via explicit refresh or socket updates
    * @param {string} settingId - Current setting ID
    * @returns {Promise<boolean>}
    */
   static async isCacheValid(settingId) {
-    const metadata = await databaseManager.queryFirst(
-      `SELECT value FROM ${Tables.CACHE_METADATA} WHERE key = ? AND setting_id = ?`,
-      [CacheKeys.LAST_CHATS_FETCH, settingId]
+    // Check if we have any cached data
+    const count = await this.getChatCount(settingId);
+
+    // Cache is valid if we have any data
+    // This implements device-primary strategy like WhatsApp
+    return count > 0;
+  }
+
+  /**
+   * Check if messages have been loaded for a chat
+   * @param {string} chatId - Chat server ID
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<boolean>}
+   */
+  static async areMessagesLoaded(chatId, settingId) {
+    const result = await databaseManager.queryFirst(
+      `SELECT messages_loaded FROM ${Tables.CHATS} WHERE server_id = ? AND setting_id = ?`,
+      [chatId, settingId]
     );
+    return result?.messages_loaded === 1;
+  }
 
-    if (!metadata) return false;
+  /**
+   * Mark messages as loaded for a chat
+   * @param {string} chatId - Chat server ID
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<void>}
+   */
+  static async markMessagesLoaded(chatId, settingId) {
+    await databaseManager.execute(
+      `UPDATE ${Tables.CHATS} SET messages_loaded = 1, messages_loaded_at = ? WHERE server_id = ? AND setting_id = ?`,
+      [Date.now(), chatId, settingId]
+    );
+  }
 
-    const lastFetch = parseInt(metadata.value, 10);
-    const now = Date.now();
-
-    return (now - lastFetch) < CacheExpiry.CHATS;
+  /**
+   * Reset messages loaded flag for a chat (for force refresh)
+   * @param {string} chatId - Chat server ID
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<void>}
+   */
+  static async resetMessagesLoaded(chatId, settingId) {
+    await databaseManager.execute(
+      `UPDATE ${Tables.CHATS} SET messages_loaded = 0, messages_loaded_at = NULL WHERE server_id = ? AND setting_id = ?`,
+      [chatId, settingId]
+    );
   }
 
   /**

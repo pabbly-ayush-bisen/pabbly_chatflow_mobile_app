@@ -13,7 +13,7 @@
 
 import { databaseManager } from './DatabaseManager';
 import { ChatModel, MessageModel } from './models';
-import { Tables, CacheKeys, CacheExpiry } from './schema';
+import { Tables, CacheKeys } from './schema';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class CacheManager {
@@ -35,26 +35,53 @@ class CacheManager {
       // Initialize database
       await databaseManager.initialize();
 
-      // Get current setting ID from storage
-      const settingId = await AsyncStorage.getItem('settingId') ||
-        await AsyncStorage.getItem('@pabbly_chatflow_settingId');
-      this.currentSettingId = settingId;
+      // Get PREVIOUS setting ID from cache storage (used for account switch detection)
+      // This is the settingId that was used in the last session
+      const cachedSettingId = await AsyncStorage.getItem('@pabbly_chatflow_current_settingId');
 
+      // Also check legacy keys for backward compatibility
+      const settingId = cachedSettingId ||
+        await AsyncStorage.getItem('settingId') ||
+        await AsyncStorage.getItem('@pabbly_chatflow_settingId');
+
+      this.currentSettingId = settingId;
       this.isInitialized = true;
-      // Log:('[CacheManager] Initialized with settingId:', settingId);
     } catch (error) {
-      // Error:('[CacheManager] Initialization error:', error);
       throw error;
     }
   }
 
   /**
    * Set the current setting ID (on login or account switch)
+   * Clears cache if switching to a different account
    * @param {string} settingId - Setting ID
+   * @returns {Promise<void>}
    */
-  setSettingId(settingId) {
+  async setSettingId(settingId) {
+    const previousSettingId = this.currentSettingId;
+
+    // IMPORTANT: Update currentSettingId FIRST before any async operations
+    // This ensures any concurrent cache reads will use the NEW settingId
+    // and won't return stale data from the old account
     this.currentSettingId = settingId;
-    // Log:('[CacheManager] Setting ID updated:', settingId);
+
+    // Clear cache if switching to a different account
+    if (previousSettingId && previousSettingId !== settingId) {
+      try {
+        await databaseManager.clearAllData();
+      } catch (error) {
+        // Ignore cache clearing errors
+      }
+    }
+
+    // Store the current settingId in AsyncStorage for persistence
+    if (settingId) {
+      try {
+        await AsyncStorage.setItem('@pabbly_chatflow_current_settingId', settingId);
+      } catch (e) {
+        // Ignore storage errors
+      }
+    }
   }
 
   /**
@@ -176,7 +203,7 @@ class CacheManager {
   /**
    * Get messages for a chat with cache-first strategy
    * @param {string} chatId - Chat ID
-   * @param {Object} options - Query options
+   * @param {Object} options - Query options (pass {} or no limit for ALL messages)
    * @returns {Promise<{messages: Array, fromCache: boolean, hasMore: boolean}>}
    */
   async getMessages(chatId, options = {}) {
@@ -190,10 +217,15 @@ class CacheManager {
     const messages = await MessageModel.getMessages(chatId, settingId, options);
     const messageCount = await MessageModel.getMessageCount(chatId, settingId);
 
+    // If no limit specified, all messages are returned, so hasMore is false
+    const hasMore = options.limit && options.limit > 0
+      ? messageCount > options.limit + (options.offset || 0)
+      : false;
+
     return {
       messages,
       fromCache: true,
-      hasMore: messageCount > (options.limit || 50) + (options.offset || 0),
+      hasMore,
       totalCount: messageCount,
     };
   }

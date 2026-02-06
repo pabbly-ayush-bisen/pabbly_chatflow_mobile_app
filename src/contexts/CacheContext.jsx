@@ -5,11 +5,12 @@
  * managing the initialization and synchronization of the SQLite cache.
  */
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { AppState } from 'react-native';
 import { cacheManager } from '../database/CacheManager';
 import { initializeCache } from '../redux/cacheThunks';
+import { clearInboxData } from '../redux/slices/inboxSlice';
 
 // Create the context
 const CacheContext = createContext(null);
@@ -33,6 +34,9 @@ export function CacheProvider({ children }) {
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
 
+  // Track previous settingId to detect account switches
+  const previousSettingIdRef = useRef(null);
+
   /**
    * Initialize the cache system
    */
@@ -49,8 +53,7 @@ export function CacheProvider({ children }) {
 
       setStats(result.stats);
       setIsInitialized(true);
-
-      // Log:('[CacheProvider] Cache initialized:', result);
+      previousSettingIdRef.current = settingId;
     } catch (err) {
       // Error:('[CacheProvider] Initialization error:', err);
       setError(err);
@@ -61,13 +64,25 @@ export function CacheProvider({ children }) {
 
   /**
    * Update setting ID when user changes account
+   * IMPORTANT: This clears both SQLite cache AND Redux state when switching accounts
    */
   useEffect(() => {
-    if (isInitialized && settingId) {
-      // Log:('[CacheProvider] Setting ID changed:', settingId);
-      cacheManager.setSettingId(settingId);
-    }
-  }, [isInitialized, settingId]);
+    const handleSettingIdChange = async () => {
+      if (!isInitialized || !settingId) return;
+
+      const previousSettingId = previousSettingIdRef.current;
+
+      // Clear Redux state if switching accounts
+      if (previousSettingId && previousSettingId !== settingId) {
+        dispatch(clearInboxData());
+      }
+
+      previousSettingIdRef.current = settingId;
+      await cacheManager.setSettingId(settingId);
+    };
+
+    handleSettingIdChange();
+  }, [isInitialized, settingId, dispatch]);
 
   /**
    * Initialize cache when user is authenticated
@@ -124,18 +139,23 @@ export function CacheProvider({ children }) {
 
   /**
    * Clear all cache (for logout)
+   * Clears both SQLite cache AND Redux state
    */
   const clearAllCache = useCallback(async () => {
     try {
+      // Clear Redux inbox state
+      dispatch(clearInboxData());
+
+      // Clear SQLite cache
       await cacheManager.clearAllCache();
+
       setIsInitialized(false);
       setStats(null);
-      // Log:('[CacheProvider] All cache cleared');
+      previousSettingIdRef.current = null;
     } catch (err) {
-      // Error:('[CacheProvider] Error clearing all cache:', err);
       throw err;
     }
-  }, []);
+  }, [dispatch]);
 
   /**
    * Invalidate chat cache (force refresh on next load)

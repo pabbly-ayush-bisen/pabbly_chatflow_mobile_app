@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 3;
 
 // Table Names
 export const Tables = {
@@ -49,6 +49,8 @@ export const CREATE_TABLES_SQL = {
       folder_id TEXT,
       chat_window_status TEXT,
       chat_window_expiry INTEGER,
+      messages_loaded INTEGER DEFAULT 0,
+      messages_loaded_at INTEGER,
       created_at INTEGER,
       updated_at INTEGER,
       synced_at INTEGER,
@@ -94,8 +96,7 @@ export const CREATE_TABLES_SQL = {
       synced_at INTEGER,
       is_dirty INTEGER DEFAULT 0,
       is_pending INTEGER DEFAULT 0,
-      temp_id TEXT,
-      FOREIGN KEY (chat_id) REFERENCES ${Tables.CHATS}(server_id)
+      temp_id TEXT
     )
   `,
 
@@ -236,12 +237,14 @@ export const CacheKeys = {
 };
 
 // Cache expiry durations (in milliseconds)
+// NOTE: CHATS, MESSAGES, and CONTACTS are set to never expire (device-primary strategy)
+// Data is refreshed only via pull-to-refresh, socket updates, or explicit refresh
 export const CacheExpiry = {
-  CHATS: 5 * 60 * 1000,        // 5 minutes
-  MESSAGES: 2 * 60 * 1000,     // 2 minutes
-  CONTACTS: 10 * 60 * 1000,    // 10 minutes
-  TEMPLATES: 30 * 60 * 1000,   // 30 minutes
-  QUICK_REPLIES: 15 * 60 * 1000, // 15 minutes
+  CHATS: Infinity,             // Never expires - device-primary like WhatsApp
+  MESSAGES: Infinity,          // Never expires - messages stored permanently once fetched
+  CONTACTS: Infinity,          // Never expires - contacts stored permanently
+  TEMPLATES: 30 * 60 * 1000,   // 30 minutes - templates may change on server
+  QUICK_REPLIES: 15 * 60 * 1000, // 15 minutes - quick replies may change
 };
 
 export default {

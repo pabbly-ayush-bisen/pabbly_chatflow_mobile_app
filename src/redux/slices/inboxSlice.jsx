@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import { fetchChatsWithCache, fetchConversationWithCache } from '../cacheThunks';
 
 // ----------------------------------------------------------------------------
 // Chat list normalization
@@ -1143,6 +1144,40 @@ const inboxSlice = createSlice({
         state.error = action.payload;
       });
 
+    // Fetch Chats with Cache (device-primary strategy)
+    builder
+      .addCase(fetchChatsWithCache.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(fetchChatsWithCache.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        const payload = action.payload || {};
+        const rawChats = payload.data?.chats || payload.chats || [];
+
+        // Deduplicate and normalize chats
+        const normalizedChats = rawChats.map(normalizeChatForList);
+        const uniqueChatsMap = new Map();
+        normalizedChats.forEach(chat => {
+          if (chat._id && !uniqueChatsMap.has(chat._id)) {
+            uniqueChatsMap.set(chat._id, chat);
+          }
+        });
+        const chats = Array.from(uniqueChatsMap.values());
+
+        // Sort chats by latest activity
+        state.chats = chats.sort((a, b) => {
+          const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
+          const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
+          return bTime - aTime;
+        });
+        state.hasMoreChats = payload.hasMoreChats || false;
+      })
+      .addCase(fetchChatsWithCache.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload;
+      });
+
     // Fetch Conversation
     builder
       .addCase(fetchConversation.pending, (state) => {
@@ -1199,6 +1234,53 @@ const inboxSlice = createSlice({
         }
       })
       .addCase(fetchConversation.rejected, (state, action) => {
+        state.conversationStatus = 'failed';
+        state.conversationError = action.payload;
+      });
+
+    // Fetch Conversation with Cache (device-primary strategy)
+    builder
+      .addCase(fetchConversationWithCache.pending, (state) => {
+        state.conversationStatus = 'loading';
+        state.conversationError = null;
+        state.isLoadingMoreMessages = false;
+        state.loadMoreMessagesError = null;
+      })
+      .addCase(fetchConversationWithCache.fulfilled, (state, action) => {
+        state.conversationStatus = 'succeeded';
+        const payload = action.payload || {};
+        const data = payload.data || payload;
+        const chatId = data._id;
+        const newMsgs = data.messages || [];
+
+        // Sort messages by timestamp
+        const sortedMsgs = [...newMsgs].sort((a, b) => {
+          const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
+          const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
+          return aT - bT;
+        });
+
+        const conversation = {
+          ...data,
+          _id: chatId,
+          messages: sortedMsgs,
+        };
+
+        state.currentConversation = conversation;
+        state.hasMoreMessages = payload.hasMore || false;
+        state.messagesSkip = sortedMsgs.length;
+
+        // Update cache
+        if (chatId) {
+          state.conversationCache[chatId] = {
+            conversation,
+            messagesSkip: state.messagesSkip,
+            hasMoreMessages: state.hasMoreMessages,
+            cachedAt: Date.now(),
+          };
+        }
+      })
+      .addCase(fetchConversationWithCache.rejected, (state, action) => {
         state.conversationStatus = 'failed';
         state.conversationError = action.payload;
       });

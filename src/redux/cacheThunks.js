@@ -1,26 +1,19 @@
 /**
- * Cache-Enhanced Thunks
+ * Cache-Enhanced Thunks (Device-Primary Strategy)
  *
- * These thunks implement a "cache-first" strategy where:
- * 1. Cached data is returned immediately (if available)
- * 2. Fresh data is fetched from the server in the background
- * 3. UI is updated when fresh data arrives
- *
- * This provides instant loading for returning users while
- * ensuring data stays up-to-date.
+ * These thunks implement a "device-primary" strategy like WhatsApp where:
+ * 1. Cached data is ALWAYS returned if available (no time-based expiry)
+ * 2. Fresh data is fetched ONLY on explicit refresh (pull-to-refresh) or first load
+ * 3. Real-time updates come via WebSocket, not polling
  */
 
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { cacheManager } from '../database/CacheManager';
+import { ChatModel } from '../database/models';
 import { callApi, endpoints, httpMethods } from '../utils/axios';
 
 /**
- * Fetch chats with cache-first strategy
- *
- * Flow:
- * 1. Check if valid cache exists
- * 2. If cache hit: return cached data, then refresh in background
- * 3. If cache miss: fetch from server and cache result
+ * Fetch chats with device-primary strategy (like WhatsApp)
  */
 export const fetchChatsWithCache = createAsyncThunk(
   'inbox/fetchChatsWithCache',
@@ -28,38 +21,24 @@ export const fetchChatsWithCache = createAsyncThunk(
     try {
       const { forceRefresh = false, filter } = params;
 
-      // Step 1: Try to get from cache first
-      const cacheResult = await cacheManager.getChats({ filter });
+      // Try to get from cache first (unless force refresh)
+      if (!forceRefresh) {
+        const cacheResult = await cacheManager.getChats({ filter });
 
-      if (cacheResult.chats.length > 0 && !forceRefresh) {
-        // Log:(`[fetchChatsWithCache] Cache hit: ${cacheResult.chats.length} chats, stale: ${cacheResult.isStale}`);
-
-        // Return cached data immediately
-        const cachedResponse = {
-          status: 'success',
-          chats: cacheResult.chats,
-          data: { chats: cacheResult.chats },
-          fromCache: true,
-          isStale: cacheResult.isStale,
-        };
-
-        // If cache is stale, trigger background refresh
-        if (cacheResult.isStale) {
-          // Log:('[fetchChatsWithCache] Cache is stale, refreshing in background...');
-          // Don't await this - let it run in background
-          refreshChatsInBackground(params, dispatch).catch((err) => {
-            // Error:('[fetchChatsWithCache] Background refresh failed:', err);
-          });
+        if (cacheResult.chats.length > 0) {
+          return {
+            status: 'success',
+            chats: cacheResult.chats,
+            data: { chats: cacheResult.chats },
+            fromCache: true,
+            isStale: false,
+          };
         }
-
-        return cachedResponse;
       }
 
-      // Step 2: Cache miss or force refresh - fetch from server
-      // Log:('[fetchChatsWithCache] Cache miss, fetching from server...');
+      // Cache miss or force refresh - fetch from server
       return await fetchChatsFromServer(params);
     } catch (error) {
-      // Error:('[fetchChatsWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -157,30 +136,7 @@ async function fetchChatsFromServer(params = {}) {
 }
 
 /**
- * Refresh chats in background without blocking UI
- */
-async function refreshChatsInBackground(params, dispatch) {
-  try {
-    const freshData = await fetchChatsFromServer({ ...params, all: true });
-
-    // Dispatch action to update Redux state with fresh data
-    dispatch({
-      type: 'inbox/fetchChatsWithCache/fulfilled',
-      payload: {
-        ...freshData,
-        isBackgroundRefresh: true,
-      },
-    });
-
-    // Log:('[refreshChatsInBackground] Background refresh completed');
-  } catch (error) {
-    // Error:('[refreshChatsInBackground] Error:', error);
-    // Don't throw - this is a background operation
-  }
-}
-
-/**
- * Fetch conversation messages with cache-first strategy
+ * Fetch conversation messages with device-primary strategy (like WhatsApp)
  */
 export const fetchConversationWithCache = createAsyncThunk(
   'inbox/fetchConversationWithCache',
@@ -193,14 +149,33 @@ export const fetchConversationWithCache = createAsyncThunk(
         throw new Error('Chat ID is required');
       }
 
-      // Step 1: Try to get from cache first
-      if (!forceRefresh) {
-        const cacheResult = await cacheManager.getMessages(chatId, { limit: 50 });
+      const settingId = cacheManager.getSettingId();
+
+      // Check if messages are already loaded for this chat
+      if (!forceRefresh && settingId) {
+        const messagesLoaded = await ChatModel.areMessagesLoaded(chatId, settingId);
+
+        if (messagesLoaded) {
+          const cacheResult = await cacheManager.getMessages(chatId, {});
+          const cachedChat = await cacheManager.getChatById(chatId);
+
+          return {
+            status: 'success',
+            data: {
+              _id: chatId,
+              ...cachedChat,
+              messages: cacheResult.messages,
+            },
+            fromCache: true,
+            hasMore: false,
+            messagesLoaded: true,
+          };
+        }
+
+        // Check if we have any cached messages (partial load)
+        const cacheResult = await cacheManager.getMessages(chatId, {});
 
         if (cacheResult.messages.length > 0) {
-          // Log:(`[fetchConversationWithCache] Cache hit: ${cacheResult.messages.length} messages`);
-
-          // Get chat details from cache
           const cachedChat = await cacheManager.getChatById(chatId);
 
           return {
@@ -212,12 +187,15 @@ export const fetchConversationWithCache = createAsyncThunk(
             },
             fromCache: true,
             hasMore: cacheResult.hasMore,
+            messagesLoaded: false,
           };
         }
       }
 
-      // Step 2: Cache miss - fetch from server
-      // Log:('[fetchConversationWithCache] Cache miss, fetching from server...');
+      // Cache miss or force refresh - fetch ALL from server
+      if (forceRefresh && settingId) {
+        await ChatModel.resetMessagesLoaded(chatId, settingId);
+      }
 
       const params = { _id: chatId, all: true };
       const response = await callApi(endpoints.inbox.getConversation, httpMethods.GET, params);
@@ -228,9 +206,19 @@ export const fetchConversationWithCache = createAsyncThunk(
 
       const data = response.data || response;
 
-      // Cache the messages
+      // Cache ALL the messages
+      let cacheSaveSuccess = false;
       if (data.messages && data.messages.length > 0) {
-        await cacheManager.saveMessages(data.messages, chatId);
+        try {
+          await cacheManager.saveMessages(data.messages, chatId);
+          cacheSaveSuccess = true;
+
+          if (settingId) {
+            await ChatModel.markMessagesLoaded(chatId, settingId);
+          }
+        } catch (cacheError) {
+          // Continue - return data from API even if cache save failed
+        }
       }
 
       return {
@@ -241,9 +229,9 @@ export const fetchConversationWithCache = createAsyncThunk(
         },
         fromCache: false,
         hasMore: false,
+        messagesLoaded: cacheSaveSuccess,
       };
     } catch (error) {
-      // Error:('[fetchConversationWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -263,8 +251,6 @@ export const loadMoreMessagesWithCache = createAsyncThunk(
       });
 
       if (cacheResult.messages.length > 0) {
-        // Log:(`[loadMoreMessagesWithCache] Cache hit: ${cacheResult.messages.length} more messages`);
-
         return {
           messages: cacheResult.messages,
           hasMore: cacheResult.hasMore,
@@ -273,8 +259,6 @@ export const loadMoreMessagesWithCache = createAsyncThunk(
       }
 
       // Cache miss - fetch from server
-      // Log:('[loadMoreMessagesWithCache] Cache miss, fetching from server...');
-
       const response = await callApi(endpoints.inbox.getConversation, httpMethods.GET, {
         _id: chatId,
         limit,
@@ -299,7 +283,6 @@ export const loadMoreMessagesWithCache = createAsyncThunk(
         fromCache: false,
       };
     } catch (error) {
-      // Error:('[loadMoreMessagesWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -312,10 +295,10 @@ export const sendMessageWithCache = createAsyncThunk(
   'inbox/sendMessageWithCache',
   async ({ chatId, messageData }, { rejectWithValue }) => {
     try {
-      // Step 1: Add optimistic message to cache
+      // Add optimistic message to cache
       const tempId = await cacheManager.addOptimisticMessage(messageData, chatId);
 
-      // Step 2: Update chat's last message in cache
+      // Update chat's last message in cache
       await cacheManager.updateChatWithMessage(chatId, {
         ...messageData,
         _id: tempId,
@@ -338,7 +321,6 @@ export const sendMessageWithCache = createAsyncThunk(
         },
       };
     } catch (error) {
-      // Error:('[sendMessageWithCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -358,7 +340,6 @@ export const confirmMessageSent = createAsyncThunk(
         serverMessage,
       };
     } catch (error) {
-      // Error:('[confirmMessageSent] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -378,7 +359,6 @@ export const markMessageFailed = createAsyncThunk(
         error,
       };
     } catch (error) {
-      // Error:('[markMessageFailed] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -398,7 +378,6 @@ export const updateMessageStatusInCache = createAsyncThunk(
         updates,
       };
     } catch (error) {
-      // Error:('[updateMessageStatusInCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -426,7 +405,6 @@ export const handleNewMessageCache = createAsyncThunk(
         message,
       };
     } catch (error) {
-      // Error:('[handleNewMessageCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -443,7 +421,6 @@ export const resetUnreadCountInCache = createAsyncThunk(
 
       return { chatId };
     } catch (error) {
-      // Error:('[resetUnreadCountInCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -459,7 +436,6 @@ export const clearAllCacheData = createAsyncThunk(
       await cacheManager.clearAllCache();
       return { success: true };
     } catch (error) {
-      // Error:('[clearAllCacheData] Error:', error);
       return rejectWithValue(error.message);
     }
   }
@@ -475,7 +451,7 @@ export const initializeCache = createAsyncThunk(
       await cacheManager.initialize();
 
       if (settingId) {
-        cacheManager.setSettingId(settingId);
+        await cacheManager.setSettingId(settingId);
       }
 
       const hasCachedData = await cacheManager.hasCachedData();
@@ -487,7 +463,6 @@ export const initializeCache = createAsyncThunk(
         stats,
       };
     } catch (error) {
-      // Error:('[initializeCache] Error:', error);
       return rejectWithValue(error.message);
     }
   }

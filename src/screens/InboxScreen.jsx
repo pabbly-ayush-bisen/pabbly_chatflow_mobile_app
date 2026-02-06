@@ -4,7 +4,8 @@ import { Text, ActivityIndicator, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { fetchChats, resetUnreadCount, resetPagination, setShouldRefreshChats, searchChats, clearSearch, setSearchQuery } from '../redux/slices/inboxSlice';
+import { resetUnreadCount, resetPagination, setShouldRefreshChats, searchChats, clearSearch, setSearchQuery } from '../redux/slices/inboxSlice';
+import { fetchChatsWithCache } from '../redux/cacheThunks';
 import { getAssistants, getFlows } from '../redux/slices/assistantSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
@@ -88,14 +89,14 @@ export default function InboxScreen() {
     }
   }, [shouldRefreshChats, isNetworkAvailable, dispatch, loadChats]);
 
-  const loadChats = useCallback(() => {
+  const loadChats = useCallback((forceRefresh = false) => {
     // Don't fetch if offline
     if (isOffline) return;
 
     dispatch(resetPagination());
-    // Fetch ALL chats without pagination (matching web app behavior)
-    // The 'all: true' param tells the API to return all chats in one request
-    dispatch(fetchChats({ all: true }))
+    // Fetch ALL chats with cache-first strategy (device-primary like WhatsApp)
+    // If cache exists and not forceRefresh, returns cached data instantly (no API call)
+    dispatch(fetchChatsWithCache({ all: true, forceRefresh }))
       .then(() => {
         setHasLoadedOnce(true);
         setIsSilentRefresh(false); // Reset silent refresh flag after load completes
@@ -108,7 +109,8 @@ export default function InboxScreen() {
   const onRefresh = useCallback(() => {
     // Don't refresh if offline
     if (isOffline) return;
-    loadChats();
+    // Force refresh from server on pull-to-refresh
+    loadChats(true);
   }, [loadChats, isOffline]);
 
   // Handle load more (pagination) - disabled since we now fetch all chats at once
