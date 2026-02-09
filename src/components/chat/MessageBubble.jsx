@@ -2,7 +2,6 @@ import React, { memo, useState, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Image, Linking, Pressable, PanResponder, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useSelector } from 'react-redux';
 import { colors, chatColors } from '../../theme/colors';
 import PaymentMessage from './messages/PaymentMessage';
@@ -11,10 +10,12 @@ import WebFormTableMessage from './messages/WebFormTableMessage';
 import AskAddressReplyMessage from './messages/AskAddressReplyMessage';
 import InteractiveMessage from './messages/interactive/InteractiveMessage';
 import AudioMessage from './messages/AudioMessage';
+import { openLocalFile } from '../../services/mediaDownloadService';
 import {
   getMessageText,
   getMessageCaption,
   getMediaUrl,
+  getEffectiveMediaUrl,
   getFilename,
   getTemplateData,
   getInteractiveData,
@@ -30,12 +31,12 @@ import {
   getErrorInfo,
   getSenderInfo,
   getSystemMessageLabel,
+  isMediaDownloaded,
 } from '../../utils/messageHelpers';
 
-const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, onLongPress, onContactPress }) => {
+const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, onReplyPress, onLongPress, onContactPress, onMediaDownload, downloadState }) => {
   const [imageError, setImageError] = useState(false);
-  const [generatedVideoThumbnail, setGeneratedVideoThumbnail] = useState(null);
-  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+  const [videoError, setVideoError] = useState(false);
 
   // Get assistants and flows from Redux for sender name lookup
   const assistants = useSelector((state) => state.assistant?.assistants || []);
@@ -288,11 +289,70 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
       return renderFileSizeError();
     }
 
-    const imageUrl = getMediaUrl(message);
+    const remoteUrl = getMediaUrl(message);
+    const downloaded = isMediaDownloaded(message);
+    const displayUrl = downloaded ? message._localMediaPath : (downloadState?.localPath || null);
+    const isDownloading = downloadState?.status === 'downloading';
+    const downloadProgress = downloadState?.progress || 0;
 
-    if (!imageUrl) {
+    if (!remoteUrl && !displayUrl) {
       return renderErrorMessage('Image not available', 'image');
     }
+
+    // Not downloaded and not downloading: show blurry thumbnail with download button
+    if (!downloaded && !isDownloading && !displayUrl) {
+      return (
+        <View>
+          <TouchableOpacity
+            style={[styles.imageMessage, styles.mediaDownloadPlaceholder, caption ? styles.imageWithCaption : null]}
+            onPress={() => onMediaDownload?.(message)}
+            activeOpacity={0.7}
+          >
+            {remoteUrl ? (
+              <Image
+                source={{ uri: remoteUrl }}
+                style={styles.blurryThumbnail}
+                resizeMode="cover"
+                blurRadius={15}
+              />
+            ) : null}
+            <View style={styles.downloadIconCircle}>
+              <Icon name="download" size={20} color={colors.common.white} />
+            </View>
+          </TouchableOpacity>
+          {caption ? (
+            <Text style={[styles.caption, isOutgoing && styles.outgoingText]}>{caption}</Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    // Downloading: show blurry thumbnail with progress
+    if (isDownloading) {
+      return (
+        <View>
+          <View style={[styles.imageMessage, styles.mediaDownloadPlaceholder, caption ? styles.imageWithCaption : null]}>
+            {remoteUrl ? (
+              <Image
+                source={{ uri: remoteUrl }}
+                style={styles.blurryThumbnail}
+                resizeMode="cover"
+                blurRadius={15}
+              />
+            ) : null}
+            <View style={styles.downloadProgressContainer}>
+              <Text style={styles.downloadProgressText}>{downloadProgress}%</Text>
+            </View>
+          </View>
+          {caption ? (
+            <Text style={[styles.caption, isOutgoing && styles.outgoingText]}>{caption}</Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    // Downloaded or just-completed: show from local/remote file
+    const imageSource = displayUrl || remoteUrl;
 
     if (imageError) {
       return renderErrorMessage('Failed to load image', 'image');
@@ -300,9 +360,9 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
 
     return (
       <View>
-        <TouchableOpacity onPress={() => onImagePress?.(imageUrl)}>
+        <TouchableOpacity onPress={() => onImagePress?.(imageSource)}>
           <Image
-            source={{ uri: imageUrl }}
+            source={{ uri: imageSource }}
             style={[styles.imageMessage, caption ? styles.imageWithCaption : null]}
             resizeMode="cover"
             onError={() => setImageError(true)}
@@ -317,59 +377,101 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
     );
   };
 
-  // Generate a thumbnail from the video on the device if backend did not provide one
-  useEffect(() => {
-    const generateThumbnail = async () => {
-      try {
-        const videoUrl = getMediaUrl(message);
-        if (!videoUrl) return;
-
-        // Skip if backend already provided a thumbnail
-        const backendThumbnail =
-          message?.message?.thumbnail ||
-          message?.thumbnail ||
-          message?.waResponse?.video?.thumbnail ||
-          null;
-
-        if (backendThumbnail) return;
-
-        setIsGeneratingThumbnail(true);
-        const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, {
-          time: 1000, // 1 second into the video
-        });
-        setGeneratedVideoThumbnail(uri);
-      } catch (e) {
-        // Warn:('[MessageBubble] Failed to generate video thumbnail', e);
-      } finally {
-        setIsGeneratingThumbnail(false);
-      }
-    };
-
-    if (messageType === 'video') {
-      generateThumbnail();
-    }
-  }, [message, messageType]);
-
   // Render video message with thumbnail
   const renderVideoMessage = () => {
     if (isFileSizeErr) {
       return renderFileSizeError();
     }
 
-    const videoUrl = getMediaUrl(message);
+    const remoteUrl = getMediaUrl(message);
+    const downloaded = isMediaDownloaded(message);
+    const localPath = downloaded ? message._localMediaPath : (downloadState?.localPath || null);
+    const isDownloading = downloadState?.status === 'downloading';
+    const downloadProgress = downloadState?.progress || 0;
     const hasCaption = Boolean(caption);
 
-    if (!videoUrl) {
+    if (!remoteUrl && !localPath) {
       return renderErrorMessage('Video not available', 'video');
     }
 
-    // Get thumbnail URL if available from backend or generated on device
+    // Get thumbnail: prefer local generated thumbnail, then backend thumbnail
+    const localThumbnail = message?._localThumbnailPath || downloadState?.thumbnailPath || null;
     const thumbnailUrl =
+      localThumbnail ||
       message?.message?.thumbnail ||
       message?.thumbnail ||
       message?.waResponse?.video?.thumbnail ||
-      generatedVideoThumbnail ||
       null;
+
+    // Not downloaded: show thumbnail preview (if available) with download button
+    // NOTE: Only use thumbnailUrl for Image — remoteUrl is a video file (.mp4) that Image cannot render
+    if (!downloaded && !isDownloading && !localPath) {
+      return (
+        <View>
+          <TouchableOpacity
+            style={[
+              styles.videoContainer,
+              styles.mediaDownloadPlaceholder,
+              hasCaption ? styles.videoWithCaption : styles.videoWithoutCaption,
+            ]}
+            onPress={() => onMediaDownload?.(message)}
+            activeOpacity={0.7}
+          >
+            {thumbnailUrl && !videoError ? (
+              <Image
+                source={{ uri: thumbnailUrl }}
+                style={styles.blurryThumbnail}
+                resizeMode="cover"
+                onError={() => setVideoError(true)}
+              />
+            ) : (
+              <Icon name="video" size={40} color={colors.grey[400]} />
+            )}
+            <View style={styles.downloadIconCircle}>
+              <Icon name="download" size={20} color={colors.common.white} />
+            </View>
+          </TouchableOpacity>
+          {caption ? (
+            <Text style={[styles.caption, isOutgoing && styles.outgoingText]}>{caption}</Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    // Downloading: show thumbnail preview (if available) with progress
+    if (isDownloading) {
+      return (
+        <View>
+          <View
+            style={[
+              styles.videoContainer,
+              styles.mediaDownloadPlaceholder,
+              hasCaption ? styles.videoWithCaption : styles.videoWithoutCaption,
+            ]}
+          >
+            {thumbnailUrl && !videoError ? (
+              <Image
+                source={{ uri: thumbnailUrl }}
+                style={styles.blurryThumbnail}
+                resizeMode="cover"
+                onError={() => setVideoError(true)}
+              />
+            ) : (
+              <Icon name="video" size={40} color={colors.grey[300]} />
+            )}
+            <View style={styles.downloadProgressContainer}>
+              <Text style={styles.downloadProgressText}>{downloadProgress}%</Text>
+            </View>
+          </View>
+          {caption ? (
+            <Text style={[styles.caption, isOutgoing && styles.outgoingText]}>{caption}</Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    // Downloaded: play from local file
+    const videoSource = localPath || remoteUrl;
 
     return (
       <View>
@@ -378,16 +480,15 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
             styles.videoContainer,
             hasCaption ? styles.videoWithCaption : styles.videoWithoutCaption,
           ]}
-          onPress={() => Linking.openURL(videoUrl)}
+          onPress={() => onVideoPress?.(videoSource)}
           activeOpacity={0.9}
         >
-          {/* Video thumbnail or placeholder */}
-          {thumbnailUrl && !imageError ? (
+          {thumbnailUrl && !videoError ? (
             <Image
               source={{ uri: thumbnailUrl }}
               style={styles.videoThumbnail}
               resizeMode="cover"
-              onError={() => setImageError(true)}
+              onError={() => setVideoError(true)}
             />
           ) : (
             <View style={styles.videoPlaceholder}>
@@ -395,14 +496,12 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
             </View>
           )}
 
-          {/* Play button overlay */}
           <View style={styles.videoOverlay}>
             <View style={styles.playButtonCircle}>
               <Icon name="play" size={32} color={colors.common.white} />
             </View>
           </View>
 
-          {/* Duration badge if available */}
           {message?.message?.duration && (
             <View style={styles.videoDurationBadge}>
               <Text style={styles.videoDurationText}>
@@ -476,12 +575,24 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
     }
 
     const fileName = getFilename(message);
-    const fileUrl = getMediaUrl(message);
+    const remoteUrl = getMediaUrl(message);
+    const downloaded = isMediaDownloaded(message);
+    const localPath = downloaded ? message._localMediaPath : (downloadState?.localPath || null);
+    const isDownloading = downloadState?.status === 'downloading';
+    const downloadProgress = downloadState?.progress || 0;
+
+    const handleDocPress = () => {
+      if (downloaded || localPath) {
+        openLocalFile(localPath || remoteUrl, message?.message?.mime_type || message?.message?.document?.mime_type || '*/*');
+      } else if (!isDownloading) {
+        onMediaDownload?.(message);
+      }
+    };
 
     return (
       <TouchableOpacity
         style={styles.documentContainer}
-        onPress={() => fileUrl && Linking.openURL(fileUrl)}
+        onPress={handleDocPress}
       >
         <View style={[styles.documentIcon, isOutgoing && styles.documentIconOutgoing]}>
           <Icon
@@ -498,13 +609,13 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
             {fileName}
           </Text>
           <Text style={[styles.documentMeta, isOutgoing && styles.outgoingTextSecondary]}>
-            Document
+            {isDownloading ? `Downloading ${downloadProgress}%` : (downloaded ? 'Downloaded' : 'Document')}
           </Text>
         </View>
         <Icon
-          name="download"
+          name={downloaded ? 'check-circle' : (isDownloading ? 'progress-download' : 'download')}
           size={20}
-          color={colors.grey[500]}
+          color={downloaded ? chatColors.primary : colors.grey[500]}
         />
       </TouchableOpacity>
     );
@@ -979,7 +1090,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onReplyPress, o
       case 'video':
         return renderVideoMessage();
       case 'audio':
-        return <AudioMessage message={message} isOutgoing={isOutgoing} />;
+        return <AudioMessage message={message} isOutgoing={isOutgoing} onDownload={onMediaDownload} downloadState={downloadState} />;
       case 'document':
       case 'file':
         return renderDocumentMessage();
@@ -1814,6 +1925,40 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.text.secondary,
     fontWeight: '500',
+  },
+  // Media download styles
+  mediaDownloadPlaceholder: {
+    backgroundColor: colors.grey[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  downloadIconCircle: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  downloadProgressContainer: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  downloadProgressText: {
+    color: colors.common.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  blurryThumbnail: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
   },
 });
 

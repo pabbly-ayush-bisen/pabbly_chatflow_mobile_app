@@ -14,7 +14,9 @@ export const isOneSignalAvailable = () => {
 export const initializeOneSignal = () => {
   try {
     // Try to import OneSignal - will fail in Expo Go
-    OneSignal = require('react-native-onesignal').default;
+    // Note: v5.x uses named export, not default export
+    const onesignalModule = require('react-native-onesignal');
+    OneSignal = onesignalModule.OneSignal || onesignalModule.default;
 
     // Initialize with App ID
     OneSignal.initialize(APP_CONFIG.oneSignalAppId);
@@ -101,6 +103,7 @@ export const setupSubscriptionListener = () => {
   try {
     OneSignal.User.pushSubscription.addEventListener('change', async (subscription) => {
       const playerId = subscription.current.id;
+
       if (playerId) {
         await sendPlayerIdToServer(playerId);
       }
@@ -290,7 +293,7 @@ export const setTags = async (tags) => {
   }
 };
 
-// Debug function to log current OneSignal state
+// Get current OneSignal state
 export const logCurrentState = async () => {
   if (!OneSignal) {
     return null;
@@ -300,13 +303,14 @@ export const logCurrentState = async () => {
     const playerId = await OneSignal.User.pushSubscription.getIdAsync();
     const token = await OneSignal.User.pushSubscription.getTokenAsync();
     const optedIn = await OneSignal.User.pushSubscription.getOptedInAsync();
+
     return { playerId, token, optedIn };
   } catch (error) {
     return null;
   }
 };
 
-// Test function to send a test notification (for debugging)
+// Test function to check if ready to receive notifications
 export const sendTestNotification = async () => {
   const state = await logCurrentState();
   return !!state?.playerId;

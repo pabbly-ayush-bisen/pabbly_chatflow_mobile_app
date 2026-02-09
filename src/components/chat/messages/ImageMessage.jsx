@@ -3,20 +3,25 @@ import { View, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, chatColors } from '../../../theme/colors';
-import { getMediaUrl, getMessageCaption, hasFileSizeError, getActualMediaType, getFileSizeLimit } from '../../../utils/messageHelpers';
+import { getMediaUrl, getMessageCaption, hasFileSizeError, getActualMediaType, getFileSizeLimit, isMediaDownloaded } from '../../../utils/messageHelpers';
 
 /**
  * ImageMessage Component
- * Renders image messages with caption support
+ * Renders image messages with caption support and local download
  * Aligned with web app implementation (445x300px on web)
  */
-const ImageMessage = ({ message, isOutgoing, onImagePress }) => {
+const ImageMessage = ({ message, isOutgoing, onImagePress, onDownload, downloadState }) => {
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
-  const imageUrl = getMediaUrl(message);
+  const remoteUrl = getMediaUrl(message);
   const caption = getMessageCaption(message);
   const hasCaption = Boolean(caption);
+
+  const downloaded = isMediaDownloaded(message);
+  const localPath = downloaded ? message._localMediaPath : (downloadState?.localPath || null);
+  const isDownloading = downloadState?.status === 'downloading';
+  const downloadProgress = downloadState?.progress || 0;
 
   // Check for file size error from WhatsApp Business App
   const isFileSizeErr = hasFileSizeError(message);
@@ -41,8 +46,8 @@ const ImageMessage = ({ message, isOutgoing, onImagePress }) => {
     );
   }
 
-  // Render error state
-  if (!imageUrl) {
+  // No URL available at all
+  if (!remoteUrl && !localPath) {
     return (
       <View style={styles.errorContainer}>
         <Icon name="image-off" size={40} color={colors.grey[400]} />
@@ -50,6 +55,75 @@ const ImageMessage = ({ message, isOutgoing, onImagePress }) => {
       </View>
     );
   }
+
+  // Not downloaded and not downloading: show blurry thumbnail with download button
+  if (!downloaded && !isDownloading && !localPath) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity
+          style={[
+            styles.imageContainer,
+            styles.downloadPlaceholder,
+            hasCaption ? styles.imageWithCaption : styles.imageWithoutCaption,
+          ]}
+          onPress={() => onDownload?.(message)}
+          activeOpacity={0.7}
+        >
+          {remoteUrl ? (
+            <Image
+              source={{ uri: remoteUrl }}
+              style={styles.blurryPreview}
+              resizeMode="cover"
+              blurRadius={15}
+            />
+          ) : (
+            <Icon name="image" size={40} color={colors.grey[400]} />
+          )}
+          <View style={styles.downloadIconCircle}>
+            <Icon name="download" size={20} color={colors.common.white} />
+          </View>
+        </TouchableOpacity>
+        {hasCaption && (
+          <Text style={[styles.caption, isOutgoing && styles.outgoingCaption]}>{caption}</Text>
+        )}
+      </View>
+    );
+  }
+
+  // Downloading: show blurry thumbnail with progress
+  if (isDownloading) {
+    return (
+      <View style={styles.container}>
+        <View
+          style={[
+            styles.imageContainer,
+            styles.downloadPlaceholder,
+            hasCaption ? styles.imageWithCaption : styles.imageWithoutCaption,
+          ]}
+        >
+          {remoteUrl ? (
+            <Image
+              source={{ uri: remoteUrl }}
+              style={styles.blurryPreview}
+              resizeMode="cover"
+              blurRadius={15}
+            />
+          ) : (
+            <Icon name="image" size={40} color={colors.grey[300]} />
+          )}
+          <View style={styles.progressContainer}>
+            <Text style={styles.progressText}>{downloadProgress}%</Text>
+          </View>
+        </View>
+        {hasCaption && (
+          <Text style={[styles.caption, isOutgoing && styles.outgoingCaption]}>{caption}</Text>
+        )}
+      </View>
+    );
+  }
+
+  // Downloaded or just-completed: show from local file
+  const imageSource = localPath || remoteUrl;
 
   if (imageError) {
     return (
@@ -67,11 +141,11 @@ const ImageMessage = ({ message, isOutgoing, onImagePress }) => {
           styles.imageContainer,
           hasCaption ? styles.imageWithCaption : styles.imageWithoutCaption,
         ]}
-        onPress={() => onImagePress?.(imageUrl)}
+        onPress={() => onImagePress?.(imageSource)}
         activeOpacity={0.9}
       >
         <Image
-          source={{ uri: imageUrl }}
+          source={{ uri: imageSource }}
           style={styles.image}
           resizeMode="cover"
           onLoadStart={() => setImageLoading(true)}
@@ -170,6 +244,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.warning.main,
     marginTop: 2,
+  },
+  // Download styles
+  blurryPreview: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  downloadPlaceholder: {
+    backgroundColor: colors.grey[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  downloadIconCircle: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressContainer: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressText: {
+    color: colors.common.white,
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

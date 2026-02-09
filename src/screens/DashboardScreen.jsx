@@ -35,6 +35,7 @@ import { callApi, endpoints, httpMethods } from '../utils/axios';
 import { colors } from '../theme/colors';
 import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
 import { useNetwork } from '../contexts/NetworkContext';
+import { cacheManager } from '../database/CacheManager';
 
 // Import reusable components
 import {
@@ -502,6 +503,13 @@ export default function DashboardScreen() {
     if (numberId === settingId) return;
     setAccessingId(numberId);
     try {
+      // Clear ALL cache data (SQLite + Redux) BEFORE switching WhatsApp numbers
+      // This prevents showing old account's chats when navigating to inbox
+      console.log('🔄 [DashboardScreen] Switching WhatsApp number, clearing all cache...');
+      dispatch(clearInboxData());
+      await cacheManager.clearAllCache();
+      console.log('✅ [DashboardScreen] Cache cleared, proceeding with access...');
+
       const result = await dispatch(accessBusinessAccount(numberId)).unwrap();
       if (result.status === 'success') {
         // Ensure folder selection matches the folder of the accessed WhatsApp number
@@ -554,8 +562,12 @@ export default function DashboardScreen() {
 
     setAccessingSharedId(id || `${row?.email}-${row?.settingId}`);
     try {
-      // Clear old inbox data immediately to prevent showing stale chats
+      // Clear ALL cache data (SQLite + Redux) BEFORE switching accounts
+      // This prevents showing old account's chats when navigating to inbox
+      console.log('🔄 [DashboardScreen] Switching to team member account, clearing all cache...');
       dispatch(clearInboxData());
+      await cacheManager.clearAllCache();
+      console.log('✅ [DashboardScreen] Cache cleared, proceeding with login...');
 
       const payload = {
         email: row.email,
@@ -596,8 +608,12 @@ export default function DashboardScreen() {
     if (!isTeamMemberLoggedIn) return;
     setExitingTeamMember(true);
     try {
-      // Clear old inbox data immediately to prevent showing stale chats
+      // Clear ALL cache data (SQLite + Redux) BEFORE switching back to admin
+      // This prevents showing team member's chats when navigating to inbox
+      console.log('🔄 [DashboardScreen] Exiting team member mode, clearing all cache...');
       dispatch(clearInboxData());
+      await cacheManager.clearAllCache();
+      console.log('✅ [DashboardScreen] Cache cleared, proceeding with logout...');
 
       await dispatch(logoutFromTeammember()).unwrap();
 

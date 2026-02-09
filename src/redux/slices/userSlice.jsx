@@ -11,6 +11,7 @@ import {
   getOneSignalPlayerId,
   removePlayerIdFromBackend,
 } from '../../services/oneSignalService';
+import { clearAllNotifications } from '../../services/notificationService';
 // ============================================================================
 // ASYNC THUNKS - Pabbly Accounts Authentication
 // ============================================================================
@@ -561,6 +562,13 @@ export const logout = createAsyncThunk(
         // Ignore cache clear errors
       }
 
+      // Clear all notifications to prevent stale notification data on next login
+      try {
+        await clearAllNotifications();
+      } catch (notificationError) {
+        // Ignore notification clear errors
+      }
+
       return response;
     } catch (error) {
       // Still destroy session even on API error
@@ -571,6 +579,13 @@ export const logout = createAsyncThunk(
         await cacheManager.clearAllCache();
       } catch (cacheError) {
         // Ignore cache clear errors
+      }
+
+      // Still try to clear notifications
+      try {
+        await clearAllNotifications();
+      } catch (notificationError) {
+        // Ignore notification clear errors
       }
 
       return rejectWithValue(error.response?.data || error.message);

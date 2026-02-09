@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 6;
 
 // Table Names
 export const Tables = {
@@ -32,6 +32,7 @@ export const CREATE_TABLES_SQL = {
       contact_name TEXT,
       contact_phone TEXT,
       contact_profile_pic TEXT,
+      contact_last_active TEXT,
       wa_id TEXT,
       phone_number_id TEXT,
       last_message_id TEXT,
@@ -49,6 +50,8 @@ export const CREATE_TABLES_SQL = {
       folder_id TEXT,
       chat_window_status TEXT,
       chat_window_expiry INTEGER,
+      messages_loaded INTEGER DEFAULT 0,
+      messages_loaded_at INTEGER,
       created_at INTEGER,
       updated_at INTEGER,
       synced_at INTEGER,
@@ -95,7 +98,9 @@ export const CREATE_TABLES_SQL = {
       is_dirty INTEGER DEFAULT 0,
       is_pending INTEGER DEFAULT 0,
       temp_id TEXT,
-      FOREIGN KEY (chat_id) REFERENCES ${Tables.CHATS}(server_id)
+      local_media_path TEXT,
+      local_thumbnail_path TEXT,
+      media_download_status TEXT DEFAULT 'none'
     )
   `,
 
@@ -210,6 +215,7 @@ export const CREATE_INDEXES_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_messages_is_dirty ON ${Tables.MESSAGES}(is_dirty)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_is_pending ON ${Tables.MESSAGES}(is_pending)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON ${Tables.MESSAGES}(chat_id, timestamp DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_download_status ON ${Tables.MESSAGES}(media_download_status)`,
 
   // Contact indexes
   `CREATE INDEX IF NOT EXISTS idx_contacts_setting_id ON ${Tables.CONTACTS}(setting_id)`,
@@ -223,6 +229,11 @@ export const CREATE_INDEXES_SQL = [
   // Sync queue indexes
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON ${Tables.SYNC_QUEUE}(status)`,
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_setting_id ON ${Tables.SYNC_QUEUE}(setting_id)`,
+
+  // Message deduplication indexes (partial unique — only where NOT NULL)
+  // Prevents duplicate messages with the same server_id or wa_message_id within a chat
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_server_id_unique ON ${Tables.MESSAGES}(chat_id, server_id) WHERE server_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wamid_unique ON ${Tables.MESSAGES}(chat_id, wa_message_id) WHERE wa_message_id IS NOT NULL`,
 ];
 
 // Cache metadata keys
@@ -236,12 +247,14 @@ export const CacheKeys = {
 };
 
 // Cache expiry durations (in milliseconds)
+// NOTE: CHATS, MESSAGES, and CONTACTS are set to never expire (device-primary strategy)
+// Data is refreshed only via pull-to-refresh, socket updates, or explicit refresh
 export const CacheExpiry = {
-  CHATS: 5 * 60 * 1000,        // 5 minutes
-  MESSAGES: 2 * 60 * 1000,     // 2 minutes
-  CONTACTS: 10 * 60 * 1000,    // 10 minutes
-  TEMPLATES: 30 * 60 * 1000,   // 30 minutes
-  QUICK_REPLIES: 15 * 60 * 1000, // 15 minutes
+  CHATS: Infinity,             // Never expires - device-primary like WhatsApp
+  MESSAGES: Infinity,          // Never expires - messages stored permanently once fetched
+  CONTACTS: Infinity,          // Never expires - contacts stored permanently
+  TEMPLATES: 30 * 60 * 1000,   // 30 minutes - templates may change on server
+  QUICK_REPLIES: 15 * 60 * 1000, // 15 minutes - quick replies may change
 };
 
 export default {

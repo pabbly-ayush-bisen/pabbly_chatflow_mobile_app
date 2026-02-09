@@ -21,6 +21,7 @@ import {
   handleNewMessagesBulk,
 } from '../services/socketHandlers';
 import { fetchChats } from '../redux/slices/inboxSlice';
+import { fetchChatsWithCache } from '../redux/cacheThunks';
 import {
   registerForPushNotifications,
   showMessageNotification,
@@ -30,6 +31,8 @@ import {
   addNotificationReceivedListener,
 } from '../services/notificationService';
 import { navigate } from '../navigation/navigationUtils';
+import { processSyncQueue } from '../services/syncQueueService';
+import { useNetwork } from './NetworkContext';
 
 const SocketContext = createContext(null);
 
@@ -53,16 +56,49 @@ export const SocketProvider = ({ children }) => {
   const notificationListenerRef = useRef(null);
   const responseListenerRef = useRef(null);
   const previousSettingIdRef = useRef(null); // Track previous settingId for reconnection
+  const hasConnectedBeforeRef = useRef(false); // Track first connection vs reconnection
+  const disconnectedAtRef = useRef(null); // Track when disconnection happened for smart reconnect
 
   const handleConnect = useCallback(() => {
     setConnectionStatus('connected');
     setError(null);
-    // Fetch ALL chats without pagination (matching web app behavior)
-    dispatch(fetchChats({ all: true }));
+
+    if (!hasConnectedBeforeRef.current) {
+      // First connection: load from cache first, then fetch all from API
+      dispatch(fetchChatsWithCache({ all: true }));
+      hasConnectedBeforeRef.current = true;
+    } else {
+      // Reconnection: determine how many pages to fetch based on downtime
+      const disconnectedMs = disconnectedAtRef.current
+        ? Date.now() - disconnectedAtRef.current
+        : Infinity;
+      const disconnectedMinutes = disconnectedMs / (1000 * 60);
+
+      // Short disconnect (<5 min): fetch only 2 pages (most recent chats)
+      // Medium disconnect (5-30 min): fetch 5 pages
+      // Long disconnect (>30 min): fetch all pages (full refresh)
+      let maxPages;
+      if (disconnectedMinutes < 5) {
+        maxPages = 2;
+      } else if (disconnectedMinutes < 30) {
+        maxPages = 5;
+      } else {
+        maxPages = 50;
+      }
+
+      dispatch(fetchChatsWithCache({ all: true, forceRefresh: true, maxPages }));
+      disconnectedAtRef.current = null;
+    }
+
+    // Process queued messages after reconnection
+    setTimeout(() => {
+      processSyncQueue(dispatch);
+    }, 1000);
   }, [dispatch]);
 
   const handleDisconnect = useCallback((reason) => {
     setConnectionStatus('disconnected');
+    disconnectedAtRef.current = Date.now();
   }, []);
 
   const handleError = useCallback((errorMessage) => {
@@ -258,6 +294,17 @@ export const SocketProvider = ({ children }) => {
       }
     };
   }, [authenticated]);
+
+  // Process sync queue when network comes back online
+  const { registerNetworkChangeCallback } = useNetwork();
+  useEffect(() => {
+    const unregister = registerNetworkChangeCallback((event) => {
+      if (event.type === 'online' && isSocketConnected()) {
+        processSyncQueue(dispatch);
+      }
+    });
+    return unregister;
+  }, [dispatch, registerNetworkChangeCallback]);
 
   // Connect when authenticated
   useEffect(() => {

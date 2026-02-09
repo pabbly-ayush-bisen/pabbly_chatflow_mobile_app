@@ -1,4 +1,5 @@
 // Common reusable components
+export { MessagePreviewBubble, AudioPlayerPreview } from './MessagePreview';
 export { default as StatsCard } from './StatsCard';
 export { default as FolderPill } from './FolderPill';
 export { default as StatusBadge, STATUS_COLORS } from './StatusBadge';

@@ -1,20 +1,26 @@
 import React, { memo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, chatColors } from '../../../theme/colors';
-import { getMediaUrl, getFilename, getMessageCaption, hasFileSizeError, getActualMediaType, getFileSizeLimit } from '../../../utils/messageHelpers';
+import { getMediaUrl, getFilename, getMessageCaption, hasFileSizeError, getActualMediaType, getFileSizeLimit, isMediaDownloaded } from '../../../utils/messageHelpers';
+import { openLocalFile } from '../../../services/mediaDownloadService';
 
 /**
  * DocumentMessage Component
- * Renders document/file messages with download option
+ * Renders document/file messages with download and local file access
  * Aligned with web app FileMessage component
  */
-const DocumentMessage = ({ message, isOutgoing }) => {
-  const fileUrl = getMediaUrl(message);
+const DocumentMessage = ({ message, isOutgoing, onDownload, downloadState }) => {
+  const remoteUrl = getMediaUrl(message);
   const fileName = getFilename(message);
   const caption = getMessageCaption(message);
   const hasCaption = Boolean(caption);
+
+  const downloaded = isMediaDownloaded(message);
+  const localPath = downloaded ? message._localMediaPath : (downloadState?.localPath || null);
+  const isDownloading = downloadState?.status === 'downloading';
+  const downloadProgress = downloadState?.progress || 0;
 
   // Check for file size error
   const isFileSizeErr = hasFileSizeError(message);
@@ -51,10 +57,14 @@ const DocumentMessage = ({ message, isOutgoing }) => {
   const { name: iconName, color: iconColor } = getFileIcon();
   const fileExt = getFileExtension();
 
-  // Handle document download
-  const handleDownload = () => {
-    if (fileUrl) {
-      Linking.openURL(fileUrl);
+  // Handle document press
+  const handlePress = () => {
+    if (downloaded || localPath) {
+      // Open from local file using system viewer
+      openLocalFile(localPath || remoteUrl, message?.message?.mime_type || message?.message?.document?.mime_type || '*/*');
+    } else if (!isDownloading) {
+      // Trigger download
+      onDownload?.(message);
     }
   };
 
@@ -78,11 +88,30 @@ const DocumentMessage = ({ message, isOutgoing }) => {
     );
   }
 
+  // Determine status icon
+  const getStatusIcon = () => {
+    if (downloaded) return 'check-circle';
+    if (isDownloading) return 'progress-download';
+    return 'download';
+  };
+
+  const getStatusColor = () => {
+    if (downloaded) return chatColors.primary;
+    return isOutgoing ? 'rgba(255,255,255,0.7)' : colors.grey[500];
+  };
+
+  // Status text
+  const getStatusText = () => {
+    if (isDownloading) return `Downloading ${downloadProgress}%`;
+    if (downloaded) return 'Downloaded';
+    return fileExt ? `${fileExt} Document` : 'Document';
+  };
+
   return (
     <View style={styles.container}>
       <TouchableOpacity
         style={[styles.documentContainer, isOutgoing && styles.documentContainerOutgoing]}
-        onPress={handleDownload}
+        onPress={handlePress}
         activeOpacity={0.7}
       >
         {/* File icon with extension badge */}
@@ -105,15 +134,15 @@ const DocumentMessage = ({ message, isOutgoing }) => {
             {fileName}
           </Text>
           <Text style={[styles.fileMeta, isOutgoing && styles.fileMetaOutgoing]}>
-            {fileExt ? `${fileExt} Document` : 'Document'}
+            {getStatusText()}
           </Text>
         </View>
 
-        {/* Download icon */}
+        {/* Status icon */}
         <Icon
-          name="download"
+          name={getStatusIcon()}
           size={20}
-          color={isOutgoing ? 'rgba(255,255,255,0.7)' : colors.grey[500]}
+          color={getStatusColor()}
         />
       </TouchableOpacity>
 

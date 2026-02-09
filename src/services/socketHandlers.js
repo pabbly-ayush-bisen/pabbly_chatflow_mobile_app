@@ -14,6 +14,8 @@ import {
 } from '../redux/slices/inboxSlice';
 import { logout } from '../redux/slices/userSlice';
 import { setUpdatedTemplate } from '../redux/slices/templateSlice';
+import { handleNewMessageCache, updateMessageStatusInCache, resetUnreadCountInCache } from '../redux/cacheThunks';
+import { cacheManager } from '../database/CacheManager';
 
 /**
  * Handle new message from socket
@@ -61,6 +63,9 @@ export const handleNewMessage = async (dispatch, newChat) => {
         };
         dispatch(updateChatInList(chatForList));
 
+        // Sync reaction chat update to SQLite cache
+        try { await cacheManager.updateChat(chatForList); } catch (e) {}
+
         return;
       }
     }
@@ -83,6 +88,15 @@ export const handleNewMessage = async (dispatch, newChat) => {
       dispatch(addMessageToCurrentConversation({
         chatId: newChat._id,
         message: lastMessage,
+      }));
+    }
+
+    // Sync new message and chat update to SQLite cache
+    if (lastMessage) {
+      dispatch(handleNewMessageCache({
+        chatId: newChat._id,
+        message: lastMessage,
+        chatData: chatForList,
       }));
     }
 
@@ -120,6 +134,17 @@ export const handleMessageStatus = async (dispatch, data) => {
       },
     }));
 
+    // Sync message status to SQLite cache
+    dispatch(updateMessageStatusInCache({
+      messageId: data.messageWaId,
+      updates: {
+        status: data.status,
+        sentAt: data.sentAt,
+        deliveredAt: data.deliveredAt,
+        readAt: data.readAt,
+      },
+    }));
+
   } catch (error) {
     // Error handling message status
   }
@@ -132,6 +157,8 @@ export const handleMessageStatus = async (dispatch, data) => {
  */
 export const handleResetUnreadCount = (dispatch, chatId) => {
   dispatch(resetUnreadCount(chatId));
+  // Sync unread count reset to SQLite cache
+  dispatch(resetUnreadCountInCache(chatId));
 };
 
 /**
@@ -201,6 +228,8 @@ export const handleUpdateChatOnContactUpdate = async (dispatch, response) => {
         // Merge with existing chats - this will be handled in the slice
         for (const chat of chats) {
           dispatch(updateChatInList(chat));
+          // Sync contact-updated chat to SQLite cache
+          try { await cacheManager.updateChat(chat); } catch (e) {}
         }
       }
     }
@@ -277,6 +306,20 @@ export const handleNewMessagesBulk = async (dispatch, newChats, getState) => {
     );
 
     dispatch(setChats(updatedChats));
+
+    // Sync each bulk chat's last message to SQLite cache
+    relevantChats.forEach(newChat => {
+      const lastMsg = newChat.messages && newChat.messages.length > 0
+        ? newChat.messages[newChat.messages.length - 1]
+        : null;
+      if (lastMsg) {
+        dispatch(handleNewMessageCache({
+          chatId: newChat._id,
+          message: lastMsg,
+          chatData: { ...newChat, messages: undefined },
+        }));
+      }
+    });
 
     // Update last fetch time
     const lastFetchTime = await AsyncStorage.getItem('@pabbly_chatflow_lastFetchTime');

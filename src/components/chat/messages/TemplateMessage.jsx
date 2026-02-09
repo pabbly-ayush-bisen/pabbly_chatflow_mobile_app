@@ -6,6 +6,20 @@ import { useSelector } from 'react-redux';
 import { colors, chatColors } from '../../../theme/colors';
 import { getTemplateData, getMediaUrl } from '../../../utils/messageHelpers';
 
+// Button icon mapping for all template button types (matching web app and BUTTON_CONFIG)
+const BUTTON_ICON_MAP = {
+  URL: 'open-in-new',
+  PHONE_NUMBER: 'phone',
+  QUICK_REPLY: 'reply',
+  COPY_CODE: 'content-copy',
+  FLOW: 'sitemap',
+  CATALOG: 'shopping',
+  MPM: 'package-variant',
+  SPM: 'package',
+  VOICE_CALL: 'phone-outgoing',
+  OTP: 'shield-key',
+};
+
 /**
  * TemplateMessage Component
  * Renders WhatsApp template messages with header, body, footer, and buttons
@@ -202,41 +216,35 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
     return null;
   };
 
-  // Render buttons
+  // Render buttons - handles all button types matching web app implementation
   const renderButtons = () => {
     const buttons = buttonsComponent?.buttons || [];
     if (buttons.length === 0) return null;
 
     return (
       <View style={styles.buttonsContainer}>
-        {buttons.map((button, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.button}
-            onPress={() => {
-              if (button.type === 'URL' && button.url) {
-                Linking.openURL(button.url);
-              } else if (button.type === 'PHONE_NUMBER' && button.phone_number) {
-                Linking.openURL(`tel:${button.phone_number}`);
-              }
-            }}
-            activeOpacity={0.7}
-          >
-            {button.type === 'URL' && (
-              <Icon name="open-in-new" size={16} color={chatColors.primary} style={styles.buttonIcon} />
-            )}
-            {button.type === 'PHONE_NUMBER' && (
-              <Icon name="phone" size={16} color={chatColors.primary} style={styles.buttonIcon} />
-            )}
-            {button.type === 'QUICK_REPLY' && (
-              <Icon name="reply" size={16} color={chatColors.primary} style={styles.buttonIcon} />
-            )}
-            {button.type === 'COPY_CODE' && (
-              <Icon name="content-copy" size={16} color={chatColors.primary} style={styles.buttonIcon} />
-            )}
-            <Text style={styles.buttonText} numberOfLines={1}>{button.text}</Text>
-          </TouchableOpacity>
-        ))}
+        {buttons.map((button, index) => {
+          const buttonType = button.type?.toUpperCase();
+          const iconName = BUTTON_ICON_MAP[buttonType] || 'reply';
+
+          return (
+            <TouchableOpacity
+              key={index}
+              style={styles.button}
+              onPress={() => {
+                if (buttonType === 'URL' && button.url) {
+                  Linking.openURL(button.url);
+                } else if (buttonType === 'PHONE_NUMBER' && button.phone_number) {
+                  Linking.openURL(`tel:${button.phone_number}`);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Icon name={iconName} size={16} color={chatColors.primary} style={styles.buttonIcon} />
+              <Text style={styles.buttonText} numberOfLines={1}>{button.text}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     );
   };

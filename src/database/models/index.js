@@ -6,3 +6,4 @@
 
 export { default as ChatModel } from './ChatModel';
 export { default as MessageModel } from './MessageModel';
+export { default as QuickReplyModel } from './QuickReplyModel';

@@ -25,10 +25,12 @@ import {
   setupForegroundNotificationHandler,
   setupSubscriptionListener,
   isOneSignalAvailable,
+  logCurrentState,
 } from './src/services/oneSignalService';
 import { navigate } from './src/navigation/navigationUtils';
 
 // Initialize OneSignal (will skip automatically if running in Expo Go)
+console.log('[App.js] Starting OneSignal initialization...');
 initializeOneSignal();
 
 // OTA Update configuration
@@ -61,29 +63,55 @@ function AppContent() {
 
   // Setup OneSignal notification handlers (skipped in Expo Go)
   useEffect(() => {
+    console.log('[App.js] Setting up OneSignal handlers...');
+
     if (!isOneSignalAvailable()) {
+      console.log('[App.js] OneSignal not available, skipping handler setup');
       return;
     }
 
+    console.log('[App.js] OneSignal is available, proceeding with setup');
+
     // Request notification permission
+    console.log('[App.js] Requesting notification permission...');
     requestNotificationPermission();
 
     // Handle notification clicks (when user taps notification)
+    console.log('[App.js] Setting up notification click handler...');
     const removeClickHandler = setupNotificationClickHandler((data) => {
+      console.log('[App.js] Notification click callback triggered');
+      console.log('[App.js] Click data:', JSON.stringify(data, null, 2));
       // Navigate to chat when notification is tapped
       if (data?.chatId) {
+        console.log('[App.js] Navigating to ChatDetails with chatId:', data.chatId);
         navigate('ChatDetails', { chatId: data.chatId });
+      } else {
+        console.log('[App.js] No chatId in click data, not navigating');
       }
     });
 
     // Handle foreground notifications
-    const removeForegroundHandler = setupForegroundNotificationHandler();
+    console.log('[App.js] Setting up foreground notification handler...');
+    const removeForegroundHandler = setupForegroundNotificationHandler((notification) => {
+      console.log('[App.js] Foreground notification callback triggered');
+      console.log('[App.js] Notification:', JSON.stringify(notification, null, 2));
+    });
 
     // Listen for subscription changes (token refresh)
+    console.log('[App.js] Setting up subscription listener...');
     const removeSubscriptionListener = setupSubscriptionListener();
+
+    // Log initial OneSignal state after short delay
+    setTimeout(async () => {
+      console.log('[App.js] Logging initial OneSignal state...');
+      await logCurrentState();
+    }, 2000);
+
+    console.log('[App.js] All OneSignal handlers setup complete');
 
     // Cleanup on unmount
     return () => {
+      console.log('[App.js] Cleaning up OneSignal handlers...');
       if (removeClickHandler) removeClickHandler();
       if (removeForegroundHandler) removeForegroundHandler();
       if (removeSubscriptionListener) removeSubscriptionListener();

@@ -6,12 +6,13 @@
  */
 
 import { databaseManager } from '../DatabaseManager';
-import { Tables, CacheExpiry } from '../schema';
+import { Tables } from '../schema';
 import { generateUUID } from '../../utils/helpers';
 
 class MessageModel {
   /**
    * Convert API message object to database record format
+   * IMPORTANT: We store the FULL original message JSON to return exact same format from cache
    * @param {Object} message - Message object from API
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
@@ -19,10 +20,38 @@ class MessageModel {
    */
   static toDbRecord(message, chatId, settingId) {
     const now = Date.now();
-    const msgData = message.message || message;
 
-    // Extract media info based on message type
-    const mediaInfo = this._extractMediaInfo(msgData);
+    // Store the FULL original API message as JSON - this is the primary data
+    // We will return this exact same object when reading from cache
+    let fullMessageJson = null;
+    try {
+      fullMessageJson = JSON.stringify(message);
+
+      // SQLite can have issues with very large text fields
+      // Limit to 50KB per message to be safe
+      const MAX_SIZE = 50000;
+      if (fullMessageJson && fullMessageJson.length > MAX_SIZE) {
+        const essentialMessage = {
+          _id: message._id,
+          id: message.id,
+          direction: message.direction,
+          isFromMe: message.isFromMe,
+          status: message.status,
+          timestamp: message.timestamp,
+          wamid: message.wamid,
+          message: message.message,
+          senderName: message.senderName,
+          senderPhone: message.senderPhone,
+        };
+        fullMessageJson = JSON.stringify(essentialMessage);
+      }
+    } catch (e) {
+      // Failed to stringify message
+    }
+
+    // Extract basic fields for indexing/querying only
+    const msgData = message.message || message;
+    const messageType = this._extractMessageType(message, msgData);
 
     return {
       id: generateUUID(),
@@ -31,13 +60,13 @@ class MessageModel {
       setting_id: settingId,
       wa_message_id: message.wamid || message.waMessageId || message.wa_message_id || null,
       direction: message.direction || (message.isFromMe ? 'outbound' : 'inbound'),
-      type: msgData.type || 'text',
-      body: this._extractBody(msgData),
-      media_url: mediaInfo.url,
-      media_mime_type: mediaInfo.mimeType,
-      media_filename: mediaInfo.filename,
-      media_caption: mediaInfo.caption,
-      thumbnail_url: mediaInfo.thumbnail,
+      type: messageType,
+      body: this._extractBody(msgData, messageType), // For search only
+      media_url: null, // Simplified - full data is in metadata
+      media_mime_type: null,
+      media_filename: null,
+      media_caption: null,
+      thumbnail_url: null,
       status: message.status || 'sent',
       timestamp: message.timestamp
         ? new Date(message.timestamp).getTime()
@@ -45,12 +74,12 @@ class MessageModel {
       sent_at: message.sentAt ? new Date(message.sentAt).getTime() : null,
       delivered_at: message.deliveredAt ? new Date(message.deliveredAt).getTime() : null,
       read_at: message.readAt ? new Date(message.readAt).getTime() : null,
-      reaction: message.reaction ? JSON.stringify(message.reaction) : null,
+      reaction: null,
       reply_to_id: message.context?.message_id || message.replyTo || null,
-      context_message: message.context ? JSON.stringify(message.context) : null,
-      interactive_data: msgData.interactive ? JSON.stringify(msgData.interactive) : null,
-      template_data: msgData.template ? JSON.stringify(msgData.template) : null,
-      metadata: message.metadata ? JSON.stringify(message.metadata) : null,
+      context_message: null,
+      interactive_data: null,
+      template_data: null,
+      metadata: fullMessageJson, // FULL ORIGINAL MESSAGE - this is the source of truth
       is_from_me: message.isFromMe || message.direction === 'outbound' ? 1 : 0,
       sender_name: message.senderName || message.sender?.name || null,
       sender_phone: message.senderPhone || message.sender?.phone || null,
@@ -62,60 +91,119 @@ class MessageModel {
       is_dirty: 0,
       is_pending: message.isPending || message.status === 'pending' ? 1 : 0,
       temp_id: message.tempId || null,
+      local_media_path: null,
+      local_thumbnail_path: null,
+      media_download_status: 'none',
     };
+  }
+
+  /**
+   * Extract message type from various API structures
+   */
+  static _extractMessageType(message, msgData) {
+    // Try multiple locations for type
+    if (msgData?.type) return msgData.type;
+    if (message?.type) return message.type;
+
+    // Infer type from content
+    if (msgData?.image || message?.image) return 'image';
+    if (msgData?.video || message?.video) return 'video';
+    if (msgData?.audio || message?.audio) return 'audio';
+    if (msgData?.document || message?.document) return 'document';
+    if (msgData?.sticker || message?.sticker) return 'sticker';
+    if (msgData?.location || message?.location) return 'location';
+    if (msgData?.contacts || message?.contacts) return 'contacts';
+    if (msgData?.interactive || message?.interactive) return 'interactive';
+    if (msgData?.template || message?.template) return 'template';
+    if (msgData?.button || message?.button) return 'button';
+
+    return 'text'; // Default fallback
   }
 
   /**
    * Extract body text from message
    */
-  static _extractBody(message) {
+  static _extractBody(message, messageType) {
     if (!message) return null;
 
-    switch (message.type) {
+    const type = messageType || message.type;
+
+    switch (type) {
       case 'text':
-        return message.body || message.text?.body || null;
+        return message.body || message.text?.body || message.text || null;
       case 'image':
-        return message.image?.caption || null;
+        return message.image?.caption || message.caption || null;
       case 'video':
-        return message.video?.caption || null;
+        return message.video?.caption || message.caption || null;
       case 'document':
-        return message.document?.caption || null;
+        return message.document?.caption || message.caption || null;
       case 'interactive':
         return message.interactive?.body?.text || null;
       case 'button':
         return message.button?.text || null;
+      case 'location':
+        return message.location?.name || message.location?.address || '[Location]';
+      case 'contacts':
+        return '[Contact]';
       default:
-        return message.body || null;
+        return message.body || message.text?.body || message.text || null;
     }
   }
 
   /**
    * Extract media information from message
    */
-  static _extractMediaInfo(message) {
+  static _extractMediaInfo(message, messageType) {
     if (!message) return {};
 
-    const type = message.type;
+    const type = messageType || message.type;
     const mediaData = message[type] || {};
 
+    // Also check direct properties on message
     return {
-      url: mediaData.link || mediaData.url || null,
-      mimeType: mediaData.mime_type || mediaData.mimeType || null,
-      filename: mediaData.filename || null,
-      caption: mediaData.caption || null,
-      thumbnail: mediaData.thumbnail || null,
+      url: mediaData.link || mediaData.url || mediaData.id || message.mediaUrl || null,
+      mimeType: mediaData.mime_type || mediaData.mimeType || message.mimeType || null,
+      filename: mediaData.filename || message.filename || null,
+      caption: mediaData.caption || message.caption || null,
+      thumbnail: mediaData.thumbnail || message.thumbnail || null,
     };
   }
 
   /**
    * Convert database record to app-friendly format
+   * RETURNS THE EXACT SAME FORMAT AS THE ORIGINAL API RESPONSE
    * @param {Object} record - Database record
-   * @returns {Object} App-friendly message object
+   * @returns {Object} Original API message object (exact same format)
    */
   static fromDbRecord(record) {
     if (!record) return null;
 
-    const message = {
+    // PRIMARY: Return the EXACT original message stored in metadata
+    if (record.metadata) {
+      try {
+        const originalMessage = JSON.parse(record.metadata);
+
+        // Return exact original message with only cache metadata added
+        return {
+          ...originalMessage,
+          _cached: true, // Mark as from cache
+          _syncedAt: record.synced_at,
+          // Update status from DB in case it changed (e.g., sent -> delivered -> read)
+          status: record.status || originalMessage.status,
+          // Media download tracking
+          _localMediaPath: record.local_media_path || null,
+          _localThumbnailPath: record.local_thumbnail_path || null,
+          _mediaDownloadStatus: record.media_download_status || 'none',
+        };
+      } catch (e) {
+        // Fall through to fallback reconstruction
+      }
+    }
+
+    // FALLBACK: Reconstruct basic message if metadata parsing fails
+    // This should rarely happen, but provides safety
+
+    return {
       _id: record.server_id || record.temp_id,
       id: record.server_id || record.temp_id,
       wamid: record.wa_message_id,
@@ -125,104 +213,26 @@ class MessageModel {
       isFromMe: Boolean(record.is_from_me),
       status: record.status,
       timestamp: record.timestamp,
-      sentAt: record.sent_at,
-      deliveredAt: record.delivered_at,
-      readAt: record.read_at,
       senderName: record.sender_name,
       senderPhone: record.sender_phone,
       message: {
         type: record.type,
+        body: record.body,
       },
       _cached: true,
       _syncedAt: record.synced_at,
       isPending: Boolean(record.is_pending),
       tempId: record.temp_id,
+      _localMediaPath: record.local_media_path || null,
+      _localThumbnailPath: record.local_thumbnail_path || null,
+      _mediaDownloadStatus: record.media_download_status || 'none',
     };
-
-    // Reconstruct message content based on type
-    switch (record.type) {
-      case 'text':
-        message.message.body = record.body;
-        message.message.text = { body: record.body };
-        break;
-      case 'image':
-        message.message.image = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-          caption: record.media_caption,
-          thumbnail: record.thumbnail_url,
-        };
-        break;
-      case 'video':
-        message.message.video = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-          caption: record.media_caption,
-          thumbnail: record.thumbnail_url,
-        };
-        break;
-      case 'audio':
-        message.message.audio = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-        };
-        break;
-      case 'document':
-        message.message.document = {
-          link: record.media_url,
-          url: record.media_url,
-          filename: record.media_filename,
-          mime_type: record.media_mime_type,
-          caption: record.media_caption,
-        };
-        break;
-      case 'sticker':
-        message.message.sticker = {
-          link: record.media_url,
-          url: record.media_url,
-          mime_type: record.media_mime_type,
-        };
-        break;
-      case 'interactive':
-        message.message.interactive = record.interactive_data
-          ? JSON.parse(record.interactive_data)
-          : null;
-        break;
-      case 'template':
-        message.message.template = record.template_data
-          ? JSON.parse(record.template_data)
-          : null;
-        break;
-      default:
-        message.message.body = record.body;
-    }
-
-    // Add reaction if exists
-    if (record.reaction) {
-      message.reaction = JSON.parse(record.reaction);
-    }
-
-    // Add context if exists
-    if (record.context_message) {
-      message.context = JSON.parse(record.context_message);
-    }
-
-    // Add error info if exists
-    if (record.error_code || record.error_message) {
-      message.error = {
-        code: record.error_code,
-        message: record.error_message,
-      };
-    }
-
-    return message;
   }
 
   /**
-   * Save multiple messages to database
+   * Save multiple messages to database (with deduplication)
+   * Checks existing messages by server_id/wa_message_id before inserting.
+   * Existing messages are updated; new messages are batch-inserted.
    * @param {Array} messages - Array of message objects from API
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
@@ -231,20 +241,104 @@ class MessageModel {
   static async saveMessages(messages, chatId, settingId) {
     if (!messages || messages.length === 0) return;
 
-    const records = messages.map((msg) => this.toDbRecord(msg, chatId, settingId));
-    await databaseManager.batchInsert(Tables.MESSAGES, records);
+    // Build lookup of existing messages for this chat
+    const existingRows = await databaseManager.query(
+      `SELECT id, server_id, wa_message_id FROM ${Tables.MESSAGES} WHERE chat_id = ? AND setting_id = ?`,
+      [chatId, settingId]
+    );
 
-    // Log:(`[MessageModel] Saved ${messages.length} messages for chat: ${chatId}`);
+    const existingByServerId = new Map();
+    const existingByWamid = new Map();
+    existingRows.forEach(row => {
+      if (row.server_id) existingByServerId.set(row.server_id, row.id);
+      if (row.wa_message_id) existingByWamid.set(row.wa_message_id, row.id);
+    });
+
+    const newMessages = [];
+
+    for (const msg of messages) {
+      const serverId = msg._id || msg.id || null;
+      const wamid = msg.wamid || msg.waMessageId || msg.wa_message_id || null;
+      const existingId = (serverId && existingByServerId.get(serverId)) ||
+                         (wamid && existingByWamid.get(wamid));
+
+      if (existingId) {
+        // Update existing record (refresh metadata, status, etc.)
+        try {
+          const record = this.toDbRecord(msg, chatId, settingId);
+          delete record.id; // Keep original primary key
+          const columns = Object.keys(record);
+          const setClause = columns.map(k => `${k} = ?`).join(', ');
+          const values = columns.map(k => databaseManager._sanitizeValue(record[k]));
+          values.push(existingId);
+          await databaseManager.execute(
+            `UPDATE ${Tables.MESSAGES} SET ${setClause} WHERE id = ?`,
+            values
+          );
+        } catch (e) {
+          // Update failed — skip, don't create duplicate
+        }
+      } else {
+        newMessages.push(msg);
+      }
+    }
+
+    // Batch insert only truly new messages
+    if (newMessages.length > 0) {
+      const records = newMessages.map((msg) => this.toDbRecord(msg, chatId, settingId));
+      await databaseManager.batchInsert(Tables.MESSAGES, records);
+    }
   }
 
   /**
-   * Save a single message to database
+   * Save a single message to database (with deduplication)
+   * Checks if a message with the same server_id or wa_message_id already exists.
+   * If so, updates the existing row instead of creating a duplicate.
    * @param {Object} message - Message object from API
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
    * @returns {Promise<void>}
    */
   static async saveMessage(message, chatId, settingId) {
+    const serverId = message._id || message.id || null;
+    const wamid = message.wamid || message.waMessageId || message.wa_message_id || null;
+
+    // Check if message already exists by server_id or wa_message_id
+    if (serverId || wamid) {
+      const conditions = [];
+      const params = [chatId, settingId];
+
+      if (serverId) {
+        conditions.push('server_id = ?');
+        params.push(serverId);
+      }
+      if (wamid) {
+        conditions.push('wa_message_id = ?');
+        params.push(wamid);
+      }
+
+      const existing = await databaseManager.queryFirst(
+        `SELECT id FROM ${Tables.MESSAGES} WHERE chat_id = ? AND setting_id = ? AND (${conditions.join(' OR ')})`,
+        params
+      );
+
+      if (existing) {
+        // Update existing record instead of inserting duplicate
+        const record = this.toDbRecord(message, chatId, settingId);
+        delete record.id; // Keep original primary key
+        const columns = Object.keys(record);
+        const setClause = columns.map(k => `${k} = ?`).join(', ');
+        const values = columns.map(k => databaseManager._sanitizeValue(record[k]));
+        values.push(existing.id);
+        await databaseManager.execute(
+          `UPDATE ${Tables.MESSAGES} SET ${setClause} WHERE id = ?`,
+          values
+        );
+        return;
+      }
+    }
+
+    // No existing match — insert new
     const record = this.toDbRecord(message, chatId, settingId);
     await databaseManager.upsert(Tables.MESSAGES, record);
   }
@@ -253,12 +347,12 @@ class MessageModel {
    * Get messages for a chat
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
-   * @param {Object} options - Query options
+   * @param {Object} options - Query options (limit: null or 0 means no limit)
    * @returns {Promise<Array>}
    */
   static async getMessages(chatId, settingId, options = {}) {
     const {
-      limit = 50,
+      limit,
       offset = 0,
       beforeTimestamp,
       afterTimestamp,
@@ -279,7 +373,8 @@ class MessageModel {
 
     sql += ' ORDER BY timestamp DESC';
 
-    if (limit) {
+    // Only apply LIMIT if explicitly provided and > 0
+    if (limit && limit > 0) {
       sql += ' LIMIT ? OFFSET ?';
       params.push(limit, offset);
     }
@@ -519,6 +614,75 @@ class MessageModel {
   static async clearMessages(settingId) {
     await databaseManager.delete(Tables.MESSAGES, 'setting_id = ?', [settingId]);
     // Log:(`[MessageModel] Cleared all messages for setting: ${settingId}`);
+  }
+
+  /**
+   * Update media download status for a message
+   * @param {string} messageId - Message server ID or wamid
+   * @param {Object} updates - { localMediaPath, localThumbnailPath, downloadStatus }
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<void>}
+   */
+  static async updateMediaDownloadStatus(messageId, updates, settingId) {
+    const setClause = [];
+    const params = [];
+
+    if (updates.localMediaPath !== undefined) {
+      setClause.push('local_media_path = ?');
+      params.push(updates.localMediaPath);
+    }
+
+    if (updates.localThumbnailPath !== undefined) {
+      setClause.push('local_thumbnail_path = ?');
+      params.push(updates.localThumbnailPath);
+    }
+
+    if (updates.downloadStatus) {
+      setClause.push('media_download_status = ?');
+      params.push(updates.downloadStatus);
+    }
+
+    if (setClause.length === 0) return;
+
+    setClause.push('updated_at = ?');
+    params.push(Date.now());
+
+    params.push(messageId, messageId, settingId);
+
+    await databaseManager.execute(
+      `UPDATE ${Tables.MESSAGES}
+       SET ${setClause.join(', ')}
+       WHERE (server_id = ? OR wa_message_id = ?) AND setting_id = ?`,
+      params
+    );
+  }
+
+  /**
+   * Reset all downloaded media records to 'none' status
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<void>}
+   */
+  static async clearAllDownloadedMedia(settingId) {
+    await databaseManager.execute(
+      `UPDATE ${Tables.MESSAGES}
+       SET local_media_path = NULL, local_thumbnail_path = NULL, media_download_status = 'none', updated_at = ?
+       WHERE setting_id = ? AND media_download_status = 'downloaded'`,
+      [Date.now(), settingId]
+    );
+  }
+
+  /**
+   * Get all local file paths for downloaded media (for disk cleanup)
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<Array>} Array of { local_media_path, local_thumbnail_path }
+   */
+  static async getDownloadedMediaPaths(settingId) {
+    return databaseManager.query(
+      `SELECT local_media_path, local_thumbnail_path FROM ${Tables.MESSAGES}
+       WHERE setting_id = ? AND media_download_status = 'downloaded'
+         AND local_media_path IS NOT NULL`,
+      [settingId]
+    );
   }
 }
 
