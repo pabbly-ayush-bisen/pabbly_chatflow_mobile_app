@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { resetUnreadCount, resetPagination, setShouldRefreshChats, searchChats, clearSearch, setSearchQuery } from '../redux/slices/inboxSlice';
-import { fetchChatsWithCache } from '../redux/cacheThunks';
+import { fetchChatsWithCache, searchChatsWithCache } from '../redux/cacheThunks';
 import { getAssistants, getFlows } from '../redux/slices/assistantSlice';
 import { resetUnreadCountViaSocket } from '../services/socketService';
 import { useSocket } from '../contexts/SocketContext';
@@ -149,10 +149,16 @@ export default function InboxScreen() {
     navigation.openDrawer();
   }, [navigation]);
 
-  // Update local search query (for input display)
+  // Update local search query and trigger local search as user types
   const handleSearchChange = useCallback((text) => {
     setLocalSearchQuery(text);
-  }, []);
+    if (text.trim().length >= 2) {
+      // Local search from SQLite cache (instant results)
+      dispatch(searchChatsWithCache({ search: text }));
+    } else if (text.trim().length === 0) {
+      dispatch(clearSearch());
+    }
+  }, [dispatch]);
 
   // Trigger API search when Enter is pressed
   const handleSearchSubmit = useCallback((query) => {

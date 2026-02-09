@@ -12,7 +12,7 @@
  */
 
 import { databaseManager } from './DatabaseManager';
-import { ChatModel, MessageModel } from './models';
+import { ChatModel, MessageModel, QuickReplyModel } from './models';
 import { Tables, CacheKeys } from './schema';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -334,6 +334,69 @@ class CacheManager {
   }
 
   // ==========================================
+  // QUICK REPLIES CACHE OPERATIONS
+  // ==========================================
+
+  /**
+   * Get quick replies from cache
+   * @returns {Promise<{quickReplies: Array, fromCache: boolean}>}
+   */
+  async getQuickReplies() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return { quickReplies: [], fromCache: false };
+
+    const quickReplies = await QuickReplyModel.getQuickReplies(settingId);
+    return { quickReplies, fromCache: quickReplies.length > 0 };
+  }
+
+  /**
+   * Save quick replies to cache
+   * @param {Array} quickReplies - Array of quick reply objects from API
+   * @returns {Promise<void>}
+   */
+  async saveQuickReplies(quickReplies) {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId || !quickReplies) return;
+
+    await QuickReplyModel.saveQuickReplies(quickReplies, settingId);
+  }
+
+  /**
+   * Check if quick replies are cached
+   * @returns {Promise<boolean>}
+   */
+  async hasQuickReplies() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return false;
+
+    return QuickReplyModel.hasQuickReplies(settingId);
+  }
+
+  // ==========================================
+  // LOCAL SEARCH OPERATIONS
+  // ==========================================
+
+  /**
+   * Search chats locally by contact name, phone, or last message body
+   * @param {string} query - Search query
+   * @returns {Promise<Array>}
+   */
+  async searchChatsLocally(query) {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId || !query) return [];
+
+    return ChatModel.getChats(settingId, { search: query, limit: 50 });
+  }
+
+  // ==========================================
   // SYNC QUEUE OPERATIONS
   // ==========================================
 
@@ -406,6 +469,42 @@ class CacheManager {
            status = CASE WHEN retry_count + 1 >= max_retries THEN 'failed' ELSE 'pending' END
        WHERE id = ?`,
       [errorMessage, id]
+    );
+  }
+
+  /**
+   * Get permanently failed sync operations (exceeded max retries)
+   * @returns {Promise<Array>}
+   */
+  async getPermanentlyFailedOps() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return [];
+
+    return databaseManager.query(
+      `SELECT * FROM ${Tables.SYNC_QUEUE}
+       WHERE setting_id = ? AND status = 'failed'
+       ORDER BY created_at ASC`,
+      [settingId]
+    );
+  }
+
+  /**
+   * Remove completed and old failed operations from sync queue
+   * @returns {Promise<void>}
+   */
+  async cleanupSyncQueue() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return;
+
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    await databaseManager.execute(
+      `DELETE FROM ${Tables.SYNC_QUEUE}
+       WHERE setting_id = ? AND (status = 'completed' OR (status = 'failed' AND created_at < ?))`,
+      [settingId, oneDayAgo]
     );
   }
 

@@ -91,6 +91,9 @@ class MessageModel {
       is_dirty: 0,
       is_pending: message.isPending || message.status === 'pending' ? 1 : 0,
       temp_id: message.tempId || null,
+      local_media_path: null,
+      local_thumbnail_path: null,
+      media_download_status: 'none',
     };
   }
 
@@ -187,6 +190,10 @@ class MessageModel {
           _syncedAt: record.synced_at,
           // Update status from DB in case it changed (e.g., sent -> delivered -> read)
           status: record.status || originalMessage.status,
+          // Media download tracking
+          _localMediaPath: record.local_media_path || null,
+          _localThumbnailPath: record.local_thumbnail_path || null,
+          _mediaDownloadStatus: record.media_download_status || 'none',
         };
       } catch (e) {
         // Fall through to fallback reconstruction
@@ -216,11 +223,16 @@ class MessageModel {
       _syncedAt: record.synced_at,
       isPending: Boolean(record.is_pending),
       tempId: record.temp_id,
+      _localMediaPath: record.local_media_path || null,
+      _localThumbnailPath: record.local_thumbnail_path || null,
+      _mediaDownloadStatus: record.media_download_status || 'none',
     };
   }
 
   /**
-   * Save multiple messages to database
+   * Save multiple messages to database (with deduplication)
+   * Checks existing messages by server_id/wa_message_id before inserting.
+   * Existing messages are updated; new messages are batch-inserted.
    * @param {Array} messages - Array of message objects from API
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
@@ -229,18 +241,104 @@ class MessageModel {
   static async saveMessages(messages, chatId, settingId) {
     if (!messages || messages.length === 0) return;
 
-    const records = messages.map((msg) => this.toDbRecord(msg, chatId, settingId));
-    await databaseManager.batchInsert(Tables.MESSAGES, records);
+    // Build lookup of existing messages for this chat
+    const existingRows = await databaseManager.query(
+      `SELECT id, server_id, wa_message_id FROM ${Tables.MESSAGES} WHERE chat_id = ? AND setting_id = ?`,
+      [chatId, settingId]
+    );
+
+    const existingByServerId = new Map();
+    const existingByWamid = new Map();
+    existingRows.forEach(row => {
+      if (row.server_id) existingByServerId.set(row.server_id, row.id);
+      if (row.wa_message_id) existingByWamid.set(row.wa_message_id, row.id);
+    });
+
+    const newMessages = [];
+
+    for (const msg of messages) {
+      const serverId = msg._id || msg.id || null;
+      const wamid = msg.wamid || msg.waMessageId || msg.wa_message_id || null;
+      const existingId = (serverId && existingByServerId.get(serverId)) ||
+                         (wamid && existingByWamid.get(wamid));
+
+      if (existingId) {
+        // Update existing record (refresh metadata, status, etc.)
+        try {
+          const record = this.toDbRecord(msg, chatId, settingId);
+          delete record.id; // Keep original primary key
+          const columns = Object.keys(record);
+          const setClause = columns.map(k => `${k} = ?`).join(', ');
+          const values = columns.map(k => databaseManager._sanitizeValue(record[k]));
+          values.push(existingId);
+          await databaseManager.execute(
+            `UPDATE ${Tables.MESSAGES} SET ${setClause} WHERE id = ?`,
+            values
+          );
+        } catch (e) {
+          // Update failed — skip, don't create duplicate
+        }
+      } else {
+        newMessages.push(msg);
+      }
+    }
+
+    // Batch insert only truly new messages
+    if (newMessages.length > 0) {
+      const records = newMessages.map((msg) => this.toDbRecord(msg, chatId, settingId));
+      await databaseManager.batchInsert(Tables.MESSAGES, records);
+    }
   }
 
   /**
-   * Save a single message to database
+   * Save a single message to database (with deduplication)
+   * Checks if a message with the same server_id or wa_message_id already exists.
+   * If so, updates the existing row instead of creating a duplicate.
    * @param {Object} message - Message object from API
    * @param {string} chatId - Chat server ID
    * @param {string} settingId - Current setting ID
    * @returns {Promise<void>}
    */
   static async saveMessage(message, chatId, settingId) {
+    const serverId = message._id || message.id || null;
+    const wamid = message.wamid || message.waMessageId || message.wa_message_id || null;
+
+    // Check if message already exists by server_id or wa_message_id
+    if (serverId || wamid) {
+      const conditions = [];
+      const params = [chatId, settingId];
+
+      if (serverId) {
+        conditions.push('server_id = ?');
+        params.push(serverId);
+      }
+      if (wamid) {
+        conditions.push('wa_message_id = ?');
+        params.push(wamid);
+      }
+
+      const existing = await databaseManager.queryFirst(
+        `SELECT id FROM ${Tables.MESSAGES} WHERE chat_id = ? AND setting_id = ? AND (${conditions.join(' OR ')})`,
+        params
+      );
+
+      if (existing) {
+        // Update existing record instead of inserting duplicate
+        const record = this.toDbRecord(message, chatId, settingId);
+        delete record.id; // Keep original primary key
+        const columns = Object.keys(record);
+        const setClause = columns.map(k => `${k} = ?`).join(', ');
+        const values = columns.map(k => databaseManager._sanitizeValue(record[k]));
+        values.push(existing.id);
+        await databaseManager.execute(
+          `UPDATE ${Tables.MESSAGES} SET ${setClause} WHERE id = ?`,
+          values
+        );
+        return;
+      }
+    }
+
+    // No existing match — insert new
     const record = this.toDbRecord(message, chatId, settingId);
     await databaseManager.upsert(Tables.MESSAGES, record);
   }
@@ -516,6 +614,75 @@ class MessageModel {
   static async clearMessages(settingId) {
     await databaseManager.delete(Tables.MESSAGES, 'setting_id = ?', [settingId]);
     // Log:(`[MessageModel] Cleared all messages for setting: ${settingId}`);
+  }
+
+  /**
+   * Update media download status for a message
+   * @param {string} messageId - Message server ID or wamid
+   * @param {Object} updates - { localMediaPath, localThumbnailPath, downloadStatus }
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<void>}
+   */
+  static async updateMediaDownloadStatus(messageId, updates, settingId) {
+    const setClause = [];
+    const params = [];
+
+    if (updates.localMediaPath !== undefined) {
+      setClause.push('local_media_path = ?');
+      params.push(updates.localMediaPath);
+    }
+
+    if (updates.localThumbnailPath !== undefined) {
+      setClause.push('local_thumbnail_path = ?');
+      params.push(updates.localThumbnailPath);
+    }
+
+    if (updates.downloadStatus) {
+      setClause.push('media_download_status = ?');
+      params.push(updates.downloadStatus);
+    }
+
+    if (setClause.length === 0) return;
+
+    setClause.push('updated_at = ?');
+    params.push(Date.now());
+
+    params.push(messageId, messageId, settingId);
+
+    await databaseManager.execute(
+      `UPDATE ${Tables.MESSAGES}
+       SET ${setClause.join(', ')}
+       WHERE (server_id = ? OR wa_message_id = ?) AND setting_id = ?`,
+      params
+    );
+  }
+
+  /**
+   * Reset all downloaded media records to 'none' status
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<void>}
+   */
+  static async clearAllDownloadedMedia(settingId) {
+    await databaseManager.execute(
+      `UPDATE ${Tables.MESSAGES}
+       SET local_media_path = NULL, local_thumbnail_path = NULL, media_download_status = 'none', updated_at = ?
+       WHERE setting_id = ? AND media_download_status = 'downloaded'`,
+      [Date.now(), settingId]
+    );
+  }
+
+  /**
+   * Get all local file paths for downloaded media (for disk cleanup)
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<Array>} Array of { local_media_path, local_thumbnail_path }
+   */
+  static async getDownloadedMediaPaths(settingId) {
+    return databaseManager.query(
+      `SELECT local_media_path, local_thumbnail_path FROM ${Tables.MESSAGES}
+       WHERE setting_id = ? AND media_download_status = 'downloaded'
+         AND local_media_path IS NOT NULL`,
+      [settingId]
+    );
   }
 }
 

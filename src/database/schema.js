@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 6;
 
 // Table Names
 export const Tables = {
@@ -32,6 +32,7 @@ export const CREATE_TABLES_SQL = {
       contact_name TEXT,
       contact_phone TEXT,
       contact_profile_pic TEXT,
+      contact_last_active TEXT,
       wa_id TEXT,
       phone_number_id TEXT,
       last_message_id TEXT,
@@ -96,7 +97,10 @@ export const CREATE_TABLES_SQL = {
       synced_at INTEGER,
       is_dirty INTEGER DEFAULT 0,
       is_pending INTEGER DEFAULT 0,
-      temp_id TEXT
+      temp_id TEXT,
+      local_media_path TEXT,
+      local_thumbnail_path TEXT,
+      media_download_status TEXT DEFAULT 'none'
     )
   `,
 
@@ -211,6 +215,7 @@ export const CREATE_INDEXES_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_messages_is_dirty ON ${Tables.MESSAGES}(is_dirty)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_is_pending ON ${Tables.MESSAGES}(is_pending)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON ${Tables.MESSAGES}(chat_id, timestamp DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_download_status ON ${Tables.MESSAGES}(media_download_status)`,
 
   // Contact indexes
   `CREATE INDEX IF NOT EXISTS idx_contacts_setting_id ON ${Tables.CONTACTS}(setting_id)`,
@@ -224,6 +229,11 @@ export const CREATE_INDEXES_SQL = [
   // Sync queue indexes
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON ${Tables.SYNC_QUEUE}(status)`,
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_setting_id ON ${Tables.SYNC_QUEUE}(setting_id)`,
+
+  // Message deduplication indexes (partial unique — only where NOT NULL)
+  // Prevents duplicate messages with the same server_id or wa_message_id within a chat
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_server_id_unique ON ${Tables.MESSAGES}(chat_id, server_id) WHERE server_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wamid_unique ON ${Tables.MESSAGES}(chat_id, wa_message_id) WHERE wa_message_id IS NOT NULL`,
 ];
 
 // Cache metadata keys

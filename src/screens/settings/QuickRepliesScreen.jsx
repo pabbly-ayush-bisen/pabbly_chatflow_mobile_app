@@ -5,10 +5,8 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
-  Image,
   ScrollView,
   Dimensions,
-  Linking,
 } from 'react-native';
 import {
   Text,
@@ -19,10 +17,9 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
-import { Video, ResizeMode } from 'expo-av';
-import { Audio } from 'expo-av';
 import { getSettings, updateSettings, deleteSettings } from '../../redux/slices/settingsSlice';
-import { colors, chatColors } from '../../theme/colors';
+import { colors } from '../../theme/colors';
+import { MessagePreviewBubble } from '../../components/common';
 import AddQuickReplyModal from '../../components/settings/AddQuickReplyModal';
 import EditQuickReplyModal from '../../components/settings/EditQuickReplyModal';
 
@@ -36,105 +33,6 @@ const MESSAGE_TYPES = {
   video: { label: 'Video', icon: 'video', color: '#9C27B0', bg: '#F3E5F5' },
   audio: { label: 'Audio', icon: 'microphone', color: '#3F51B5', bg: '#E8EAF6' },
   file: { label: 'File', icon: 'file-document', color: '#FF9800', bg: '#FFF3E0' },
-};
-
-// Audio Player Component for Preview
-const AudioPlayerPreview = ({ audioUrl }) => {
-  const [sound, setSound] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [position, setPosition] = useState(0);
-
-  useEffect(() => {
-    return () => {
-      if (sound) {
-        sound.unloadAsync();
-      }
-    };
-  }, [sound]);
-
-  const loadAndPlayAudio = async () => {
-    try {
-      setIsLoading(true);
-
-      if (sound) {
-        if (isPlaying) {
-          await sound.pauseAsync();
-          setIsPlaying(false);
-        } else {
-          await sound.playAsync();
-          setIsPlaying(true);
-        }
-        setIsLoading(false);
-        return;
-      }
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true },
-        onPlaybackStatusUpdate
-      );
-      setSound(newSound);
-      setIsPlaying(true);
-      setIsLoading(false);
-    } catch (error) {
-      // Error:('Error playing audio:', error);
-      setIsLoading(false);
-    }
-  };
-
-  const onPlaybackStatusUpdate = (status) => {
-    if (status.isLoaded) {
-      setDuration(status.durationMillis || 0);
-      setPosition(status.positionMillis || 0);
-      setIsPlaying(status.isPlaying);
-
-      if (status.didJustFinish) {
-        setIsPlaying(false);
-        setPosition(0);
-      }
-    }
-  };
-
-  const formatTime = (millis) => {
-    const totalSeconds = Math.floor(millis / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const progress = duration > 0 ? (position / duration) * 100 : 0;
-
-  return (
-    <View style={styles.audioPlayerContainer}>
-      <TouchableOpacity
-        style={styles.audioPlayButton}
-        onPress={loadAndPlayAudio}
-        disabled={isLoading}
-        activeOpacity={0.7}
-      >
-        {isLoading ? (
-          <ActivityIndicator size="small" color={colors.common.white} />
-        ) : (
-          <Icon
-            name={isPlaying ? 'pause' : 'play'}
-            size={24}
-            color={colors.common.white}
-          />
-        )}
-      </TouchableOpacity>
-      <View style={styles.audioProgressContainer}>
-        <View style={styles.audioProgressBar}>
-          <View style={[styles.audioProgressFill, { width: `${progress}%` }]} />
-        </View>
-        <View style={styles.audioTimeRow}>
-          <Text style={styles.audioTimeText}>{formatTime(position)}</Text>
-          <Text style={styles.audioTimeText}>{formatTime(duration)}</Text>
-        </View>
-      </View>
-    </View>
-  );
 };
 
 export default function QuickRepliesScreen() {
@@ -160,9 +58,6 @@ export default function QuickRepliesScreen() {
   const [replyToEdit, setReplyToEdit] = useState(null);
   const [replyToDelete, setReplyToDelete] = useState(null);
   const [previewReply, setPreviewReply] = useState(null);
-
-  // Video player ref for preview
-  const videoRef = useRef(null);
 
   // Snackbar state
   const [snackbarVisible, setSnackbarVisible] = useState(false);
@@ -286,10 +181,6 @@ export default function QuickRepliesScreen() {
   }, []);
 
   const handleClosePreview = useCallback(() => {
-    // Stop video if playing
-    if (videoRef.current) {
-      videoRef.current.pauseAsync?.();
-    }
     setShowPreviewModal(false);
     setPreviewReply(null);
   }, []);
@@ -375,20 +266,6 @@ export default function QuickRepliesScreen() {
       });
     } catch {
       return null;
-    }
-  };
-
-  const formatTime = () => {
-    const now = new Date();
-    return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const openFileUrl = (url) => {
-    if (url) {
-      Linking.openURL(url).catch(err => {
-        // Error:('Failed to open URL:', err);
-        showSnackbar('Failed to open file');
-      });
     }
   };
 
@@ -509,7 +386,6 @@ export default function QuickRepliesScreen() {
     if (!previewReply) return null;
 
     const typeConfig = getTypeConfig(previewReply.type);
-    const time = formatTime();
     const createdDate = formatDate(previewReply.createdAt);
     const updatedDate = formatDate(previewReply.updatedAt);
     const messageLength = previewReply.message?.length || 0;
@@ -632,100 +508,16 @@ export default function QuickRepliesScreen() {
               <Text style={styles.previewSectionTitle}>Message Preview</Text>
             </View>
 
-            {/* Chat Background */}
-            <View style={styles.chatBackground}>
-              {/* Message Type Label */}
-              <Text style={styles.messageTypeLabel}>
-                {typeConfig.label} Message
-              </Text>
-
-              {/* Message Bubble - WhatsApp outgoing style */}
-              <View style={styles.messageBubbleContainer}>
-                <View style={styles.messageBubble}>
-                  {/* Image Preview */}
-                  {previewReply.type === 'image' && previewReply.headerFileURL && (
-                    <TouchableOpacity
-                      onPress={() => openFileUrl(previewReply.headerFileURL)}
-                      activeOpacity={0.9}
-                    >
-                      <Image
-                        source={{ uri: previewReply.headerFileURL }}
-                        style={styles.bubbleImage}
-                        resizeMode="cover"
-                      />
-                    </TouchableOpacity>
-                  )}
-
-                  {/* Video Preview */}
-                  {previewReply.type === 'video' && previewReply.headerFileURL && (
-                    <View style={styles.bubbleVideoContainer}>
-                      <Video
-                        ref={videoRef}
-                        source={{ uri: previewReply.headerFileURL }}
-                        style={styles.bubbleVideo}
-                        useNativeControls
-                        resizeMode={ResizeMode.CONTAIN}
-                        isLooping={false}
-                      />
-                    </View>
-                  )}
-
-                  {/* Audio Preview */}
-                  {previewReply.type === 'audio' && previewReply.headerFileURL && (
-                    <View style={styles.bubbleAudioContainer}>
-                      <AudioPlayerPreview audioUrl={previewReply.headerFileURL} />
-                    </View>
-                  )}
-
-                  {/* File/Document Preview */}
-                  {previewReply.type === 'file' && previewReply.headerFileURL && (
-                    <TouchableOpacity
-                      style={styles.bubbleDocumentContainer}
-                      onPress={() => openFileUrl(previewReply.headerFileURL)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.bubbleDocIcon}>
-                        <Icon name="file-document" size={28} color={colors.grey[600]} />
-                      </View>
-                      <View style={styles.bubbleDocInfo}>
-                        <Text style={styles.bubbleDocName} numberOfLines={1}>
-                          {previewReply.fileName || 'Document'}
-                        </Text>
-                        <Text style={styles.bubbleDocMeta}>Document</Text>
-                      </View>
-                      <Icon name="download" size={20} color={colors.grey[500]} />
-                    </TouchableOpacity>
-                  )}
-
-                  {/* Text Message - Show truncated in bubble */}
-                  {(previewReply.type === 'text' || previewReply.message) && (
-                    <Text
-                      style={[
-                        styles.bubbleText,
-                        (previewReply.type !== 'text' && previewReply.headerFileURL) && { marginTop: 8 }
-                      ]}
-                      numberOfLines={6}
-                    >
-                      {previewReply.message || (previewReply.type === 'text' ? 'No message content' : '')}
-                    </Text>
-                  )}
-
-                  {/* Empty State for media without URL */}
-                  {previewReply.type !== 'text' && !previewReply.headerFileURL && !previewReply.message && (
-                    <View style={styles.bubbleEmptyState}>
-                      <Icon name="file-question-outline" size={32} color={colors.grey[400]} />
-                      <Text style={styles.bubbleEmptyText}>No content available</Text>
-                    </View>
-                  )}
-
-                  {/* Time and Status */}
-                  <View style={styles.bubbleMetaContainer}>
-                    <Text style={styles.bubbleTimestamp}>{time}</Text>
-                    <Icon name="check-all" size={14} color={chatColors.tickBlue} />
-                  </View>
-                </View>
-              </View>
-            </View>
+            {/* Message Bubble Preview */}
+            <MessagePreviewBubble
+              mode="regular"
+              regularMessageType={previewReply.type || 'text'}
+              message={previewReply.message || ''}
+              fileUrl={previewReply.headerFileURL || ''}
+              fileName={previewReply.fileName || ''}
+              useNativeMediaControls={true}
+              showTypeBadge={false}
+            />
 
             {/* Full Message Content - Show complete text for long messages */}
             {previewReply.message && messageLength > 100 && (
@@ -1368,149 +1160,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     color: colors.text.primary,
-  },
-
-  // Chat Background (WhatsApp style)
-  chatBackground: {
-    backgroundColor: chatColors.chatBg,
-    borderRadius: 12,
-    padding: 16,
-  },
-  messageTypeLabel: {
-    fontSize: 11,
-    color: colors.text.secondary,
-    marginBottom: 8,
-    textAlign: 'right',
-  },
-
-  // Message Bubble - WhatsApp outgoing style
-  messageBubbleContainer: {
-    alignItems: 'flex-end',
-  },
-  messageBubble: {
-    maxWidth: '85%',
-    backgroundColor: chatColors.outgoing,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderTopRightRadius: 8,
-    borderTopLeftRadius: 8,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 2,
-  },
-  bubbleImage: {
-    width: 220,
-    height: 180,
-    borderRadius: 6,
-  },
-  bubbleVideoContainer: {
-    width: 220,
-    height: 150,
-    borderRadius: 6,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-  },
-  bubbleVideo: {
-    width: '100%',
-    height: '100%',
-  },
-  bubbleAudioContainer: {
-    width: 220,
-    paddingVertical: 8,
-  },
-  bubbleDocumentContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 8,
-    minWidth: 200,
-  },
-  bubbleDocIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: colors.grey[100],
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  bubbleDocInfo: {
-    flex: 1,
-  },
-  bubbleDocName: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.text.primary,
-  },
-  bubbleDocMeta: {
-    fontSize: 12,
-    color: colors.text.secondary,
-  },
-  bubbleText: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: colors.text.primary,
-  },
-  bubbleEmptyState: {
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  bubbleEmptyText: {
-    fontSize: 13,
-    color: colors.text.tertiary,
-    marginTop: 8,
-  },
-  bubbleMetaContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: 4,
-    gap: 4,
-  },
-  bubbleTimestamp: {
-    fontSize: 11,
-    color: 'rgba(0,0,0,0.45)',
-  },
-
-  // Audio Player
-  audioPlayerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    gap: 12,
-  },
-  audioPlayButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: chatColors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  audioProgressContainer: {
-    flex: 1,
-  },
-  audioProgressBar: {
-    height: 4,
-    backgroundColor: colors.grey[300],
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  audioProgressFill: {
-    height: '100%',
-    backgroundColor: chatColors.primary,
-    borderRadius: 2,
-  },
-  audioTimeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  audioTimeText: {
-    fontSize: 11,
-    color: colors.text.tertiary,
   },
 
   // Preview Actions

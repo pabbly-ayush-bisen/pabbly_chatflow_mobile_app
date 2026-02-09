@@ -34,6 +34,7 @@ class ChatModel {
       contact_name: contact.name || null,
       contact_phone: contact.phoneNumber || contact.mobile || contact.phone || null,
       contact_profile_pic: contact.profilePic || contact.profile_pic || null,
+      contact_last_active: contact.lastActive || contact.last_active || null,
       wa_id: chat.waId || chat.wa_id || null,
       phone_number_id: chat.phoneNumberId || chat.phone_number_id || null,
       last_message_id: lastMessage._id || lastMessage.id || null,
@@ -113,6 +114,7 @@ class ChatModel {
         phoneNumber: record.contact_phone,
         mobile: record.contact_phone,
         profilePic: record.contact_profile_pic,
+        lastActive: record.contact_last_active || null,
       },
       lastMessage: {
         _id: record.last_message_id,

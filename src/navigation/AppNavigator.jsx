@@ -36,6 +36,7 @@ import ChatRulesScreen from '../screens/settings/ChatRulesScreen';
 import ConfigureSLAScreen from '../screens/settings/ConfigureSLAScreen';
 import TimeZoneScreen from '../screens/settings/TimeZoneScreen';
 import MyAccountScreen from '../screens/settings/MyAccountScreen';
+import StorageSettingsScreen from '../screens/settings/StorageSettingsScreen';
 
 // Auth screens
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -567,6 +568,11 @@ function MoreStackNavigator() {
         name="MyAccount"
         component={MyAccountScreen}
         options={({ navigation }) => getChildScreenOptions(navigation, 'My Account')}
+      />
+      <MoreStack.Screen
+        name="StorageSettings"
+        component={StorageSettingsScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'Storage & Data')}
       />
     </MoreStack.Navigator>
   );

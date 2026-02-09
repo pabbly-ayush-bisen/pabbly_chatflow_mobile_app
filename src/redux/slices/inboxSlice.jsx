@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
-import { fetchChatsWithCache, fetchConversationWithCache } from '../cacheThunks';
+import { fetchChatsWithCache, fetchConversationWithCache, fetchQuickRepliesWithCache, searchChatsWithCache, syncMissedMessages } from '../cacheThunks';
 
 // ----------------------------------------------------------------------------
 // Chat list normalization
@@ -778,7 +778,7 @@ const inboxSlice = createSlice({
 
         // For outgoing messages, check if we have an optimistic message that matches
         // Match by: same chatId, same content, same type, within 30 seconds, and marked as optimistic
-        if (message.sentBy === 'user') {
+        if (message.sentBy === 'user' || message.direction === 'outbound' || message.isFromMe) {
           const messageText = message.message?.body || message.message?.body?.text || '';
           const messageType = message.type || 'text';
           const messageTime = new Date(message.timestamp || message.createdAt).getTime();
@@ -810,10 +810,12 @@ const inboxSlice = createSlice({
         }
 
         // Check if message already exists (by wamid or _id)
-        // Also check optimistic messages to prevent duplicates
+        // Exclude temp_ prefixed IDs from _id comparison — server IDs should not match temp IDs
         const messageExists = state.currentConversation.messages.some(
           m => (message.wamid && m.wamid === message.wamid) ||
-               (message._id && m._id === message._id)
+               (message._id && m._id === message._id &&
+                !String(message._id).startsWith('temp_') &&
+                !String(m._id).startsWith('temp_'))
         );
         if (!messageExists) {
           // Add new message to the end of the array
@@ -1028,6 +1030,33 @@ const inboxSlice = createSlice({
         }
       }
     },
+    // Mark optimistic message as queued (offline — will send on reconnect)
+    markOptimisticMessageQueued: (state, action) => {
+      const { chatId, tempId } = action.payload;
+      if (state.currentConversation && state.currentConversation._id === chatId) {
+        const messageIndex = state.currentConversation.messages?.findIndex(
+          m => m.tempId === tempId
+        );
+        if (messageIndex !== -1 && messageIndex !== undefined) {
+          state.currentConversation.messages[messageIndex] = {
+            ...state.currentConversation.messages[messageIndex],
+            status: 'queued',
+          };
+        }
+      }
+    },
+    // Update queued message status (used by sync queue processor)
+    updateQueuedMessageStatus: (state, action) => {
+      const { chatId, tempId, status } = action.payload;
+      if (state.currentConversation && state.currentConversation._id === chatId) {
+        const messageIndex = state.currentConversation.messages?.findIndex(
+          m => m.tempId === tempId
+        );
+        if (messageIndex !== -1 && messageIndex !== undefined) {
+          state.currentConversation.messages[messageIndex].status = status;
+        }
+      }
+    },
     // Reset message pagination when opening a new conversation
     resetMessagePagination: (state) => {
       state.messagesSkip = 0;
@@ -1154,23 +1183,38 @@ const inboxSlice = createSlice({
         state.status = 'succeeded';
         const payload = action.payload || {};
         const rawChats = payload.data?.chats || payload.chats || [];
+        const isPartialFetch = payload.isPartialFetch;
 
         // Deduplicate and normalize chats
         const normalizedChats = rawChats.map(normalizeChatForList);
-        const uniqueChatsMap = new Map();
-        normalizedChats.forEach(chat => {
-          if (chat._id && !uniqueChatsMap.has(chat._id)) {
-            uniqueChatsMap.set(chat._id, chat);
-          }
-        });
-        const chats = Array.from(uniqueChatsMap.values());
 
-        // Sort chats by latest activity
-        state.chats = chats.sort((a, b) => {
-          const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
-          const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
-          return bTime - aTime;
-        });
+        if (isPartialFetch && state.chats.length > 0) {
+          // MERGE mode: update existing chats + add new ones, keep rest from cache
+          const existingMap = new Map(state.chats.map(c => [c._id, c]));
+          normalizedChats.forEach(chat => {
+            if (chat._id) {
+              existingMap.set(chat._id, chat);
+            }
+          });
+          state.chats = Array.from(existingMap.values()).sort((a, b) => {
+            const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
+            const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
+            return bTime - aTime;
+          });
+        } else {
+          // REPLACE mode: full fetch — deduplicate and replace entire list
+          const uniqueChatsMap = new Map();
+          normalizedChats.forEach(chat => {
+            if (chat._id && !uniqueChatsMap.has(chat._id)) {
+              uniqueChatsMap.set(chat._id, chat);
+            }
+          });
+          state.chats = Array.from(uniqueChatsMap.values()).sort((a, b) => {
+            const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
+            const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
+            return bTime - aTime;
+          });
+        }
         state.hasMoreChats = payload.hasMoreChats || false;
       })
       .addCase(fetchChatsWithCache.rejected, (state, action) => {
@@ -1539,6 +1583,20 @@ const inboxSlice = createSlice({
         state.quickRepliesError = action.payload;
       });
 
+    // Fetch Quick Replies (Cache-First)
+    builder
+      .addCase(fetchQuickRepliesWithCache.fulfilled, (state, action) => {
+        state.quickRepliesStatus = 'succeeded';
+        state.quickReplies = action.payload.quickReplies || [];
+      })
+      .addCase(fetchQuickRepliesWithCache.rejected, (state, action) => {
+        // Only mark failed if no cached data available
+        if (state.quickReplies.length === 0) {
+          state.quickRepliesStatus = 'failed';
+        }
+        state.quickRepliesError = action.payload;
+      });
+
     // Fetch More Chats (Pagination)
     builder
       .addCase(fetchMoreChats.pending, (state) => {
@@ -1700,6 +1758,46 @@ const inboxSlice = createSlice({
         state.searchError = action.payload;
         state.searchResults = [];
       });
+
+    // Search Chats (Local Cache)
+    builder
+      .addCase(searchChatsWithCache.fulfilled, (state, action) => {
+        const { chats, search } = action.payload;
+        state.searchResults = (chats || []).map(normalizeChatForList);
+        state.searchStatus = 'succeeded';
+        state.searchQuery = search || '';
+        state.isSearchActive = true;
+      })
+
+    // Sync missed messages — merge new messages into current conversation
+    builder
+      .addCase(syncMissedMessages.fulfilled, (state, action) => {
+        const { chatId, messages } = action.payload;
+        if (!messages || messages.length === 0) return;
+        if (!state.currentConversation || state.currentConversation._id !== chatId) return;
+
+        // Merge new messages into current conversation (dedup by _id/wamid)
+        const existingIds = new Set();
+        state.currentConversation.messages.forEach(m => {
+          if (m._id) existingIds.add(m._id);
+          if (m.wamid) existingIds.add(m.wamid);
+        });
+
+        const trulyNew = messages.filter(m =>
+          !(m._id && existingIds.has(m._id)) &&
+          !(m.wamid && existingIds.has(m.wamid))
+        );
+
+        if (trulyNew.length > 0) {
+          state.currentConversation.messages.push(...trulyNew);
+          // Re-sort by timestamp
+          state.currentConversation.messages.sort((a, b) => {
+            const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
+            const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
+            return aT - bT;
+          });
+        }
+      });
   },
 });
 
@@ -1738,6 +1836,8 @@ export const {
   addOptimisticMessage,
   updateOptimisticMessage,
   markOptimisticMessageFailed,
+  markOptimisticMessageQueued,
+  updateQueuedMessageStatus,
   // Clear current conversation (for navigation)
   clearCurrentConversation,
   // Clear inbox data (for account switching)

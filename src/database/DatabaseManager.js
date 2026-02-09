@@ -123,6 +123,18 @@ class DatabaseManager {
     if (fromVersion < 3 && toVersion >= 3) {
       await this._migrateToV3();
     }
+
+    if (fromVersion < 4 && toVersion >= 4) {
+      await this._migrateToV4();
+    }
+
+    if (fromVersion < 5 && toVersion >= 5) {
+      await this._migrateToV5();
+    }
+
+    if (fromVersion < 6 && toVersion >= 6) {
+      await this._migrateToV6();
+    }
   }
 
   /**
@@ -133,6 +145,103 @@ class DatabaseManager {
       await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.MESSAGES}`);
     } catch (error) {
       // Migration error - table will be recreated
+    }
+  }
+
+  /**
+   * Migration to version 4: Add media download tracking columns to messages
+   * Enables local media storage for offline access
+   */
+  async _migrateToV4() {
+    try {
+      await this.db.execAsync(`ALTER TABLE ${Tables.MESSAGES} ADD COLUMN local_media_path TEXT`);
+    } catch (error) {
+      // Column may already exist
+    }
+
+    try {
+      await this.db.execAsync(`ALTER TABLE ${Tables.MESSAGES} ADD COLUMN local_thumbnail_path TEXT`);
+    } catch (error) {
+      // Column may already exist
+    }
+
+    try {
+      await this.db.execAsync(`ALTER TABLE ${Tables.MESSAGES} ADD COLUMN media_download_status TEXT DEFAULT 'none'`);
+    } catch (error) {
+      // Column may already exist
+    }
+  }
+
+  /**
+   * Migration to version 5: Add contact_last_active column to chats
+   * Stores the contact's lastActive timestamp for 24-hour window calculation
+   */
+  async _migrateToV5() {
+    try {
+      await this.db.execAsync(`ALTER TABLE ${Tables.CHATS} ADD COLUMN contact_last_active TEXT`);
+    } catch (error) {
+      // Column may already exist
+    }
+  }
+
+  /**
+   * Migration to version 6: Deduplicate existing messages and add unique indexes
+   * Fixes the bug where messages were duplicated because server_id had no unique constraint
+   */
+  async _migrateToV6() {
+    // Step 1: Remove duplicate messages by server_id (keep the one with the latest synced_at)
+    try {
+      await this.db.execAsync(`
+        DELETE FROM ${Tables.MESSAGES} WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (
+              PARTITION BY chat_id, server_id ORDER BY synced_at DESC
+            ) AS rn FROM ${Tables.MESSAGES} WHERE server_id IS NOT NULL
+          ) WHERE rn > 1
+        )
+      `);
+    } catch (e) {
+      // ROW_NUMBER may not be supported in older SQLite — fallback approach
+      try {
+        await this.db.execAsync(`
+          DELETE FROM ${Tables.MESSAGES}
+          WHERE server_id IS NOT NULL
+            AND id NOT IN (
+              SELECT MIN(id) FROM ${Tables.MESSAGES}
+              WHERE server_id IS NOT NULL
+              GROUP BY chat_id, server_id
+            )
+        `);
+      } catch (e2) {
+        // Ignore — dedup indexes will prevent future duplicates
+      }
+    }
+
+    // Step 2: Remove duplicate messages by wa_message_id
+    try {
+      await this.db.execAsync(`
+        DELETE FROM ${Tables.MESSAGES} WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (
+              PARTITION BY chat_id, wa_message_id ORDER BY synced_at DESC
+            ) AS rn FROM ${Tables.MESSAGES} WHERE wa_message_id IS NOT NULL
+          ) WHERE rn > 1
+        )
+      `);
+    } catch (e) {
+      try {
+        await this.db.execAsync(`
+          DELETE FROM ${Tables.MESSAGES}
+          WHERE wa_message_id IS NOT NULL
+            AND id NOT IN (
+              SELECT MIN(id) FROM ${Tables.MESSAGES}
+              WHERE wa_message_id IS NOT NULL
+              GROUP BY chat_id, wa_message_id
+            )
+        `);
+      } catch (e2) {
+        // Ignore
+      }
     }
   }
 

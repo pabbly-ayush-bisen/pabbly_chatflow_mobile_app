@@ -863,10 +863,40 @@ export const findPreviousAssignedMember = (messages, currentMessageIndex) => {
   return null;
 };
 
+/**
+ * Get the effective media URL for a message.
+ * Prefers local (downloaded) path over remote URL for offline support.
+ */
+export const getEffectiveMediaUrl = (message) => {
+  if (message?._mediaDownloadStatus === 'downloaded' && message?._localMediaPath) {
+    return message._localMediaPath;
+  }
+  return getMediaUrl(message);
+};
+
+/**
+ * Check if a message has downloadable media that hasn't been downloaded yet
+ */
+export const isMediaDownloadable = (message) => {
+  const type = message?.type || message?.message?.type;
+  const mediaTypes = ['image', 'video', 'audio', 'document', 'file'];
+  if (!mediaTypes.includes(type)) return false;
+  if (message?._mediaDownloadStatus === 'downloaded') return false;
+  return !!getMediaUrl(message);
+};
+
+/**
+ * Check if media is already downloaded locally
+ */
+export const isMediaDownloaded = (message) => {
+  return message?._mediaDownloadStatus === 'downloaded' && !!message?._localMediaPath;
+};
+
 export default {
   getMessageText,
   getMessageCaption,
   getMediaUrl,
+  getEffectiveMediaUrl,
   getFilename,
   getTemplateData,
   getInteractiveData,
@@ -892,4 +922,6 @@ export default {
   isSystemMessage,
   getSystemMessageLabel,
   findPreviousAssignedMember,
+  isMediaDownloadable,
+  isMediaDownloaded,
 };

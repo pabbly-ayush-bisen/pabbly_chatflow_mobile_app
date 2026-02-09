@@ -15,14 +15,17 @@ import {
   clearInboxError,
   addOptimisticMessage,
   markOptimisticMessageFailed,
+  markOptimisticMessageQueued,
   clearCurrentConversation,
 } from '../redux/slices/inboxSlice';
-import { fetchConversationWithCache } from '../redux/cacheThunks';
+import { fetchConversationWithCache, fetchQuickRepliesWithCache, syncMissedMessages } from '../redux/cacheThunks';
 import { fetchAllTemplates } from '../redux/slices/templateSlice';
-import { getSettings } from '../redux/slices/settingsSlice';
 import { sendMessageViaSocket, resetUnreadCountViaSocket, sendTemplateViaSocket } from '../services/socketService';
 import { uploadFileWithProgress, validateFileSize } from '../services/fileUploadService';
+import { cacheManager } from '../database/CacheManager';
 import useUploadState from '../hooks/useUploadState';
+import useMediaDownload from '../hooks/useMediaDownload';
+import { getMediaUrl } from '../utils/messageHelpers';
 import { colors, chatColors, getAvatarColor } from '../theme/colors';
 import { useSocket } from '../contexts/SocketContext';
 import MessageBubble from '../components/chat/MessageBubble';
@@ -32,6 +35,7 @@ import DateSeparator from '../components/chat/DateSeparator';
 import MessageActionsMenu from '../components/chat/MessageActionsMenu';
 import ChatOptionsMenu from '../components/chat/ChatOptionsMenu';
 import ImageLightbox from '../components/chat/ImageLightbox';
+import VideoPlayerModal from '../components/chat/VideoPlayerModal';
 import ChatNotes from '../components/chat/ChatNotes';
 import UploadingMediaMessage from '../components/chat/messages/UploadingMediaMessage';
 
@@ -53,6 +57,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
   const [showChatNotes, setShowChatNotes] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [videoPlayerUrl, setVideoPlayerUrl] = useState(null);
   const [sharedContacts, setSharedContacts] = useState([]);
   const [showSharedContactSheet, setShowSharedContactSheet] = useState(false);
 
@@ -70,6 +75,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
     cleanup: cleanupUploads,
   } = useUploadState();
 
+  // Media download state management for local media storage
+  const { downloads, startDownload, getDownloadState } = useMediaDownload();
+
+  // Setting ID for media download DB operations
+  const settingId = useSelector((state) => state.user?.settingId);
+
   const {
     currentConversation,
     conversationStatus,
@@ -80,6 +91,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
     aiAssistantStatus: reduxAiAssistantStatus,
     updateContactChatStatus,
     toggleAiAssistantStatus,
+    chats: inboxChats,
   } = useSelector((state) => state.inbox);
 
   // Get templates from redux store
@@ -110,7 +122,11 @@ export default function ChatDetailsScreen({ route, navigation }) {
   const chatStatus = currentConversation?.status || reduxChatStatus || chat?.status || 'open';
   const aiAssistantStatus = currentConversation?.aiAssistant?.isActive || reduxAiAssistantStatus || false;
   const isIntervened = chatStatus === 'intervened';
-  const lastActiveTime = contact?.lastActive || currentConversation?.lastActive || chat?.lastActive;
+  // Get lastActive from multiple sources - the inbox chats array (populated by chat list API
+  // and socket events) is the most reliable source, matching how the web app reads from IndexedDB.
+  const inboxChat = useMemo(() => inboxChats?.find(c => c._id === chatId), [inboxChats, chatId]);
+  const lastActiveTime = contact?.lastActive || inboxChat?.contact?.lastActive ||
+    currentConversation?.lastActive || chat?.lastActive;
 
   useEffect(() => {
     if (chatId) {
@@ -119,7 +135,13 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
       // Fetch all messages with cache-first strategy (device-primary like WhatsApp)
       // If messages already loaded for this chat, returns cached data instantly (no API call)
-      dispatch(fetchConversationWithCache({ chatId }));
+      // After cache load, background-sync any missed messages from the server
+      dispatch(fetchConversationWithCache({ chatId }))
+        .then((result) => {
+          if (result.payload?.fromCache) {
+            dispatch(syncMissedMessages({ chatId }));
+          }
+        });
 
       // Reset unread count
       dispatch(resetUnreadCount(chatId));
@@ -130,7 +152,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
     // Fetch templates and quick replies if not already loaded
     dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
-    dispatch(getSettings('quickReplies'));
+    dispatch(fetchQuickRepliesWithCache());
 
     // Clear current chat ID and conversation when leaving the screen
     return () => {
@@ -398,13 +420,26 @@ export default function ChatDetailsScreen({ route, navigation }) {
         // Don't refresh conversation - socket handlers will update the message status
         // The optimistic message is already in the UI with pending status
       } else {
-        // Mark the optimistic message as failed
-        dispatch(markOptimisticMessageFailed({
-          chatId,
-          tempId,
-          error: 'Could not send message. Please check your connection.',
-        }));
-        toastActions.messageFailed('Could not send message. Please check your connection.');
+        // Socket not connected — queue the message for sending on reconnect
+        try {
+          await cacheManager.addToSyncQueue('sendMessage', 'messages', tempId, {
+            socketData,
+            chatId,
+            tempId,
+            messageType,
+            timestamp,
+          });
+          dispatch(markOptimisticMessageQueued({ chatId, tempId }));
+          toastActions.info('Message queued. Will send when connected.');
+        } catch (queueError) {
+          // Fallback to failed if queue save fails
+          dispatch(markOptimisticMessageFailed({
+            chatId,
+            tempId,
+            error: 'Could not send message. Please check your connection.',
+          }));
+          toastActions.messageFailed('Could not send message. Please check your connection.');
+        }
         setIsSending(false);
       }
     } catch (error) {
@@ -830,6 +865,42 @@ export default function ChatDetailsScreen({ route, navigation }) {
     setLightboxImage(imageUrl);
   }, []);
 
+  // Handle video press - open in-app video player
+  const handleVideoPress = useCallback((videoUrl) => {
+    setVideoPlayerUrl(videoUrl);
+  }, []);
+
+  // Handle media download - user taps download button on a media message
+  const handleMediaDownload = useCallback((message) => {
+    const remoteUrl = getMediaUrl(message);
+    if (!remoteUrl) return;
+
+    const messageId = message?._id || message?.wamid || message?.server_id;
+    if (!messageId || !settingId) return;
+
+    const msgType = message?.type || message?.message?.type || 'document';
+    // MIME type can be at message.message.mime_type or nested under the media type key
+    // e.g., message.message.video.mime_type, message.message.image.mime_type
+    const msgData = message?.message;
+    const mimeType =
+      msgData?.mime_type ||
+      msgData?.[msgType]?.mime_type ||
+      msgData?.video?.mime_type ||
+      msgData?.image?.mime_type ||
+      msgData?.audio?.mime_type ||
+      msgData?.document?.mime_type ||
+      message?.mime_type ||
+      '';
+
+    startDownload({
+      remoteUrl,
+      messageId,
+      settingId,
+      messageType: msgType,
+      mimeType,
+    });
+  }, [settingId, startDownload]);
+
   // Handle message long press - show actions menu
   const handleMessageLongPress = useCallback((message) => {
     setSelectedMessage(message);
@@ -965,12 +1036,17 @@ export default function ChatDetailsScreen({ route, navigation }) {
         )
       : null;
 
+    const messageId = msg?._id || msg?.wamid || msg?.server_id;
+
     return (
       <MessageBubble
         message={msg}
         originalMessage={originalMessage}
         onImagePress={handleImagePress}
+        onVideoPress={handleVideoPress}
         onLongPress={handleMessageLongPress}
+        onMediaDownload={handleMediaDownload}
+        downloadState={messageId ? getDownloadState(messageId) : null}
         // onReplyPress is used both for tapping reply preview and right-swipe-to-reply
         onReplyPress={(target) => {
           // If target looks like an ID of another message → scroll to it (tap on reply preview)
@@ -984,7 +1060,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         onContactPress={handleSharedContactPress}
       />
     );
-  }, [handleImagePress, handleMessageLongPress, handleCancelUpload, handleRetryUpload, messages, scrollToMessage]);
+  }, [handleImagePress, handleVideoPress, handleMessageLongPress, handleMediaDownload, getDownloadState, handleCancelUpload, handleRetryUpload, messages, scrollToMessage]);
 
   const renderEmptyState = () => (
     // Apply scaleY(-1) to counteract the FlatList's inverted prop
@@ -1092,7 +1168,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
             inverted
-            extraData={uploads} // Ensure re-render on upload progress change
+            extraData={[uploads, downloads]} // Ensure re-render on upload/download progress change
             contentContainerStyle={[
               styles.messagesList,
               groupedMessagesInverted.length === 0 && styles.emptyList,
@@ -1164,6 +1240,13 @@ export default function ChatDetailsScreen({ route, navigation }) {
         visible={!!lightboxImage}
         imageUrl={lightboxImage}
         onClose={() => setLightboxImage(null)}
+      />
+
+      {/* Video player modal */}
+      <VideoPlayerModal
+        visible={!!videoPlayerUrl}
+        videoUrl={videoPlayerUrl}
+        onClose={() => setVideoPlayerUrl(null)}
       />
 
       {/* Shared contact bottom sheet */}

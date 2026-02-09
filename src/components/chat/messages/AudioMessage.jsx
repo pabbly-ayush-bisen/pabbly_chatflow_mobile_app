@@ -4,27 +4,35 @@ import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { colors, chatColors } from '../../../theme/colors';
-import { getMediaUrl, hasFileSizeError, getActualMediaType, getFileSizeLimit } from '../../../utils/messageHelpers';
+import { getMediaUrl, hasFileSizeError, getActualMediaType, getFileSizeLimit, isMediaDownloaded } from '../../../utils/messageHelpers';
 
 /**
  * AudioMessage Component
  * Renders audio/voice messages with inline playback and waveform visualization
  * Uses expo-av for audio playback within the message bubble
+ * Supports local-first playback from downloaded files
  */
-const AudioMessage = ({ message, isOutgoing }) => {
+const AudioMessage = ({ message, isOutgoing, onDownload, downloadState }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [hasFinished, setHasFinished] = useState(false); // Track if audio finished playing
+  const [hasFinished, setHasFinished] = useState(false);
 
   const soundRef = useRef(null);
   const isMountedRef = useRef(true);
 
-  const audioUrl = getMediaUrl(message);
+  const remoteUrl = getMediaUrl(message);
+  const downloaded = isMediaDownloaded(message);
+  const localPath = downloaded ? message._localMediaPath : (downloadState?.localPath || null);
+  const isDownloading = downloadState?.status === 'downloading';
+  const downloadProgress = downloadState?.progress || 0;
 
-  // Get duration from message if available (check multiple possible locations)
+  // The URL to use for playback: prefer local file
+  const audioSource = localPath || remoteUrl;
+
+  // Get duration from message if available
   const messageDuration = message?.message?.duration ||
                           message?.message?.audio?.duration ||
                           message?.duration || 0;
@@ -48,7 +56,7 @@ const AudioMessage = ({ message, isOutgoing }) => {
         playThroughEarpieceAndroid: false,
       });
     } catch (error) {
-      // Silent fail - audio mode might already be set
+      // Silent fail
     }
   }, []);
 
@@ -57,7 +65,6 @@ const AudioMessage = ({ message, isOutgoing }) => {
     if (!isMountedRef.current) return;
 
     if (status.isLoaded) {
-      // Update position and progress
       if (status.durationMillis > 0) {
         const currentPosition = status.positionMillis / 1000;
         const totalDuration = status.durationMillis / 1000;
@@ -66,38 +73,33 @@ const AudioMessage = ({ message, isOutgoing }) => {
         setProgress(status.positionMillis / status.durationMillis);
       }
 
-      // Update playing state
       setIsPlaying(status.isPlaying);
 
-      // Mark as finished when playback completes
       if (status.didJustFinish) {
         setIsPlaying(false);
         setProgress(0);
         setPosition(0);
-        setHasFinished(true); // Track that audio finished for replay
+        setHasFinished(true);
       }
     }
   }, []);
 
   // Load and play audio
   const loadAndPlayAudio = useCallback(async () => {
-    if (!audioUrl || isLoading) return;
+    if (!audioSource || isLoading) return;
 
     setIsLoading(true);
 
     try {
-      // Initialize audio mode
       await initAudioMode();
 
-      // Unload previous sound if exists
       if (soundRef.current) {
         await soundRef.current.unloadAsync();
         soundRef.current = null;
       }
 
-      // Create and load new sound
       const { sound, status } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
+        { uri: audioSource },
         { shouldPlay: true },
         onPlaybackStatusUpdate
       );
@@ -109,7 +111,6 @@ const AudioMessage = ({ message, isOutgoing }) => {
 
       soundRef.current = sound;
 
-      // Set duration from loaded audio if not available from message
       if (status.durationMillis) {
         setDuration(status.durationMillis / 1000);
       }
@@ -122,14 +123,19 @@ const AudioMessage = ({ message, isOutgoing }) => {
         setIsLoading(false);
       }
     }
-  }, [audioUrl, isLoading, initAudioMode, onPlaybackStatusUpdate]);
+  }, [audioSource, isLoading, initAudioMode, onPlaybackStatusUpdate]);
 
   // Handle play/pause toggle
   const handlePlayPause = useCallback(async () => {
     if (isLoading) return;
 
+    // If not downloaded yet, trigger download instead of play
+    if (!downloaded && !localPath) {
+      onDownload?.(message);
+      return;
+    }
+
     if (!soundRef.current) {
-      // First time playing - load and play
       setHasFinished(false);
       await loadAndPlayAudio();
     } else {
@@ -140,7 +146,6 @@ const AudioMessage = ({ message, isOutgoing }) => {
           if (status.isPlaying) {
             await soundRef.current.pauseAsync();
           } else {
-            // If audio has finished or is at/near the end, replay from start
             const isAtEnd = hasFinished ||
                            status.didJustFinish ||
                            (status.durationMillis > 0 && status.positionMillis >= status.durationMillis - 100);
@@ -151,30 +156,30 @@ const AudioMessage = ({ message, isOutgoing }) => {
               setPosition(0);
             }
 
-            setHasFinished(false); // Reset finished state when starting to play
+            setHasFinished(false);
             await soundRef.current.playAsync();
           }
         } else {
-          // Sound not loaded, reload
           setHasFinished(false);
           await loadAndPlayAudio();
         }
       } catch (error) {
-        // Try to reload on error
         setHasFinished(false);
         await loadAndPlayAudio();
       }
     }
-  }, [isLoading, loadAndPlayAudio, hasFinished]);
+  }, [isLoading, loadAndPlayAudio, hasFinished, downloaded, localPath, onDownload, message]);
 
   // Pre-load audio metadata to get duration without playing
+  // Only when we have a local file or the audio is already downloaded
   const loadAudioMetadata = useCallback(async () => {
-    if (!audioUrl || messageDuration > 0) return; // Skip if we already have duration from message
+    if (!audioSource || messageDuration > 0) return;
+    // Only pre-load metadata if we have a local file
+    if (!downloaded && !localPath) return;
 
     try {
-      // Create sound just to get metadata, don't play
       const { sound, status } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
+        { uri: audioSource },
         { shouldPlay: false }
       );
 
@@ -183,24 +188,21 @@ const AudioMessage = ({ message, isOutgoing }) => {
         return;
       }
 
-      // Get duration from loaded audio
       if (status.isLoaded && status.durationMillis) {
         setDuration(status.durationMillis / 1000);
       }
 
-      // Unload the sound - we'll reload when user presses play
       await sound.unloadAsync();
     } catch (error) {
-      // Silent fail - duration will show as 0:00 until played
+      // Silent fail
     }
-  }, [audioUrl, messageDuration]);
+  }, [audioSource, messageDuration, downloaded, localPath]);
 
-  // Load metadata on mount to show duration before playing
+  // Load metadata on mount
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Pre-load duration if not available from message
-    if (audioUrl && messageDuration === 0) {
+    if (audioSource && messageDuration === 0 && (downloaded || localPath)) {
       loadAudioMetadata();
     }
 
@@ -211,9 +213,8 @@ const AudioMessage = ({ message, isOutgoing }) => {
         soundRef.current = null;
       }
     };
-  }, [audioUrl, messageDuration, loadAudioMetadata]);
+  }, [audioSource, messageDuration, loadAudioMetadata, downloaded, localPath]);
 
-  // Use message duration if available, otherwise use loaded duration
   const displayDuration = duration > 0 ? duration : messageDuration;
 
   // Render file size error
@@ -237,7 +238,7 @@ const AudioMessage = ({ message, isOutgoing }) => {
   }
 
   // Render error state
-  if (!audioUrl) {
+  if (!remoteUrl && !localPath) {
     return (
       <View style={styles.errorContainer}>
         <Icon name="microphone-off" size={24} color={colors.grey[400]} />
@@ -246,23 +247,27 @@ const AudioMessage = ({ message, isOutgoing }) => {
     );
   }
 
+  // Determine button icon and state
+  const needsDownload = !downloaded && !localPath && !isDownloading;
+  const buttonIcon = isDownloading ? null : (needsDownload ? 'download' : (isPlaying ? 'pause' : 'play'));
+
   return (
     <View style={[styles.container, isOutgoing && styles.containerOutgoing]}>
-      {/* Play/Pause button */}
+      {/* Play/Pause/Download button */}
       <TouchableOpacity
         style={[styles.playButton, isOutgoing && styles.playButtonOutgoing]}
         onPress={handlePlayPause}
         activeOpacity={0.7}
-        disabled={isLoading}
+        disabled={isLoading || isDownloading}
       >
-        {isLoading ? (
+        {(isLoading || isDownloading) ? (
           <ActivityIndicator
             size="small"
             color={isOutgoing ? colors.text.primary : colors.common.white}
           />
         ) : (
           <Icon
-            name={isPlaying ? 'pause' : 'play'}
+            name={buttonIcon}
             size={24}
             color={isOutgoing ? colors.text.primary : colors.common.white}
           />
@@ -287,9 +292,12 @@ const AudioMessage = ({ message, isOutgoing }) => {
         ))}
       </View>
 
-      {/* Duration - shows current position when playing, total duration when paused */}
+      {/* Duration / Download progress */}
       <Text style={[styles.duration, isOutgoing && styles.durationOutgoing]}>
-        {isPlaying ? formatDuration(position) : formatDuration(displayDuration)}
+        {isDownloading
+          ? `${downloadProgress}%`
+          : (isPlaying ? formatDuration(position) : formatDuration(displayDuration))
+        }
       </Text>
     </View>
   );

@@ -17,8 +17,9 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { fetchAllTemplates, fetchTemplateStats, resetTemplates } from '../redux/slices/templateSlice';
-import { colors, chatColors } from '../theme/colors';
-import { EmptyState, TemplatesListSkeleton } from '../components/common';
+import { colors } from '../theme/colors';
+import { EmptyState, TemplatesListSkeleton, MessagePreviewBubble } from '../components/common';
+import { getTemplateHeader, getCarouselCards, getLimitedTimeOffer } from '../components/common/MessagePreview';
 import { useNetwork } from '../contexts/NetworkContext';
 
 // Status configurations
@@ -45,20 +46,7 @@ const FORMAT_CONFIG = {
   TEXT: { label: 'Text', icon: 'format-text', color: '#64748B' },
   LOCATION: { label: 'Location', icon: 'map-marker-outline', color: '#10B981' },
   CAROUSEL: { label: 'Carousel', icon: 'view-carousel-outline', color: '#EC4899' },
-};
-
-// Button type configurations
-const BUTTON_CONFIG = {
-  URL: { icon: 'link', label: 'URL' },
-  PHONE_NUMBER: { icon: 'phone', label: 'Call' },
-  QUICK_REPLY: { icon: 'reply', label: 'Quick Reply' },
-  COPY_CODE: { icon: 'content-copy', label: 'Copy Code' },
-  FLOW: { icon: 'sitemap', label: 'Flow' },
-  CATALOG: { icon: 'shopping', label: 'Catalog' },
-  MPM: { icon: 'package-variant', label: 'Multi-Product' },
-  SPM: { icon: 'package', label: 'Single Product' },
-  VOICE_CALL: { icon: 'phone-outgoing', label: 'Voice Call' },
-  OTP: { icon: 'shield-key', label: 'OTP' },
+  LIMITED_TIME_OFFER: { label: 'LTO', icon: 'clock-alert-outline', color: '#F59E0B' },
 };
 
 export default function TemplatesScreen() {
@@ -191,55 +179,6 @@ export default function TemplatesScreen() {
   // Templates are now filtered by API, so just use templates directly
   const filteredTemplates = templates;
 
-  // Get template components
-  const getTemplateBody = (template) => {
-    if (!template?.components) return '';
-    const bodyComponent = template.components.find((c) =>
-      c.type === 'BODY' || c.type === 'body'
-    );
-    return bodyComponent?.text || '';
-  };
-
-  const getTemplateHeader = (template) => {
-    if (!template?.components) return null;
-    return template.components.find((c) =>
-      c.type === 'HEADER' || c.type === 'header'
-    );
-  };
-
-  const getTemplateFooter = (template) => {
-    if (!template?.components) return '';
-    const footerComponent = template.components.find((c) =>
-      c.type === 'FOOTER' || c.type === 'footer'
-    );
-    return footerComponent?.text || '';
-  };
-
-  const getTemplateButtons = (template) => {
-    if (!template?.components) return [];
-    const buttonsComponent = template.components.find((c) =>
-      c.type === 'BUTTONS' || c.type === 'buttons'
-    );
-    return buttonsComponent?.buttons || [];
-  };
-
-  // Get carousel cards for carousel templates
-  const getCarouselCards = (template) => {
-    if (!template?.components) return [];
-    const carouselComponent = template.components.find((c) =>
-      c.type === 'CAROUSEL' || c.type === 'carousel'
-    );
-    return carouselComponent?.cards || [];
-  };
-
-  // Get limited time offer component
-  const getLimitedTimeOffer = (template) => {
-    if (!template?.components) return null;
-    return template.components.find((c) =>
-      c.type === 'LIMITED_TIME_OFFER' || c.type === 'limited_time_offer'
-    );
-  };
-
   const handlePreview = (template) => {
     setPreviewTemplate(template);
     setShowPreview(true);
@@ -290,7 +229,14 @@ export default function TemplatesScreen() {
     const statusConfig = STATUS_CONFIG[item.status?.toLowerCase()] || STATUS_CONFIG.draft;
     const typeConfig = TYPE_CONFIG[item.type?.toLowerCase()] || TYPE_CONFIG.utility;
     const header = getTemplateHeader(item);
-    const formatConfig = FORMAT_CONFIG[header?.format?.toUpperCase()] || FORMAT_CONFIG.TEXT;
+    const hasCarousel = item.components?.some(c => c.type === 'CAROUSEL' || c.type === 'carousel');
+    const hasLTO = item.components?.some(c => c.type === 'LIMITED_TIME_OFFER' || c.type === 'limited_time_offer');
+    const detectedFormat = hasCarousel
+      ? 'CAROUSEL'
+      : hasLTO
+      ? 'LIMITED_TIME_OFFER'
+      : header?.format?.toUpperCase() || 'TEXT';
+    const formatConfig = FORMAT_CONFIG[detectedFormat] || FORMAT_CONFIG.TEXT;
 
     return (
       <TouchableOpacity
@@ -347,10 +293,6 @@ export default function TemplatesScreen() {
   const renderPreviewModal = () => {
     if (!previewTemplate) return null;
 
-    const header = getTemplateHeader(previewTemplate);
-    const bodyText = getTemplateBody(previewTemplate);
-    const footerText = getTemplateFooter(previewTemplate);
-    const buttons = getTemplateButtons(previewTemplate);
     const carouselCards = getCarouselCards(previewTemplate);
     const limitedTimeOffer = getLimitedTimeOffer(previewTemplate);
     const statusConfig = STATUS_CONFIG[previewTemplate.status?.toLowerCase()] || STATUS_CONFIG.draft;
@@ -404,134 +346,17 @@ export default function TemplatesScreen() {
               {/* WhatsApp Preview */}
               <View style={styles.previewSection}>
                 <Text style={styles.previewLabel}>MESSAGE PREVIEW</Text>
-                <View style={styles.chatContainer}>
-                  {/* Message Bubble */}
-                  <View style={styles.messageBubble}>
-                    {/* Header Media */}
-                    {header && header.format && header.format !== 'TEXT' && (
-                      <View style={styles.mediaBox}>
-                        <Icon
-                          name={
-                            header.format === 'IMAGE' ? 'image' :
-                            header.format === 'VIDEO' ? 'video' :
-                            header.format === 'LOCATION' ? 'map-marker' :
-                            header.format === 'CAROUSEL' ? 'view-carousel' :
-                            'file-document'
-                          }
-                          size={28}
-                          color={colors.grey[400]}
-                        />
-                        <Text style={styles.mediaText}>
-                          {header.format.charAt(0) + header.format.slice(1).toLowerCase()}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Header Text */}
-                    {header && header.format === 'TEXT' && header.text && (
-                      <Text style={styles.headerText}>{header.text}</Text>
-                    )}
-
-                    {/* Body */}
-                    {bodyText ? (
-                      <Text style={styles.bodyText}>{bodyText}</Text>
-                    ) : (
-                      <Text style={styles.noContentText}>No message content</Text>
-                    )}
-
-                    {/* Footer */}
-                    {footerText && (
-                      <Text style={styles.footerText}>{footerText}</Text>
-                    )}
-
-                    {/* Time & Ticks */}
-                    <View style={styles.timeRow}>
-                      <Text style={styles.timeText}>
-                        {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </Text>
-                      <Icon name="check-all" size={14} color={chatColors.tickBlue} />
-                    </View>
-                  </View>
-
-                  {/* Buttons */}
-                  {buttons.length > 0 && (
-                    <View style={styles.buttonsBox}>
-                      {buttons.map((btn, idx) => {
-                        // Get button config or use default
-                        const buttonConfig = BUTTON_CONFIG[btn.type] || BUTTON_CONFIG.QUICK_REPLY;
-                        return (
-                          <View key={idx} style={styles.buttonItem}>
-                            <Icon
-                              name={buttonConfig.icon}
-                              size={16}
-                              color={chatColors.linkColor}
-                            />
-                            <Text style={styles.buttonText}>{btn.text}</Text>
-                            {btn.url && (
-                              <Icon name="open-in-new" size={12} color={colors.text.tertiary} style={{ marginLeft: 4 }} />
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-
-                {/* Carousel Cards Preview */}
-                {isCarousel && carouselCards.length > 0 && (
-                  <View style={styles.carouselPreviewSection}>
-                    <Text style={styles.carouselLabel}>CAROUSEL CARDS ({carouselCards.length})</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.carouselScroll}>
-                      {carouselCards.map((card, cardIdx) => {
-                        const cardHeader = card.components?.find(c => c.type === 'HEADER' || c.type === 'header');
-                        const cardBody = card.components?.find(c => c.type === 'BODY' || c.type === 'body');
-                        const cardButtons = card.components?.find(c => c.type === 'BUTTONS' || c.type === 'buttons')?.buttons || [];
-
-                        return (
-                          <View key={cardIdx} style={styles.carouselCard}>
-                            {/* Card Header/Media */}
-                            {cardHeader && (
-                              <View style={styles.carouselCardMedia}>
-                                <Icon
-                                  name={cardHeader.format === 'IMAGE' ? 'image' : cardHeader.format === 'VIDEO' ? 'video' : 'file-document'}
-                                  size={24}
-                                  color={colors.grey[400]}
-                                />
-                                <Text style={styles.carouselCardMediaText}>Card {cardIdx + 1}</Text>
-                              </View>
-                            )}
-                            {/* Card Body */}
-                            {cardBody?.text && (
-                              <Text style={styles.carouselCardBody} numberOfLines={3}>{cardBody.text}</Text>
-                            )}
-                            {/* Card Buttons */}
-                            {cardButtons.length > 0 && (
-                              <View style={styles.carouselCardButtons}>
-                                {cardButtons.map((btn, btnIdx) => {
-                                  const btnConfig = BUTTON_CONFIG[btn.type] || BUTTON_CONFIG.QUICK_REPLY;
-                                  return (
-                                    <View key={btnIdx} style={styles.carouselCardButton}>
-                                      <Icon name={btnConfig.icon} size={12} color={chatColors.linkColor} />
-                                      <Text style={styles.carouselCardButtonText} numberOfLines={1}>{btn.text}</Text>
-                                    </View>
-                                  );
-                                })}
-                              </View>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                )}
-
-                {/* Limited Time Offer */}
-                {limitedTimeOffer && (
-                  <View style={styles.limitedOfferBox}>
-                    <Icon name="clock-alert-outline" size={18} color="#F59E0B" />
-                    <Text style={styles.limitedOfferText}>Limited Time Offer Template</Text>
-                  </View>
-                )}
+                <MessagePreviewBubble
+                  mode="template"
+                  templateData={previewTemplate}
+                  templateName={previewTemplate.name}
+                  showActualMedia={false}
+                  buttonsInsideBubble={true}
+                  showCarousel={isCarousel}
+                  showLTO={!!limitedTimeOffer}
+                  showTypeBadge={false}
+                  preservePlaceholders={true}
+                />
               </View>
             </ScrollView>
 
@@ -982,169 +807,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 12,
   },
-  chatContainer: {
-    backgroundColor: chatColors.chatBg,
-    borderRadius: 16,
-    padding: 16,
-    minHeight: 180,
-  },
-  messageBubble: {
-    backgroundColor: chatColors.outgoing,
-    borderRadius: 12,
-    borderTopRightRadius: 4,
-    padding: 12,
-    alignSelf: 'flex-end',
-    maxWidth: '92%',
-  },
-  mediaBox: {
-    backgroundColor: 'rgba(0,0,0,0.04)',
-    borderRadius: 8,
-    padding: 20,
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  mediaText: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    marginTop: 4,
-  },
-  headerText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text.primary,
-    marginBottom: 4,
-  },
-  bodyText: {
-    fontSize: 14,
-    color: colors.text.primary,
-    lineHeight: 20,
-  },
-  noContentText: {
-    fontSize: 14,
-    color: colors.text.tertiary,
-    fontStyle: 'italic',
-  },
-  footerText: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    marginTop: 6,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 4,
-    marginTop: 6,
-  },
-  timeText: {
-    fontSize: 11,
-    color: colors.text.secondary,
-  },
-  buttonsBox: {
-    marginTop: 8,
-    alignSelf: 'flex-end',
-    maxWidth: '92%',
-    gap: 4,
-  },
-  buttonItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: colors.grey[200],
-  },
-  buttonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: chatColors.linkColor,
-  },
-
-  // Carousel Preview
-  carouselPreviewSection: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.grey[200],
-  },
-  carouselLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.text.secondary,
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  carouselScroll: {
-    marginHorizontal: -16,
-    paddingHorizontal: 16,
-  },
-  carouselCard: {
-    width: 200,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: colors.grey[200],
-    overflow: 'hidden',
-  },
-  carouselCardMedia: {
-    backgroundColor: colors.grey[100],
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  carouselCardMediaText: {
-    fontSize: 11,
-    color: colors.text.tertiary,
-    marginTop: 4,
-  },
-  carouselCardBody: {
-    fontSize: 13,
-    color: colors.text.primary,
-    padding: 12,
-    lineHeight: 18,
-  },
-  carouselCardButtons: {
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    gap: 4,
-  },
-  carouselCardButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.grey[50],
-    borderRadius: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    gap: 4,
-  },
-  carouselCardButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: chatColors.linkColor,
-  },
-
-  // Limited Time Offer
-  limitedOfferBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 12,
-    gap: 8,
-  },
-  limitedOfferText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#92400E',
-  },
-
   // Close Button
   closeBtn: {
     marginHorizontal: 16,

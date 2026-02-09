@@ -9,7 +9,7 @@
 
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { cacheManager } from '../database/CacheManager';
-import { ChatModel } from '../database/models';
+import { ChatModel, MessageModel } from '../database/models';
 import { callApi, endpoints, httpMethods } from '../utils/axios';
 
 /**
@@ -19,7 +19,7 @@ export const fetchChatsWithCache = createAsyncThunk(
   'inbox/fetchChatsWithCache',
   async (params = {}, { dispatch, rejectWithValue }) => {
     try {
-      const { forceRefresh = false, filter } = params;
+      const { forceRefresh = false, filter, maxPages } = params;
 
       // Try to get from cache first (unless force refresh)
       if (!forceRefresh) {
@@ -48,12 +48,12 @@ export const fetchChatsWithCache = createAsyncThunk(
  * Fetch chats from server and cache them
  */
 async function fetchChatsFromServer(params = {}) {
-  const { all: fetchAll, filter } = params;
+  const { all: fetchAll, filter, maxPages: pageLimit } = params;
   let allChats = [];
   let lastChatUpdatedAt = null;
   let hasMore = true;
   let pageCount = 0;
-  const maxPages = 50;
+  const maxPages = pageLimit || 50;
 
   if (fetchAll === true) {
     while (hasMore && pageCount < maxPages) {
@@ -109,6 +109,7 @@ async function fetchChatsFromServer(params = {}) {
       hasMoreChats: false,
       fromCache: false,
       isStale: false,
+      isPartialFetch: !!(pageLimit && pageLimit < 50),
     };
   }
 
@@ -468,6 +469,145 @@ export const initializeCache = createAsyncThunk(
   }
 );
 
+/**
+ * Fetch quick replies with cache-first strategy
+ */
+export const fetchQuickRepliesWithCache = createAsyncThunk(
+  'settings/fetchQuickRepliesWithCache',
+  async (params = {}, { rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      // Try cache first
+      if (!forceRefresh) {
+        const cacheResult = await cacheManager.getQuickReplies();
+        if (cacheResult.quickReplies.length > 0) {
+          return {
+            status: 'success',
+            quickReplies: cacheResult.quickReplies,
+            fromCache: true,
+          };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from API
+      const response = await callApi(
+        `${endpoints.settings.getSettings}?keys=quickReplies`,
+        httpMethods.GET
+      );
+
+      if (response.status === 'error') {
+        throw new Error(response.message || 'Failed to fetch quick replies');
+      }
+
+      const data = response.data || response;
+      const quickReplies = data.quickReplies?.items || data.quickReplies || [];
+
+      // Cache the results
+      if (quickReplies.length > 0) {
+        await cacheManager.saveQuickReplies(quickReplies);
+      }
+
+      return {
+        status: 'success',
+        quickReplies,
+        fromCache: false,
+      };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Search chats locally in SQLite by contact name/phone (instant)
+ * API search (on Enter press) still available via existing searchChats thunk
+ */
+export const searchChatsWithCache = createAsyncThunk(
+  'inbox/searchChatsWithCache',
+  async ({ search }, { rejectWithValue }) => {
+    try {
+      if (!search?.trim()) {
+        return { chats: [], search: '', fromCache: true };
+      }
+
+      const localResults = await cacheManager.searchChatsLocally(search.trim());
+
+      return {
+        chats: localResults,
+        search: search.trim(),
+        fromCache: true,
+        hasMore: false,
+      };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Background sync missed messages after loading from cache
+ * Fetches ALL messages from API and saves them (dedup-safe).
+ * This ensures any missing messages (older or newer) are filled in.
+ * Only returns messages not already in Redux for UI merge.
+ */
+export const syncMissedMessages = createAsyncThunk(
+  'inbox/syncMissedMessages',
+  async ({ chatId }, { getState, rejectWithValue }) => {
+    try {
+      const settingId = cacheManager.getSettingId();
+      if (!settingId) return { messages: [], chatId };
+
+      // Fetch all messages from API
+      const params = { _id: chatId, all: true };
+      const response = await callApi(endpoints.inbox.getConversation, httpMethods.GET, params);
+
+      if (response.status === 'error') {
+        throw new Error(response.message || 'Failed to sync messages');
+      }
+
+      const data = response.data || response;
+      const allMessages = data.messages || [];
+
+      if (allMessages.length === 0) {
+        return { chatId, messages: [], totalFromServer: 0 };
+      }
+
+      // Save ALL messages to SQLite — saveMessages() has dedup built in,
+      // so existing messages get updated and only new ones are inserted
+      await cacheManager.saveMessages(allMessages, chatId);
+
+      // Mark messages as loaded for this chat
+      if (settingId) {
+        await ChatModel.markMessagesLoaded(chatId, settingId);
+      }
+
+      // Build set of IDs already in the current Redux conversation
+      const state = getState();
+      const currentMessages = state.inbox?.currentConversation?.messages || [];
+      const existingIds = new Set();
+      currentMessages.forEach(m => {
+        if (m._id) existingIds.add(m._id);
+        if (m.wamid) existingIds.add(m.wamid);
+      });
+
+      // Return only messages not already in Redux (for UI merge)
+      const newForRedux = allMessages.filter(m =>
+        !(m._id && existingIds.has(m._id)) &&
+        !(m.wamid && existingIds.has(m.wamid))
+      );
+
+      return {
+        chatId,
+        messages: newForRedux,
+        totalFromServer: allMessages.length,
+      };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -480,4 +620,7 @@ export default {
   resetUnreadCountInCache,
   clearAllCacheData,
   initializeCache,
+  fetchQuickRepliesWithCache,
+  searchChatsWithCache,
+  syncMissedMessages,
 };
