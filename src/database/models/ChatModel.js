@@ -152,7 +152,9 @@ class ChatModel {
    * @returns {Promise<void>}
    */
   static async saveChats(chats, settingId) {
-    if (!chats || chats.length === 0) return;
+    if (!chats || chats.length === 0) {
+      return;
+    }
 
     const records = chats.map((chat) => this.toDbRecord(chat, settingId));
     await databaseManager.batchInsert(Tables.CHATS, records);

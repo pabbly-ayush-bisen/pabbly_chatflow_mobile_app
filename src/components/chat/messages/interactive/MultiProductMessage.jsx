@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react';
-import { View, StyleSheet, Image, TouchableOpacity, Modal, ScrollView, FlatList } from 'react-native';
+import { View, StyleSheet, Image, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Text, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, chatColors } from '../../../../theme/colors';
@@ -19,52 +19,49 @@ const MultiProductMessage = ({ message, isOutgoing, onImagePress }) => {
   // Get body text
   const bodyText = typeof body === 'string' ? body : body?.text || '';
 
-  // Calculate total products
-  const totalProducts = sections.reduce((acc, section) => acc + (section.product_items?.length || 0), 0);
+  // Calculate total products (check both 'products' and 'product_items' paths for compatibility)
+  // Web app uses 'products', WhatsApp API order messages use 'product_items'
+  const getProducts = (section) => section.products || section.product_items || [];
+
+  const totalProducts = sections.reduce((acc, section) => acc + getProducts(section).length, 0);
 
   // Get all products flattened
   const allProducts = sections.flatMap(section =>
-    (section.product_items || []).map(product => ({
+    getProducts(section).map(product => ({
       ...product,
       sectionTitle: section.title,
     }))
   );
 
-  // Get first few products for preview
-  const previewProducts = allProducts.slice(0, 3);
+  // Get first product image for header (matching web app: sections[0].products[0].productImageUrl)
+  const headerImageUrl = allProducts[0]?.productImageUrl || null;
 
   return (
     <View style={styles.container}>
+      {/* Header image - first product image like web app */}
+      {headerImageUrl ? (
+        <TouchableOpacity
+          onPress={() => onImagePress?.(headerImageUrl)}
+          activeOpacity={0.9}
+        >
+          <Image
+            source={{ uri: headerImageUrl }}
+            style={styles.headerImage}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.headerImagePlaceholder}>
+          <Icon name="shopping" size={32} color={colors.grey[400]} />
+        </View>
+      )}
+
       {/* Header text */}
       {header?.text && (
         <Text style={[styles.headerText, isOutgoing && styles.headerTextOutgoing]}>
           {header.text}
         </Text>
       )}
-
-      {/* Product preview grid */}
-      <View style={styles.previewGrid}>
-        {previewProducts.map((product, index) => (
-          <View key={index} style={styles.previewItem}>
-            {product.productImageUrl ? (
-              <Image
-                source={{ uri: product.productImageUrl }}
-                style={styles.previewImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.previewPlaceholder}>
-                <Icon name="shopping" size={20} color={colors.grey[400]} />
-              </View>
-            )}
-          </View>
-        ))}
-        {totalProducts > 3 && (
-          <View style={styles.moreIndicator}>
-            <Text style={styles.moreText}>+{totalProducts - 3}</Text>
-          </View>
-        )}
-      </View>
 
       {/* Body text */}
       {bodyText && (
@@ -124,7 +121,7 @@ const MultiProductMessage = ({ message, isOutgoing, onImagePress }) => {
 
                   {/* Products grid */}
                   <View style={styles.productsGrid}>
-                    {(section.product_items || []).map((product, productIndex) => (
+                    {getProducts(section).map((product, productIndex) => (
                       <TouchableOpacity
                         key={productIndex}
                         style={styles.productCard}
@@ -178,6 +175,21 @@ const styles = StyleSheet.create({
   container: {
     width: 260,
   },
+  headerImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  headerImagePlaceholder: {
+    width: '100%',
+    height: 120,
+    backgroundColor: colors.grey[100],
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   headerText: {
     fontSize: 15,
     fontWeight: '600',
@@ -186,41 +198,6 @@ const styles = StyleSheet.create({
   },
   headerTextOutgoing: {
     color: colors.text.primary,
-  },
-  previewGrid: {
-    flexDirection: 'row',
-    marginBottom: 8,
-    gap: 4,
-  },
-  previewItem: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  previewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  previewPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: colors.grey[100],
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  moreIndicator: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    backgroundColor: colors.grey[100],
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  moreText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text.secondary,
   },
   bodyText: {
     fontSize: 14,

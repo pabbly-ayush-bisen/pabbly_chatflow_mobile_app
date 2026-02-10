@@ -8,8 +8,8 @@ import { getMessageStatus } from '../../utils/messageHelpers';
 // List of supported message types for inbox preview
 const SUPPORTED_MESSAGE_TYPES = [
   'text', 'image', 'sticker', 'video', 'audio', 'document', 'file',
-  'location', 'interactive', 'template', 'order', 'contacts', 'contact',
-  'reaction', 'system'
+  'location', 'interactive', 'button_reply', 'list_reply', 'template',
+  'order', 'contacts', 'contact', 'reaction', 'system'
 ];
 
 const ChatListItem = ({ chat, onPress, isSelected }) => {
@@ -102,7 +102,9 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
       case 'location':
         return { icon: null, text: 'Location Message' };
       case 'interactive':
-        return { icon: null, text: 'Interactive Message' };
+      case 'button_reply':
+      case 'list_reply':
+        return { icon: 'gesture-tap', text: 'Interactive' };
       case 'template':
         return { icon: null, text: 'Template Message' };
       case 'order':

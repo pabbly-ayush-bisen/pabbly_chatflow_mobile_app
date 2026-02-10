@@ -17,6 +17,7 @@ import {
   markOptimisticMessageFailed,
   markOptimisticMessageQueued,
   clearCurrentConversation,
+  updateMessageMediaMeta,
 } from '../redux/slices/inboxSlice';
 import { fetchConversationWithCache, fetchQuickRepliesWithCache, syncMissedMessages } from '../redux/cacheThunks';
 import { fetchAllTemplates } from '../redux/slices/templateSlice';
@@ -46,6 +47,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
   const { chatId, chat } = route.params;
   const dispatch = useDispatch();
   const flatListRef = useRef(null);
+  const prevChatIdRef = useRef(null);
   const insets = useSafeAreaInsets();
   const { setCurrentChatId } = useSocket();
 
@@ -120,7 +122,10 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
   // Get chat status and AI assistant status from conversation or redux
   const chatStatus = currentConversation?.status || reduxChatStatus || chat?.status || 'open';
-  const aiAssistantStatus = currentConversation?.aiAssistant?.isActive || reduxAiAssistantStatus || false;
+  // Derive AI assistant active state — also check chatStatus since aiAssistant.isActive may not be
+  // present in conversation data (e.g., cache-loaded or API response without nested aiAssistant field).
+  // Web app syncs this via: dispatch(setAiAssitantStatus(chat?.aiAssistant?.isActive)) in chat-room-single.jsx
+  const aiAssistantStatus = currentConversation?.aiAssistant?.isActive || reduxAiAssistantStatus || chatStatus === 'aiAssistant';
   const isIntervened = chatStatus === 'intervened';
   // Get lastActive from multiple sources - the inbox chats array (populated by chat list API
   // and socket events) is the most reliable source, matching how the web app reads from IndexedDB.
@@ -130,18 +135,29 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
   useEffect(() => {
     if (chatId) {
-      // Clear previous conversation immediately to prevent showing stale data
-      dispatch(clearCurrentConversation());
+      const isSameChat = prevChatIdRef.current === chatId;
+      const hasMessagesLoaded = isSameChat && currentConversation?.messages?.length > 0;
 
-      // Fetch all messages with cache-first strategy (device-primary like WhatsApp)
-      // If messages already loaded for this chat, returns cached data instantly (no API call)
-      // After cache load, background-sync any missed messages from the server
-      dispatch(fetchConversationWithCache({ chatId }))
-        .then((result) => {
-          if (result.payload?.fromCache) {
-            dispatch(syncMissedMessages({ chatId }));
-          }
-        });
+      if (!isSameChat) {
+        // Switching to a different chat — clear old state and load fresh
+        dispatch(clearCurrentConversation());
+      }
+      prevChatIdRef.current = chatId;
+
+      if (hasMessagesLoaded) {
+        // Re-opening the same chat that already has messages in Redux.
+        // Skip cache reload (which causes ordering flash) and just background-sync
+        // to pick up any missed messages from the server.
+        dispatch(syncMissedMessages({ chatId }));
+      } else {
+        // New chat or no messages — load from cache first, then sync
+        dispatch(fetchConversationWithCache({ chatId }))
+          .then((result) => {
+            if (result.payload?.fromCache) {
+              dispatch(syncMissedMessages({ chatId }));
+            }
+          });
+      }
 
       // Reset unread count
       dispatch(resetUnreadCount(chatId));
@@ -159,7 +175,8 @@ export default function ChatDetailsScreen({ route, navigation }) {
       setCurrentChatId(null);
       dispatch(clearCurrentConversation());
     };
-  }, [chatId, dispatch, setCurrentChatId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId, dispatch]);
 
   useEffect(() => {
     // With optimistic updates, we no longer need to refresh on success
@@ -188,9 +205,14 @@ export default function ChatDetailsScreen({ route, navigation }) {
     let currentDate = null;
     const usedIds = new Set();
 
-    // Process regular messages
+    // Process regular messages (sort by timestamp to guarantee chronological order)
     if (messages.length) {
-      messages.forEach((message, index) => {
+      const sortedMessages = [...messages].sort((a, b) => {
+        const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
+        const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
+        return aT - bT;
+      });
+      sortedMessages.forEach((message, index) => {
         const messageDate = new Date(message.timestamp || message.createdAt);
         const dateKey = messageDate.toDateString();
 
@@ -391,6 +413,15 @@ export default function ChatDetailsScreen({ route, navigation }) {
         chatId,
         message: optimisticMessage,
       }));
+
+      // Also save optimistic message to SQLite cache so it persists across navigation
+      // Without this, going back and re-opening the chat would lose the sent message
+      // until syncMissedMessages fetches it from the API (which may take multiple re-opens)
+      try {
+        await cacheManager.addMessage(optimisticMessage, chatId);
+      } catch (cacheErr) {
+        // Non-critical - message is still in Redux for the current session
+      }
 
       // Clear reply state immediately for better UX
       setReplyingTo(null);
@@ -898,8 +929,19 @@ export default function ChatDetailsScreen({ route, navigation }) {
       settingId,
       messageType: msgType,
       mimeType,
+    }).then((result) => {
+      if (result?.localPath) {
+        dispatch(updateMessageMediaMeta({
+          messageId,
+          localMediaPath: result.localPath,
+          localThumbnailPath: result.thumbnailPath || null,
+          downloadStatus: 'downloaded',
+        }));
+      }
+    }).catch(() => {
+      // Download failure already handled by useMediaDownload hook
     });
-  }, [settingId, startDownload]);
+  }, [settingId, startDownload, dispatch]);
 
   // Handle message long press - show actions menu
   const handleMessageLongPress = useCallback((message) => {

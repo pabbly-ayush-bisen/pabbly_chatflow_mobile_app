@@ -12,6 +12,8 @@ const InboxHeader = ({
   onSearchSubmit,
   onSearchClose,
   onAddContact,
+  onRefresh,
+  isRefreshing = false,
   connectionStatus,
   isSearchLoading = false,
 }) => {
@@ -105,6 +107,19 @@ const InboxHeader = ({
           </View>
 
           <View style={styles.actions}>
+            {isRefreshing ? (
+              <View style={styles.refreshSpinner}>
+                <ActivityIndicator size="small" color={colors.common.white} />
+              </View>
+            ) : (
+              <IconButton
+                icon="refresh"
+                iconColor={colors.common.white}
+                size={24}
+                onPress={onRefresh}
+                style={styles.actionButton}
+              />
+            )}
             <IconButton
               icon="magnify"
               iconColor={colors.common.white}
@@ -201,6 +216,12 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     margin: 0,
+  },
+  refreshSpinner: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   searchHeader: {
     flexDirection: 'row',

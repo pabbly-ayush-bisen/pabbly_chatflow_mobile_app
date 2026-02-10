@@ -1044,6 +1044,8 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
       file: 'File Message',
       location: 'Location Message',
       interactive: 'Interactive Message',
+      button_reply: 'Interactive Message',
+      list_reply: 'Interactive Message',
       template: 'Template Message',
       order: 'Order Message',
       contact: 'Contact Message',
@@ -1097,6 +1099,8 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
       case 'template':
         return renderTemplateMessage();
       case 'interactive':
+      case 'button_reply':
+      case 'list_reply':
         return renderInteractiveMessage();
       case 'location':
         return renderLocationMessage();

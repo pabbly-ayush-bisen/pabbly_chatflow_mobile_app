@@ -115,10 +115,12 @@ export const getTemplateData = (message) => {
       message?.link ||
       null;
 
-    // Get type from message or template
-    const type = message?.message?.type ||
-      templateData.type ||
+    // Get template type - prefer template-specific type over message.message.type
+    // Web app uses message.message.template.type directly (e.g., 'image', 'video', 'text')
+    // message.message.type could be wrong/misleading for template messages
+    const type = templateData.type ||
       templateData.templateType ||
+      message?.message?.template?.type ||
       'text';
 
     return {
@@ -129,6 +131,10 @@ export const getTemplateData = (message) => {
       link: link,
       // Include components for rendering template with variables
       components: templateData.components || message?.message?.template?.components || null,
+      // LTO, copy code, and URL variable fields (matching web app chat-message-item.jsx)
+      ltoFields: message?.message?.ltoFields || message?.message?.template?.ltoFields || null,
+      copyCodeParam: message?.message?.copyCodeParam || message?.message?.template?.copyCodeParam || null,
+      urlVariables: message?.message?.urlVariables || message?.message?.template?.urlVariables || null,
     };
   }
 
@@ -156,17 +162,54 @@ export const getInteractiveData = (message) => {
   const msgInteractive = message?.message;
   const waInteractive = message?.interactive;
 
-  // Prefer explicit interactive.type from webhook, then message.message.type
-  const interactiveType = msgInteractive?.type || waInteractive?.type || null;
+  // Determine interactive type from all possible locations.
+  // Also check message.type itself for button_reply/list_reply (server may set it at top level).
+  const nestedInteractive = msgInteractive?.interactive;
+  const rawType = msgInteractive?.type || waInteractive?.type || nestedInteractive?.type || null;
+  // If rawType is 'interactive' but the actual sub-type is button_reply/list_reply, prefer the sub-type.
+  // Also use message.type as fallback for reply types that the server normalizes to top-level.
+  const interactiveType = rawType === 'interactive'
+    ? (nestedInteractive?.type || waInteractive?.type || rawType)
+    : (rawType || (['button_reply', 'list_reply'].includes(message?.type) ? message.type : null));
 
   let body = '';
 
   // Handle interactive reply messages from WhatsApp (button_reply, list_reply)
-  if (waInteractive?.type === 'button_reply') {
-    body = waInteractive?.button_reply?.title || '';
-  } else if (waInteractive?.type === 'list_reply') {
-    // Prefer row title, fall back to id
-    body = waInteractive?.list_reply?.title || waInteractive?.list_reply?.id || '';
+  // Server may store the data in various locations depending on how it processes the webhook.
+  // Check all known paths: message.interactive, message.message, message.message.interactive,
+  // and top-level fields. Use getMessageText() as ultimate fallback (matches web app default case).
+  if (interactiveType === 'button_reply') {
+    body = waInteractive?.button_reply?.title
+      || msgInteractive?.button_reply?.title
+      || nestedInteractive?.button_reply?.title
+      || message?.button_reply?.title
+      || msgInteractive?.body?.text
+      || waInteractive?.body?.text
+      || (typeof msgInteractive?.body === 'string' ? msgInteractive.body : '')
+      || (typeof waInteractive?.body === 'string' ? waInteractive.body : '')
+      || msgInteractive?.text
+      || message?.text
+      || message?.body
+      || getMessageText(message)
+      || '';
+  } else if (interactiveType === 'list_reply') {
+    body = waInteractive?.list_reply?.title
+      || msgInteractive?.list_reply?.title
+      || nestedInteractive?.list_reply?.title
+      || message?.list_reply?.title
+      || waInteractive?.list_reply?.id
+      || msgInteractive?.list_reply?.id
+      || nestedInteractive?.list_reply?.id
+      || message?.list_reply?.id
+      || msgInteractive?.body?.text
+      || waInteractive?.body?.text
+      || (typeof msgInteractive?.body === 'string' ? msgInteractive.body : '')
+      || (typeof waInteractive?.body === 'string' ? waInteractive.body : '')
+      || msgInteractive?.text
+      || message?.text
+      || message?.body
+      || getMessageText(message)
+      || '';
   } else {
     // Regular interactive message body (outgoing)
     body = msgInteractive?.body?.text || waInteractive?.body?.text || '';

@@ -742,10 +742,6 @@ const ChatInput = ({
       <>
         <View style={styles.container}>
           <View style={styles.actionButtonContainer}>
-            <Text style={styles.windowStatusText}>
-              {isActive ? `${getTimeLeftDisplay(hoursLeft)} - ` : ''}
-              Chat is being handled by automation
-            </Text>
             <TouchableOpacity
               style={[styles.actionButtonLarge, styles.interveneButton]}
               onPress={handleIntervene}
@@ -756,9 +752,6 @@ const ChatInput = ({
                 Intervene
               </Text>
             </TouchableOpacity>
-            <Text style={styles.interveneHint}>
-              Click to reply manually. AI and automation will be disabled.
-            </Text>
           </View>
         </View>
 

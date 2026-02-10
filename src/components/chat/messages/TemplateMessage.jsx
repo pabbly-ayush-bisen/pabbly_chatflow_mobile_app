@@ -1,10 +1,48 @@
 import React, { memo, useState } from 'react';
-import { View, StyleSheet, Image, TouchableOpacity, Linking } from 'react-native';
+import { View, StyleSheet, Image, TouchableOpacity, Linking, Clipboard } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSelector } from 'react-redux';
 import { colors, chatColors } from '../../../theme/colors';
 import { getTemplateData, getMediaUrl } from '../../../utils/messageHelpers';
+
+// Ported from web app template-preview-card.jsx — parses GMT offset from timezone string
+function getTimezoneUnixMs(timezoneString) {
+  const match = timezoneString?.match(/\(GMT([+-])(\d{2}):(\d{2})\)/);
+  if (!match) return 0;
+  const [, sign, hours, minutes] = match;
+  return (parseInt(hours, 10) * 3600000 + parseInt(minutes, 10) * 60000) * (sign === '-' ? -1 : 1);
+}
+
+// Ported from web app template-preview-card.jsx — converts LTO expiration to human-readable countdown
+function convertFromNowToDHMS(unixMs, date, time, timeZone) {
+  const now = Date.now();
+  const offset = timeZone ? getTimezoneUnixMs(timeZone) : 0;
+  const adjusted = unixMs - offset;
+  const diff = adjusted - now;
+
+  if (diff < 0) return { time: 'Offer ended', isUnder24Hours: false };
+
+  const target = new Date(adjusted);
+  const nowDate = new Date(now);
+
+  if (nowDate.toDateString() === target.toDateString()) {
+    const h = target.getHours();
+    const m = target.getMinutes();
+    return {
+      time: `Today at ${h % 12 || 12}:${m.toString().padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`,
+      isUnder24Hours: true,
+    };
+  }
+
+  const totalSec = Math.floor(diff / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+
+  if (days === 0) return { time: `${hours} hours ${mins} mins`, isUnder24Hours: true };
+  return { time: `${days || 1} days`, isUnder24Hours: false };
+}
 
 // Button icon mapping for all template button types (matching web app and BUTTON_CONFIG)
 const BUTTON_ICON_MAP = {
@@ -55,7 +93,15 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
     );
   }
 
-  const { templateName, type, bodyParams, headerParams, link, components: templateDataComponents } = templateData;
+  const { templateName, type, bodyParams: rawBodyParams, headerParams: rawHeaderParams, link,
+    components: templateDataComponents, ltoFields, copyCodeParam } = templateData;
+
+  // Convert params to arrays if they are objects (web app does Object.values() in TemplatePreviewcard)
+  // Server sends params as objects like { "1": "John", "2": "Order123" }, not arrays
+  const bodyParams = Array.isArray(rawBodyParams) ? rawBodyParams
+    : (rawBodyParams && typeof rawBodyParams === 'object' ? Object.values(rawBodyParams) : []);
+  const headerParams = Array.isArray(rawHeaderParams) ? rawHeaderParams
+    : (rawHeaderParams && typeof rawHeaderParams === 'object' ? Object.values(rawHeaderParams) : []);
 
   // Get template components from raw message data first, then from templateData, then from Redux
   let components = message?.message?.template?.components || templateDataComponents || [];
@@ -102,7 +148,11 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
 
   // Render header based on type
   const renderHeader = () => {
-    const headerType = type?.toLowerCase() || headerComponent?.format?.toLowerCase();
+    let headerType = type?.toLowerCase() || headerComponent?.format?.toLowerCase();
+    // For LTO templates, the type is 'lto' but the actual header media is in components[0].format
+    if (headerType === 'lto' && headerComponent?.format) {
+      headerType = headerComponent.format.toLowerCase();
+    }
     const headerText = getHeaderText();
 
     if (headerText) {
@@ -216,10 +266,58 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
     return null;
   };
 
+  // Render LTO (Limited-Time Offer) section — matching web app template-preview-card.jsx case 'LTO'
+  const renderLtoSection = () => {
+    const ltoComponent = components.find(c => c.limited_time_offer) || components[1];
+    const offerText = ltoComponent?.limited_time_offer?.text || '';
+    const hasExpiration = ltoComponent?.limited_time_offer?.has_expiration;
+
+    // Get copy code from buttons or from copyCodeParam
+    const copyCode = buttonsComponent?.buttons?.find(
+      b => b.type?.toUpperCase() === 'COPY_CODE'
+    )?.code || copyCodeParam;
+
+    // Calculate countdown
+    let countdown = null;
+    if (hasExpiration && ltoFields?.unixTimestamp) {
+      countdown = convertFromNowToDHMS(
+        ltoFields.unixTimestamp, ltoFields.date, ltoFields.time, ltoFields.timeZone
+      );
+    }
+
+    return (
+      <View style={styles.ltoSection}>
+        <View style={styles.ltoRow}>
+          <View style={styles.ltoGiftCircle}>
+            <Icon name="gift" size={22} color="#7D6ADB" />
+          </View>
+          <View style={styles.ltoTextContainer}>
+            {offerText ? (
+              <Text style={styles.ltoOfferText}>{offerText}</Text>
+            ) : null}
+            {countdown && (
+              <Text style={[
+                styles.ltoCountdown,
+                countdown.isUnder24Hours && styles.ltoCountdownUrgent,
+              ]}>
+                Expires In: {countdown.time}
+              </Text>
+            )}
+            {copyCode ? (
+              <Text style={styles.ltoCopyCode}>Code: {copyCode}</Text>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   // Render buttons - handles all button types matching web app implementation
   const renderButtons = () => {
     const buttons = buttonsComponent?.buttons || [];
     if (buttons.length === 0) return null;
+
+    const isLto = type?.toLowerCase() === 'lto';
 
     return (
       <View style={styles.buttonsContainer}>
@@ -236,12 +334,17 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
                   Linking.openURL(button.url);
                 } else if (buttonType === 'PHONE_NUMBER' && button.phone_number) {
                   Linking.openURL(`tel:${button.phone_number}`);
+                } else if (buttonType === 'COPY_CODE') {
+                  const code = button.code || copyCodeParam || button.text;
+                  if (code) Clipboard.setString(code);
                 }
               }}
               activeOpacity={0.7}
             >
               <Icon name={iconName} size={16} color={chatColors.primary} style={styles.buttonIcon} />
-              <Text style={styles.buttonText} numberOfLines={1}>{button.text}</Text>
+              <Text style={styles.buttonText} numberOfLines={1}>
+                {(buttonType === 'COPY_CODE' && isLto) ? 'Copy offer code' : button.text}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -268,6 +371,9 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
 
       {/* Header */}
       {renderHeader()}
+
+      {/* LTO offer section — only for LTO templates */}
+      {type?.toLowerCase() === 'lto' && renderLtoSection()}
 
       {/* Body */}
       {bodyText && (
@@ -435,6 +541,44 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flexShrink: 1,
     textAlign: 'center',
+  },
+  // LTO (Limited-Time Offer) styles
+  ltoSection: {
+    marginBottom: 8,
+  },
+  ltoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  ltoGiftCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(142, 51, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ltoTextContainer: {
+    flex: 1,
+  },
+  ltoOfferText: {
+    fontSize: 14,
+    color: colors.text.primary,
+    fontWeight: '500',
+  },
+  ltoCountdown: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  ltoCountdownUrgent: {
+    color: colors.error.main,
+  },
+  ltoCopyCode: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 2,
   },
   errorContainer: {
     flexDirection: 'row',

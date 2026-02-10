@@ -35,12 +35,30 @@ export const handleNewMessage = async (dispatch, newChat) => {
       return;
     }
 
-    // Extract last message from the chat
-    const lastMessage = newChat.messages && newChat.messages.length > 0
-      ? newChat.messages[newChat.messages.length - 1]
-      : null;
+    // Extract ALL messages from the chat (matching web app's bulkInsertChats pattern)
+    // Previously only the last message was extracted, causing earlier messages to be lost
+    // when the server sends multiple messages in one event (e.g., incoming + flow response)
+    const allMessages = newChat.messages && newChat.messages.length > 0
+      ? newChat.messages
+      : [];
 
-    // Handle reaction messages - update the original message's reactions instead of adding new message
+    if (allMessages.length === 0) {
+      // No messages — just update chat list metadata
+      const chatForList = {
+        ...newChat,
+        messages: undefined,
+        lastMessageTime: newChat?.updatedAt || newChat?.createdAt,
+        unreadCount: newChat.unreadCount || 0,
+      };
+      dispatch(updateChatInList(chatForList));
+      try { await cacheManager.updateChat(chatForList); } catch (e) {}
+      return;
+    }
+
+    // Use the LAST message for chat list preview (correct — shows most recent)
+    const lastMessage = allMessages[allMessages.length - 1];
+
+    // Handle reaction messages - reactions come as single-message events
     if (lastMessage?.type === 'reaction') {
       const emoji = lastMessage?.reaction?.emoji || lastMessage?.message?.emoji || '';
       const reactedToMessageId = lastMessage?.reaction?.message_id || lastMessage?.message?.message_id || lastMessage?.context?.id;
@@ -57,47 +75,51 @@ export const handleNewMessage = async (dispatch, newChat) => {
         const chatForList = {
           ...newChat,
           messages: undefined,
-          // Don't update lastMessage for reactions
           lastMessageTime: newChat?.updatedAt || newChat?.createdAt,
           unreadCount: newChat.unreadCount || 0,
         };
         dispatch(updateChatInList(chatForList));
-
-        // Sync reaction chat update to SQLite cache
         try { await cacheManager.updateChat(chatForList); } catch (e) {}
 
         return;
       }
     }
 
-    // Create chat object for list (without full messages array)
+    // Create chat object for list (still uses last message for preview — correct behavior)
     const chatForList = {
       ...newChat,
       messages: undefined,
       lastMessage,
       lastMessageTime: lastMessage?.timestamp || lastMessage?.createdAt || newChat?.updatedAt || newChat?.createdAt,
-      // Ensure unread count is updated for incoming messages
       unreadCount: newChat.unreadCount || (lastMessage?.sentBy !== 'user' ? 1 : 0),
     };
 
     // Update chat list - move to top if not system message
     dispatch(updateChatInList(chatForList));
 
-    // If we have the current conversation open, add message to it
-    if (lastMessage) {
-      dispatch(addMessageToCurrentConversation({
-        chatId: newChat._id,
-        message: lastMessage,
-      }));
+    // Add EACH message to current conversation (not just the last one)
+    // The dedup check in addMessageToCurrentConversation (by wamid/_id) prevents duplicates
+    // The sort-after-push ensures correct chronological ordering
+    for (const msg of allMessages) {
+      if (msg && msg.type !== 'reaction') {
+        dispatch(addMessageToCurrentConversation({
+          chatId: newChat._id,
+          message: msg,
+        }));
+      }
     }
 
-    // Sync new message and chat update to SQLite cache
-    if (lastMessage) {
-      dispatch(handleNewMessageCache({
-        chatId: newChat._id,
-        message: lastMessage,
-        chatData: chatForList,
-      }));
+    // Cache EACH message to SQLite (matches web app's bulkInsertChats pattern)
+    // Previously only the last message was cached, so other messages were lost from SQLite
+    for (let i = 0; i < allMessages.length; i++) {
+      const msg = allMessages[i];
+      if (msg && msg.type !== 'reaction') {
+        dispatch(handleNewMessageCache({
+          chatId: newChat._id,
+          message: msg,
+          chatData: i === 0 ? chatForList : undefined, // Update chat metadata only once
+        }));
+      }
     }
 
     // Update last fetch time
@@ -124,6 +146,7 @@ export const handleMessageStatus = async (dispatch, data) => {
     dispatch(updateMessageInCurrentConversation({
       chatId: data.chatId,
       messageWaId: data.messageWaId,
+      tempId: data.tempId, // Pass tempId if server includes it (fallback matching)
       updates: {
         status: data.status,
         sentAt: data.sentAt,
@@ -282,8 +305,11 @@ export const handleNewMessagesBulk = async (dispatch, newChats, getState) => {
     const updatedChatsMap = new Map(existingChatsMap);
 
     relevantChats.forEach(newChat => {
-      const lastMessage = newChat.messages && newChat.messages.length > 0
-        ? newChat.messages[newChat.messages.length - 1]
+      const allMessages = newChat.messages && newChat.messages.length > 0
+        ? newChat.messages
+        : [];
+      const lastMessage = allMessages.length > 0
+        ? allMessages[allMessages.length - 1]
         : null;
 
       const processedChat = {
@@ -294,6 +320,16 @@ export const handleNewMessagesBulk = async (dispatch, newChats, getState) => {
         unreadCount: existingChatsMap.get(newChat._id)?.unreadCount || 0,
       };
       updatedChatsMap.set(newChat._id, processedChat);
+
+      // Add ALL messages to current conversation (not just the last one)
+      for (const msg of allMessages) {
+        if (msg && msg.type !== 'reaction') {
+          dispatch(addMessageToCurrentConversation({
+            chatId: newChat._id,
+            message: msg,
+          }));
+        }
+      }
     });
 
     // Convert map back to array and sort by lastMessageTime
@@ -307,17 +343,21 @@ export const handleNewMessagesBulk = async (dispatch, newChats, getState) => {
 
     dispatch(setChats(updatedChats));
 
-    // Sync each bulk chat's last message to SQLite cache
+    // Sync ALL messages from each bulk chat to SQLite cache (not just the last one)
     relevantChats.forEach(newChat => {
-      const lastMsg = newChat.messages && newChat.messages.length > 0
-        ? newChat.messages[newChat.messages.length - 1]
-        : null;
-      if (lastMsg) {
-        dispatch(handleNewMessageCache({
-          chatId: newChat._id,
-          message: lastMsg,
-          chatData: { ...newChat, messages: undefined },
-        }));
+      const allMessages = newChat.messages && newChat.messages.length > 0
+        ? newChat.messages
+        : [];
+      const chatData = { ...newChat, messages: undefined };
+      for (let i = 0; i < allMessages.length; i++) {
+        const msg = allMessages[i];
+        if (msg && msg.type !== 'reaction') {
+          dispatch(handleNewMessageCache({
+            chatId: newChat._id,
+            message: msg,
+            chatData: i === 0 ? chatData : undefined,
+          }));
+        }
       }
     });
 

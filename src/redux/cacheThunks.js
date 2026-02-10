@@ -26,6 +26,24 @@ export const fetchChatsWithCache = createAsyncThunk(
         const cacheResult = await cacheManager.getChats({ filter });
 
         if (cacheResult.chats.length > 0) {
+          // Return cached data immediately for instant UI
+          // Then silently refresh from server in the background
+          fetchChatsFromServer(params)
+            .then((freshData) => {
+              const freshChats = freshData.data?.chats || freshData.chats || [];
+              if (freshChats.length > 0) {
+                // Lazy import to avoid circular dependency (inboxSlice <-> cacheThunks)
+                const { silentUpdateChats } = require('./slices/inboxSlice');
+                dispatch(silentUpdateChats(freshChats));
+              }
+            })
+            .catch(() => {
+              // Silent fail - cached data is already shown
+              // Clear background refreshing flag so skeleton goes away
+              const { setBackgroundRefreshing } = require('./slices/inboxSlice');
+              dispatch(setBackgroundRefreshing(false));
+            });
+
           return {
             status: 'success',
             chats: cacheResult.chats,
@@ -53,6 +71,7 @@ async function fetchChatsFromServer(params = {}) {
   let lastChatUpdatedAt = null;
   let hasMore = true;
   let pageCount = 0;
+  let retried = false;
   const maxPages = pageLimit || 50;
 
   if (fetchAll === true) {
@@ -75,8 +94,18 @@ async function fetchChatsFromServer(params = {}) {
       }
 
       const rawChats = response.data?.chats || response.chats || response._raw?.chats || [];
+      const apiHasMore = response.data?.hasMoreChats || response.hasMoreChats || response._raw?.hasMoreChats || false;
 
       if (rawChats.length === 0) {
+        // If previous page said hasMore but this page is empty,
+        // retry once with a slightly adjusted cursor (handles timestamp edge cases)
+        if (hasMore && lastChatUpdatedAt && !retried) {
+          const adjusted = new Date(new Date(lastChatUpdatedAt).getTime() + 1);
+          lastChatUpdatedAt = adjusted.toISOString();
+          retried = true;
+          pageCount--; // Don't count this as a page
+          continue;
+        }
         hasMore = false;
         break;
       }
@@ -99,8 +128,21 @@ async function fetchChatsFromServer(params = {}) {
     });
     const uniqueChats = Array.from(uniqueChatsMap.values());
 
-    // Cache the results
+    // Cache the results (INSERT OR REPLACE — preserves chats not in this batch)
     await cacheManager.saveChats(uniqueChats);
+
+    // Read back ALL chats from cache to include any chats the server pagination
+    // missed (e.g., chats added via WebSocket that fell outside the API window).
+    // This aligns with the web app pattern where IndexedDB is the source of truth.
+    let finalChats = uniqueChats;
+    try {
+      const fullCache = await cacheManager.getChats({ filter });
+      if (fullCache.chats.length > uniqueChats.length) {
+        finalChats = fullCache.chats;
+      }
+    } catch (cacheReadError) {
+      // If cache read fails, fall back to server results (non-fatal)
+    }
 
     return {
       status: 'success',
@@ -553,7 +595,7 @@ export const searchChatsWithCache = createAsyncThunk(
  */
 export const syncMissedMessages = createAsyncThunk(
   'inbox/syncMissedMessages',
-  async ({ chatId }, { getState, rejectWithValue }) => {
+  async ({ chatId }, { rejectWithValue }) => {
     try {
       const settingId = cacheManager.getSettingId();
       if (!settingId) return { messages: [], chatId };
@@ -577,30 +619,30 @@ export const syncMissedMessages = createAsyncThunk(
       // so existing messages get updated and only new ones are inserted
       await cacheManager.saveMessages(allMessages, chatId);
 
+      // Clean up any orphaned optimistic messages (temp_ prefixed IDs) from SQLite.
+      // These are created when sending messages and may not be matched by saveMessages'
+      // dedup logic since they have temp_ IDs while server messages have real IDs.
+      try {
+        await MessageModel.deleteOptimisticMessages(chatId, settingId);
+      } catch (cleanupErr) {
+        // Non-critical - duplicates will be filtered in Redux merge
+      }
+
       // Mark messages as loaded for this chat
       if (settingId) {
         await ChatModel.markMessagesLoaded(chatId, settingId);
       }
 
-      // Build set of IDs already in the current Redux conversation
-      const state = getState();
-      const currentMessages = state.inbox?.currentConversation?.messages || [];
-      const existingIds = new Set();
-      currentMessages.forEach(m => {
-        if (m._id) existingIds.add(m._id);
-        if (m.wamid) existingIds.add(m.wamid);
-      });
-
-      // Return only messages not already in Redux (for UI merge)
-      const newForRedux = allMessages.filter(m =>
-        !(m._id && existingIds.has(m._id)) &&
-        !(m.wamid && existingIds.has(m.wamid))
-      );
-
+      // Return ALL messages from API for full replacement in Redux.
+      // Previously we only returned "new" messages (not in Redux), but this left
+      // socket-cached messages in Redux with potentially different/incomplete data
+      // compared to the API version, causing wrong sort order on re-open.
+      // Full replacement ensures Redux always has authoritative API data.
       return {
         chatId,
-        messages: newForRedux,
+        messages: allMessages,
         totalFromServer: allMessages.length,
+        fullReplace: true,
       };
     } catch (error) {
       return rejectWithValue(error.message);
