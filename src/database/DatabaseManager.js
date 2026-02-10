@@ -135,6 +135,26 @@ class DatabaseManager {
     if (fromVersion < 6 && toVersion >= 6) {
       await this._migrateToV6();
     }
+
+    if (fromVersion < 7 && toVersion >= 7) {
+      await this._migrateToV7();
+    }
+
+    if (fromVersion < 8 && toVersion >= 8) {
+      await this._migrateToV8();
+    }
+
+    if (fromVersion < 9 && toVersion >= 9) {
+      await this._migrateToV9();
+    }
+
+    if (fromVersion < 10 && toVersion >= 10) {
+      await this._migrateToV10();
+    }
+
+    if (fromVersion < 11 && toVersion >= 11) {
+      await this._migrateToV11();
+    }
   }
 
   /**
@@ -242,6 +262,92 @@ class DatabaseManager {
       } catch (e2) {
         // Ignore
       }
+    }
+  }
+
+  /**
+   * Migration to version 7: Clear stale chat cache with incorrect lastMessage types
+   * The toDbRecord bug stored all message types as 'text' with null body.
+   * Clearing forces a fresh server fetch with the corrected serialization.
+   */
+  async _migrateToV7() {
+    try {
+      await this.db.execAsync(`DELETE FROM ${Tables.CHATS}`);
+    } catch (error) {
+      // Non-fatal - background refresh will correct data
+    }
+  }
+
+  /**
+   * Migration to version 8: Add last_message_json column for zero data loss
+   * Stores full lastMessage object as JSON blob alongside indexed columns.
+   * Clears stale data so fresh server fetch populates the new column.
+   */
+  async _migrateToV8() {
+    try {
+      await this.db.execAsync(`ALTER TABLE ${Tables.CHATS} ADD COLUMN last_message_json TEXT`);
+    } catch (error) {
+      // Column may already exist
+    }
+    // Clear stale data — old rows lack the JSON column data
+    try {
+      await this.db.execAsync(`DELETE FROM ${Tables.CHATS}`);
+    } catch (error) {
+      // Non-fatal - background refresh will correct data
+    }
+  }
+
+  /**
+   * Migration to version 9: Ensure last_message_json column exists + clear stale data
+   * V8's ALTER TABLE may have failed silently. Re-attempt column addition,
+   * then clear stale chats so fresh server fetch populates correct JSON blobs.
+   */
+  async _migrateToV9() {
+    // Ensure the column exists (V8 ALTER TABLE may have failed silently)
+    try {
+      await this.db.execAsync(`ALTER TABLE ${Tables.CHATS} ADD COLUMN last_message_json TEXT`);
+    } catch (error) {
+      // Column already exists — expected
+    }
+    // Clear stale data
+    try {
+      await this.db.execAsync(`DELETE FROM ${Tables.CHATS}`);
+    } catch (error) {
+      // Non-fatal
+    }
+  }
+
+  /**
+   * Migration to version 10: DROP and recreate chats table
+   * ALTER TABLE failed silently in V8/V9 — last_message_json column never got added.
+   * Dropping the table lets _createTables() recreate it from the DDL with all columns.
+   */
+  async _migrateToV10() {
+    try {
+      await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CHATS}`);
+    } catch (error) {
+      // Non-fatal
+    }
+  }
+
+  /**
+   * Migration to version 11: Force drop + recreate chats table in one step.
+   * V10's DROP TABLE didn't take effect — the old table (without last_message_json)
+   * persisted. This migration drops it directly and recreates from DDL immediately,
+   * not relying on _createTables() which uses CREATE TABLE IF NOT EXISTS (no-op if exists).
+   */
+  async _migrateToV11() {
+    try {
+      // Force drop - use raw SQL to ensure it actually runs
+      await this.db.execAsync('DROP TABLE IF EXISTS chats');
+    } catch (error) {
+      console.warn('[Migration V11] DROP failed:', error.message);
+    }
+    try {
+      // Recreate immediately from DDL (includes last_message_json column)
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.CHATS]);
+    } catch (error) {
+      console.warn('[Migration V11] CREATE failed:', error.message);
     }
   }
 
@@ -358,13 +464,17 @@ class DatabaseManager {
    * @returns {Promise<any>}
    */
   async upsert(table, data) {
-    const columns = Object.keys(data);
-    // Sanitize all values for SQLite compatibility
-    const values = Object.values(data).map(v => this._sanitizeValue(v));
+    const db = await this.getDatabase();
+    // Validate columns against actual table schema
+    const tableInfo = await db.getAllAsync(`PRAGMA table_info(${table})`);
+    const tableColumns = new Set(tableInfo.map(col => col.name));
+
+    const columns = Object.keys(data).filter(col => tableColumns.has(col));
+    const values = columns.map(col => this._sanitizeValue(data[col]));
     const placeholders = columns.map(() => '?').join(', ');
 
     const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
-    return this.execute(sql, values);
+    return db.runAsync(sql, values);
   }
 
   /**
@@ -503,13 +613,14 @@ class DatabaseManager {
 
   /**
    * Insert multiple records in a batch
-   * Uses individual inserts to handle large JSON fields safely
+   * Processes in chunks of 50 with transactions for speed.
+   * Validates columns against actual table schema to prevent "no such column" errors.
    * @param {string} table - Table name
    * @param {Array<Object>} records - Array of record objects
-   * @param {number} chunkSize - Records per progress log (default: 100)
+   * @param {number} chunkSize - Records per chunk (default: 50)
    * @returns {Promise<void>}
    */
-  async batchInsert(table, records) {
+  async batchInsert(table, records, chunkSize = 50) {
     if (!records || records.length === 0) return;
 
     const db = await this.getDatabase();
@@ -517,119 +628,71 @@ class DatabaseManager {
     let savedCount = 0;
     let errorCount = 0;
 
-    for (let i = 0; i < totalRecords; i++) {
-      const record = records[i];
+    // Get actual table columns to prevent "no such column" errors
+    const tableInfo = await db.getAllAsync(`PRAGMA table_info(${table})`);
+    const tableColumns = new Set(tableInfo.map(col => col.name));
 
+    // Helper: build INSERT SQL from record, filtered to valid columns only
+    const buildInsert = (record, nullifyLargeText = false) => {
+      const columns = Object.keys(record).filter(col => tableColumns.has(col));
+      const values = columns.map(col => {
+        const v = record[col];
+        if (nullifyLargeText && typeof v === 'string' && v.length > 5000) return null;
+        return this._sanitizeValue(v);
+      });
+      const placeholders = columns.map(() => '?').join(', ');
+      const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
+      return { sql, values };
+    };
+
+    // Process in chunks
+    for (let i = 0; i < totalRecords; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+
+      // Fast path: try whole chunk in a transaction
+      let chunkSuccess = false;
       try {
-        const columns = Object.keys(record);
-        const values = columns.map(col => this._sanitizeValue(record[col]));
-        const placeholders = columns.map(() => '?').join(', ');
-        const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
-        await db.runAsync(sql, values);
-        savedCount++;
-      } catch (recordError) {
-        // RETRY 1: Try with stripped metadata
-        if (record.metadata) {
+        await db.withTransactionAsync(async () => {
+          for (const record of chunk) {
+            const { sql, values } = buildInsert(record);
+            await db.runAsync(sql, values);
+          }
+        });
+        savedCount += chunk.length;
+        chunkSuccess = true;
+      } catch (txError) {
+        console.warn(`[batchInsert] Chunk transaction failed for ${table}:`, txError.message);
+      }
+
+      if (chunkSuccess) continue;
+
+      // Slow path: individual inserts with retry
+      for (const record of chunk) {
+        // Attempt 1: full record
+        try {
+          const { sql, values } = buildInsert(record);
+          await db.runAsync(sql, values);
+          savedCount++;
+          continue;
+        } catch (err1) {
+          // Attempt 2: nullify large text/JSON fields (> 5KB)
           try {
-            const columns = Object.keys(record);
-            const values = columns.map(col => {
-              if (col === 'metadata') {
-                try {
-                  const parsed = JSON.parse(record.metadata);
-                  const minimal = {
-                    _id: parsed._id,
-                    id: parsed.id,
-                    direction: parsed.direction,
-                    status: parsed.status,
-                    timestamp: parsed.timestamp,
-                    wamid: parsed.wamid,
-                  };
-                  return this._sanitizeValue(JSON.stringify(minimal));
-                } catch (e) {
-                  return null;
-                }
-              }
-              return this._sanitizeValue(record[col]);
-            });
-            const placeholders = columns.map(() => '?').join(', ');
-            const sql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
+            const { sql, values } = buildInsert(record, true);
             await db.runAsync(sql, values);
             savedCount++;
             continue;
-          } catch (retryError) {
-            // Retry 1 failed
+          } catch (err2) {
+            errorCount++;
+            if (errorCount <= 3) {
+              console.error(`[batchInsert] Record failed in ${table}:`, err2.message);
+            }
           }
         }
-
-        // RETRY 2: Try with ONLY essential fields
-        let retry2Success = false;
-        try {
-          const minimalColumns = [
-            'id', 'server_id', 'chat_id', 'setting_id', 'direction', 'type',
-            'status', 'timestamp', 'is_from_me', 'created_at', 'updated_at',
-            'synced_at', 'is_dirty', 'is_pending'
-          ];
-          const minimalValues = [
-            this._sanitizeValue(record.id),
-            this._sanitizeValue(record.server_id),
-            this._sanitizeValue(record.chat_id),
-            this._sanitizeValue(record.setting_id),
-            this._sanitizeValue(record.direction) || 'inbound',
-            this._sanitizeValue(record.type) || 'text',
-            this._sanitizeValue(record.status) || 'sent',
-            typeof record.timestamp === 'number' ? record.timestamp : Date.now(),
-            record.is_from_me || 0,
-            typeof record.created_at === 'number' ? record.created_at : Date.now(),
-            typeof record.updated_at === 'number' ? record.updated_at : Date.now(),
-            typeof record.synced_at === 'number' ? record.synced_at : Date.now(),
-            0,
-            record.is_pending || 0,
-          ];
-
-          const placeholders = minimalColumns.map(() => '?').join(', ');
-          const sql = `INSERT OR REPLACE INTO ${table} (${minimalColumns.join(', ')}) VALUES (${placeholders})`;
-          await db.runAsync(sql, minimalValues);
-          savedCount++;
-          retry2Success = true;
-        } catch (minimalError) {
-          // Retry 2 failed
-        }
-
-        if (retry2Success) continue;
-
-        // RETRY 3: Ultimate fallback
-        try {
-          const freshId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          const safeServerId = record.server_id ? String(record.server_id).replace(/[^\w-]/g, '') : null;
-
-          const ultimateColumns = ['id', 'server_id', 'chat_id', 'setting_id', 'direction', 'type', 'status', 'timestamp', 'is_from_me'];
-          const ultimateValues = [
-            freshId,
-            safeServerId,
-            String(record.chat_id || 'unknown'),
-            String(record.setting_id || 'unknown'),
-            String(record.direction || 'inbound'),
-            String(record.type || 'text'),
-            String(record.status || 'sent'),
-            typeof record.timestamp === 'number' ? record.timestamp : Date.now(),
-            record.is_from_me || 0,
-          ];
-
-          const placeholders = ultimateColumns.map(() => '?').join(', ');
-          const sql = `INSERT INTO ${table} (${ultimateColumns.join(', ')}) VALUES (${placeholders})`;
-          await db.runAsync(sql, ultimateValues);
-          savedCount++;
-          continue;
-        } catch (ultimateError) {
-          // All retries failed
-        }
-
-        errorCount++;
       }
     }
 
-    if (errorCount > totalRecords * 0.5) {
-      throw new Error(`Too many insert failures: ${errorCount}/${totalRecords}`);
+    if (savedCount === 0 && totalRecords > 0) {
+      throw new Error(`All inserts failed for ${table}: ${errorCount}/${totalRecords}`);
     }
   }
 

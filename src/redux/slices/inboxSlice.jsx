@@ -1282,7 +1282,7 @@ const inboxSlice = createSlice({
         // Deduplicate and normalize chats
         const normalizedChats = rawChats.map(normalizeChatForList);
 
-        if (isPartialFetch && state.chats.length > 0) {
+        if (payload.isPartialFetch && state.chats.length > 0) {
           // MERGE mode: update existing chats + add new ones, keep rest from cache
           const existingMap = new Map(state.chats.map(c => [c._id, c]));
           normalizedChats.forEach(chat => {
@@ -1295,7 +1295,6 @@ const inboxSlice = createSlice({
             const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
             return bTime - aTime;
           });
-          state.chats = mergedChats;
         } else {
           // REPLACE mode: full fetch — deduplicate and replace entire list
           const uniqueChatsMap = new Map();
@@ -1309,7 +1308,6 @@ const inboxSlice = createSlice({
             const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
             return bTime - aTime;
           });
-          state.chats = finalChats;
         }
         state.hasMoreChats = payload.hasMoreChats || false;
       })

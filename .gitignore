@@ -85,3 +85,7 @@ temp/
 
 # EAS
 .easignore
+
+# App config (contains sensitive keys/credentials)
+app.json
+app.config.js

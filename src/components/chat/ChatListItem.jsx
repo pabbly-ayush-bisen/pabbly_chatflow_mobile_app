@@ -82,38 +82,37 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
       return { icon: null, text: messageText || 'Message' };
     }
 
-    // For non-text messages, show type label like web app
+    // For non-text messages, show type icon + label like WhatsApp
     switch (messageType) {
       case 'system':
-        return { icon: null, text: 'System Message' };
+        return { icon: 'shield-lock-outline', text: 'System Message' };
       case 'reaction':
-        return { icon: null, text: 'Reaction Message' };
+        return { icon: 'emoticon-outline', text: 'Reaction' };
       case 'image':
-        return { icon: null, text: 'Image Message' };
+        return { icon: 'image-outline', text: 'Photo' };
       case 'sticker':
-        return { icon: null, text: 'Sticker Message' };
+        return { icon: 'sticker-emoji', text: 'Sticker' };
       case 'video':
-        return { icon: null, text: 'Video Message' };
+        return { icon: 'video-outline', text: 'Video' };
       case 'audio':
-        return { icon: null, text: 'Audio Message' };
+        return { icon: 'microphone-outline', text: 'Audio' };
       case 'document':
       case 'file':
-        return { icon: null, text: 'File Message' };
+        return { icon: 'file-document-outline', text: 'Document' };
       case 'location':
-        return { icon: null, text: 'Location Message' };
+        return { icon: 'map-marker-outline', text: 'Location' };
       case 'interactive':
       case 'button_reply':
       case 'list_reply':
         return { icon: 'gesture-tap', text: 'Interactive' };
       case 'template':
-        return { icon: null, text: 'Template Message' };
+        return { icon: 'file-document-outline', text: 'Template' };
       case 'order':
-        return { icon: null, text: 'Order Message' };
+        return { icon: 'cart-outline', text: 'Order' };
       case 'contacts':
       case 'contact':
-        return { icon: null, text: 'Contact Message' };
+        return { icon: 'account-outline', text: 'Contact' };
       default:
-        // Fallback - should not reach here if SUPPORTED_MESSAGE_TYPES is comprehensive
         return { icon: null, text: 'Unsupported Message' };
     }
   };

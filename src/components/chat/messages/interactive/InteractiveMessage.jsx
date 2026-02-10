@@ -30,20 +30,6 @@ const InteractiveMessage = ({ message, isOutgoing, onImagePress }) => {
   const interactiveData = getInteractiveData(message);
   const { type, header, body, footer } = interactiveData;
 
-  // DEBUG: Log button_reply/list_reply messages to identify server data structure
-  if (__DEV__ && (type === 'button_reply' || type === 'list_reply' || message?.type === 'button_reply' || message?.type === 'list_reply')) {
-    console.log('[InteractiveMessage] button/list reply debug:', JSON.stringify({
-      extractedType: type,
-      extractedBody: body,
-      msgType: message?.type,
-      msgMessage: message?.message,
-      msgInteractive: message?.interactive,
-      msgButtonReply: message?.button_reply,
-      msgBody: message?.body,
-      msgText: message?.text,
-    }, null, 2));
-  }
-
   // Check for media header type (outgoing interactive with media)
   const headerType = message?.message?.header?.type;
   const hasMediaHeader = ['image', 'video', 'audio', 'document'].includes(headerType);
