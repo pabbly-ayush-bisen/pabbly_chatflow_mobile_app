@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 import { AppState } from 'react-native';
 import {
@@ -111,21 +111,26 @@ export const SocketProvider = ({ children }) => {
     subscribeToEvent('newMessage', async (newChat) => {
       handleNewMessage(dispatch, newChat);
 
-      // Show notification if app is in background or chat is not currently open
-      const lastMessage = newChat.messages && newChat.messages.length > 0
-        ? newChat.messages[newChat.messages.length - 1]
-        : null;
+      // Show notification for incoming messages not currently visible
+      // Find the last incoming (non-user) message for the notification
+      // This handles multi-message events where [incoming_msg, flow_response] arrive together
+      const allMessages = newChat.messages && newChat.messages.length > 0
+        ? newChat.messages
+        : [];
+      let notificationMessage = null;
+      for (let i = allMessages.length - 1; i >= 0; i--) {
+        if (allMessages[i] && allMessages[i].sentBy !== 'user') {
+          notificationMessage = allMessages[i];
+          break;
+        }
+      }
 
-      // Only show notification for incoming messages (not sent by user)
-      if (lastMessage && lastMessage.sentBy !== 'user') {
-        // Check if the app is in background or the chat is not open
+      if (notificationMessage) {
         const isInBackground = appState.current !== 'active';
         const isChatOpen = currentChatIdRef.current === newChat._id;
 
         if (isInBackground || !isChatOpen) {
-          // Show local notification for the new message
-          // showMessageNotification expects (message, contact, chatId)
-          await showMessageNotification(lastMessage, newChat.contact, newChat._id);
+          await showMessageNotification(notificationMessage, newChat.contact, newChat._id);
 
           // Update badge count with total unread messages
           try {
@@ -133,7 +138,6 @@ export const SocketProvider = ({ children }) => {
             const totalUnread = (currentState.inbox?.chats || []).reduce(
               (acc, chat) => acc + (chat.unreadCount || 0), 0
             );
-            // Add 1 for the new unread message (since state might not be updated yet)
             await setBadgeCount(totalUnread + 1);
           } catch (badgeError) {
             // Error updating badge count
@@ -356,7 +360,7 @@ export const SocketProvider = ({ children }) => {
     await setBadgeCount(count);
   }, []);
 
-  const value = {
+  const value = useMemo(() => ({
     connectionStatus,
     error,
     isConnected: connectionStatus === 'connected',
@@ -365,7 +369,7 @@ export const SocketProvider = ({ children }) => {
     pushToken,
     setCurrentChatId,
     updateBadgeCount,
-  };
+  }), [connectionStatus, error, connect, disconnect, pushToken, setCurrentChatId, updateBadgeCount]);
 
   return (
     <SocketContext.Provider value={value}>

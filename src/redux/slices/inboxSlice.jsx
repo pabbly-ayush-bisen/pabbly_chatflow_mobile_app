@@ -778,15 +778,33 @@ const inboxSlice = createSlice({
 
         // For outgoing messages, check if we have an optimistic message that matches
         // Match by: same chatId, same content, same type, within 30 seconds, and marked as optimistic
-        if (message.sentBy === 'user' || message.direction === 'outbound' || message.isFromMe) {
-          const messageText = message.message?.body || message.message?.body?.text || '';
+        // Broaden detection: server may use different field names for outgoing messages
+        const isOutgoing = message.sentBy === 'user'
+          || message.direction === 'outbound'
+          || message.direction === 'outgoing'
+          || message.isFromMe
+          || message.from?.type === 'teamMember';
+        // Also try matching if the message has a wamid and there are pending optimistic messages
+        const hasPendingOptimistic = state.currentConversation.messages.some(m => m.isOptimistic);
+        if (isOutgoing || (message.wamid && hasPendingOptimistic)) {
+          // Normalize body text extraction - server may send body as string or object
+          const extractBodyText = (msg) => {
+            const body = msg?.message?.body;
+            if (typeof body === 'string') return body;
+            if (body && typeof body === 'object' && body.text) return body.text;
+            // Also check message.message.text and message.text
+            if (typeof msg?.message?.text === 'string') return msg.message.text;
+            if (typeof msg?.text === 'string') return msg.text;
+            return '';
+          };
+          const messageText = extractBodyText(message);
           const messageType = message.type || 'text';
           const messageTime = new Date(message.timestamp || message.createdAt).getTime();
 
           const optimisticIndex = state.currentConversation.messages.findIndex(m => {
             if (!m.isOptimistic) return false;
 
-            const optText = m.message?.body || m.message?.body?.text || '';
+            const optText = extractBodyText(m);
             const optType = m.type || 'text';
             const optTime = new Date(m.timestamp || m.createdAt).getTime();
 
@@ -818,8 +836,14 @@ const inboxSlice = createSlice({
                 !String(m._id).startsWith('temp_'))
         );
         if (!messageExists) {
-          // Add new message to the end of the array
+          // Add new message and sort by timestamp to maintain chronological order
+          // Without sorting, socket messages arriving out of order would display incorrectly
           state.currentConversation.messages.push(message);
+          state.currentConversation.messages.sort((a, b) => {
+            const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
+            const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
+            return aT - bT;
+          });
         }
       }
     },
@@ -839,6 +863,20 @@ const inboxSlice = createSlice({
           );
         }
 
+        // Fallback: if both wamid and tempId lookups failed, find a pending optimistic message
+        // Only auto-match if exactly one pending message to avoid ambiguity
+        if ((messageIndex === -1 || messageIndex === undefined) && messageWaId) {
+          const pendingIndices = [];
+          state.currentConversation.messages?.forEach((m, i) => {
+            if (m.isOptimistic && m.status === 'pending') {
+              pendingIndices.push(i);
+            }
+          });
+          if (pendingIndices.length === 1) {
+            messageIndex = pendingIndices[0];
+          }
+        }
+
         if (messageIndex !== -1 && messageIndex !== undefined) {
           state.currentConversation.messages[messageIndex] = {
             ...state.currentConversation.messages[messageIndex],
@@ -852,6 +890,22 @@ const inboxSlice = createSlice({
       const chat = state.chats.find(c => c._id === chatId);
       if (chat && chat.lastMessage?.wamid === messageWaId) {
         chat.lastMessage = { ...chat.lastMessage, ...updates };
+      }
+    },
+    // Update local media download metadata on a message (keeps Redux in sync with SQLite)
+    updateMessageMediaMeta: (state, action) => {
+      const { messageId, localMediaPath, localThumbnailPath, downloadStatus } = action.payload;
+      if (!state.currentConversation?.messages) return;
+      const idx = state.currentConversation.messages.findIndex(
+        m => m._id === messageId || m.wamid === messageId || m.server_id === messageId
+      );
+      if (idx !== -1) {
+        state.currentConversation.messages[idx] = {
+          ...state.currentConversation.messages[idx],
+          _localMediaPath: localMediaPath,
+          _localThumbnailPath: localThumbnailPath || state.currentConversation.messages[idx]._localThumbnailPath,
+          _mediaDownloadStatus: downloadStatus || 'downloaded',
+        };
       }
     },
     clearInboxError: (state) => {
@@ -1080,6 +1134,42 @@ const inboxSlice = createSlice({
       state.chatStatus = null;
       state.aiAssistantStatus = false;
     },
+    // Silently MERGE fresh server data into existing chats (background refresh after cache load)
+    // Uses merge strategy: server data updates existing chats, preserves chats not in server response
+    silentUpdateChats: (state, action) => {
+      const rawChats = action.payload || [];
+      state.backgroundRefreshing = false;
+      if (rawChats.length === 0) {
+        return;
+      }
+
+      // Build a map from existing state chats (preserves chats beyond API pagination window)
+      const mergedMap = new Map();
+      state.chats.forEach(chat => {
+        if (chat._id) {
+          mergedMap.set(chat._id, chat);
+        }
+      });
+
+      // Merge server chats: update existing, add new
+      const normalizedChats = rawChats.map(normalizeChatForList);
+      normalizedChats.forEach(chat => {
+        if (chat._id) {
+          mergedMap.set(chat._id, chat); // overwrites existing with fresh server data
+        }
+      });
+
+      const finalChats = Array.from(mergedMap.values()).sort((a, b) => {
+        const aTime = new Date(a.lastMessageTime || a.updatedAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.lastMessageTime || b.updatedAt || b.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
+      state.chats = finalChats;
+    },
+    // Set background refreshing flag
+    setBackgroundRefreshing: (state, action) => {
+      state.backgroundRefreshing = action.payload;
+    },
     // Clear all inbox data (used when switching accounts/team members)
     clearInboxData: (state) => {
       state.chats = [];
@@ -1183,12 +1273,16 @@ const inboxSlice = createSlice({
         state.status = 'succeeded';
         const payload = action.payload || {};
         const rawChats = payload.data?.chats || payload.chats || [];
-        const isPartialFetch = payload.isPartialFetch;
-
+        // If data came from cache, background refresh is in progress
+        if (payload.fromCache) {
+          state.backgroundRefreshing = true;
+        } else {
+          state.backgroundRefreshing = false;
+        }
         // Deduplicate and normalize chats
         const normalizedChats = rawChats.map(normalizeChatForList);
 
-        if (isPartialFetch && state.chats.length > 0) {
+        if (payload.isPartialFetch && state.chats.length > 0) {
           // MERGE mode: update existing chats + add new ones, keep rest from cache
           const existingMap = new Map(state.chats.map(c => [c._id, c]));
           normalizedChats.forEach(chat => {
@@ -1257,6 +1351,13 @@ const inboxSlice = createSlice({
 
         state.currentConversation = conversation;
 
+        // Sync chat status and AI assistant status from loaded conversation data
+        // (matching web app's useEffect that dispatches setAiAssitantStatus on chat change)
+        if (data.status) {
+          state.chatStatus = data.status;
+          state.aiAssistantStatus = data.status === 'aiAssistant' || data.aiAssistant?.isActive || false;
+        }
+
         // When fetching all, no more messages to load
         if (fetchAll) {
           state.hasMoreMessages = false;
@@ -1297,8 +1398,27 @@ const inboxSlice = createSlice({
         const chatId = data._id;
         const newMsgs = data.messages || [];
 
+        // Filter out orphaned optimistic messages from cache results.
+        // When cache has both a temp_ optimistic message AND the real server message
+        // for the same sent text, remove the optimistic to prevent duplicates.
+        const realMsgs = newMsgs.filter(m => !String(m._id || '').startsWith('temp_'));
+        const tempMsgs = newMsgs.filter(m => String(m._id || '').startsWith('temp_'));
+        // Only keep temp messages that don't have a matching real message (by content+type+time)
+        const keptTempMsgs = tempMsgs.filter(tm => {
+          const tBody = typeof tm.message?.body === 'string' ? tm.message.body : tm.message?.body?.text || '';
+          const tType = tm.type || 'text';
+          const tTime = new Date(tm.timestamp || tm.createdAt || 0).getTime();
+          return !realMsgs.some(rm => {
+            const rBody = typeof rm.message?.body === 'string' ? rm.message.body : rm.message?.body?.text || '';
+            const rType = rm.type || 'text';
+            const rTime = new Date(rm.timestamp || rm.createdAt || 0).getTime();
+            return rType === tType && rBody === tBody && Math.abs(rTime - tTime) < 60000;
+          });
+        });
+        const filteredMsgs = [...realMsgs, ...keptTempMsgs];
+
         // Sort messages by timestamp
-        const sortedMsgs = [...newMsgs].sort((a, b) => {
+        const sortedMsgs = [...filteredMsgs].sort((a, b) => {
           const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
           const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
           return aT - bT;
@@ -1313,6 +1433,13 @@ const inboxSlice = createSlice({
         state.currentConversation = conversation;
         state.hasMoreMessages = payload.hasMore || false;
         state.messagesSkip = sortedMsgs.length;
+
+        // Sync chat status and AI assistant status from loaded conversation data
+        // (matching web app's useEffect that dispatches setAiAssitantStatus on chat change)
+        if (data.status) {
+          state.chatStatus = data.status;
+          state.aiAssistantStatus = data.status === 'aiAssistant' || data.aiAssistant?.isActive || false;
+        }
 
         // Update cache
         if (chatId) {
@@ -1769,14 +1896,70 @@ const inboxSlice = createSlice({
         state.isSearchActive = true;
       })
 
-    // Sync missed messages — merge new messages into current conversation
+    // Sync missed messages — replace conversation with authoritative API data
     builder
       .addCase(syncMissedMessages.fulfilled, (state, action) => {
-        const { chatId, messages } = action.payload;
+        const { chatId, messages, fullReplace } = action.payload;
         if (!messages || messages.length === 0) return;
         if (!state.currentConversation || state.currentConversation._id !== chatId) return;
 
-        // Merge new messages into current conversation (dedup by _id/wamid)
+        if (fullReplace) {
+          // Full replace with sorted API data.
+          const existingMsgs = state.currentConversation.messages || [];
+
+          // Preserve in-flight optimistic messages not yet confirmed by server
+          const optimisticMsgs = existingMsgs.filter(m => m.isOptimistic);
+
+          // Build map of local media download metadata from existing messages.
+          const downloadMetaMap = new Map();
+          existingMsgs.forEach(m => {
+            if (m._localMediaPath) {
+              const id = m._id || m.wamid;
+              if (id) {
+                downloadMetaMap.set(id, {
+                  _localMediaPath: m._localMediaPath,
+                  _localThumbnailPath: m._localThumbnailPath,
+                  _mediaDownloadStatus: m._mediaDownloadStatus,
+                });
+              }
+            }
+          });
+
+          const sorted = [...messages].sort((a, b) => {
+            const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
+            const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
+            return aT - bT;
+          });
+
+          // Merge back local download metadata into server messages
+          if (downloadMetaMap.size > 0) {
+            for (let i = 0; i < sorted.length; i++) {
+              const meta = downloadMetaMap.get(sorted[i]._id) || downloadMetaMap.get(sorted[i].wamid);
+              if (meta) {
+                sorted[i] = { ...sorted[i], ...meta };
+              }
+            }
+          }
+
+          if (optimisticMsgs.length > 0) {
+            // Build set of server message IDs for dedup
+            const serverIds = new Set();
+            sorted.forEach(m => {
+              if (m._id) serverIds.add(m._id);
+              if (m.wamid) serverIds.add(m.wamid);
+            });
+            // Keep optimistic messages that haven't been replaced by server messages
+            const keptOptimistic = optimisticMsgs.filter(m =>
+              !serverIds.has(m.tempId) && !serverIds.has(m._id) && !serverIds.has(m.wamid)
+            );
+            state.currentConversation.messages = [...sorted, ...keptOptimistic];
+          } else {
+            state.currentConversation.messages = sorted;
+          }
+          return;
+        }
+
+        // Fallback: merge-only mode (if fullReplace is not set)
         const existingIds = new Set();
         state.currentConversation.messages.forEach(m => {
           if (m._id) existingIds.add(m._id);
@@ -1790,7 +1973,6 @@ const inboxSlice = createSlice({
 
         if (trulyNew.length > 0) {
           state.currentConversation.messages.push(...trulyNew);
-          // Re-sort by timestamp
           state.currentConversation.messages.sort((a, b) => {
             const aT = new Date(a.timestamp || a.createdAt || 0).getTime();
             const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
@@ -1814,6 +1996,7 @@ export const {
   setSocketStatus,
   addMessageToCurrentConversation,
   updateMessageInCurrentConversation,
+  updateMessageMediaMeta,
   clearInboxError,
   setAiAssistantStatus,
   setSelectedAssistantId,

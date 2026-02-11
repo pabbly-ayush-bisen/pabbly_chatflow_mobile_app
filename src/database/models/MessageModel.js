@@ -264,9 +264,14 @@ class MessageModel {
 
       if (existingId) {
         // Update existing record (refresh metadata, status, etc.)
+        // Exclude local-only download fields — these are set by updateMediaDownloadStatus
+        // and must not be overwritten with null when syncing API data
         try {
           const record = this.toDbRecord(msg, chatId, settingId);
           delete record.id; // Keep original primary key
+          delete record.local_media_path;
+          delete record.local_thumbnail_path;
+          delete record.media_download_status;
           const columns = Object.keys(record);
           const setClause = columns.map(k => `${k} = ?`).join(', ');
           const values = columns.map(k => databaseManager._sanitizeValue(record[k]));
@@ -324,8 +329,13 @@ class MessageModel {
 
       if (existing) {
         // Update existing record instead of inserting duplicate
+        // Exclude local-only download fields — these are set by updateMediaDownloadStatus
+        // and must not be overwritten with null when syncing API data
         const record = this.toDbRecord(message, chatId, settingId);
         delete record.id; // Keep original primary key
+        delete record.local_media_path;
+        delete record.local_thumbnail_path;
+        delete record.media_download_status;
         const columns = Object.keys(record);
         const setClause = columns.map(k => `${k} = ?`).join(', ');
         const values = columns.map(k => databaseManager._sanitizeValue(record[k]));
@@ -341,6 +351,22 @@ class MessageModel {
     // No existing match — insert new
     const record = this.toDbRecord(message, chatId, settingId);
     await databaseManager.upsert(Tables.MESSAGES, record);
+  }
+
+  /**
+   * Delete optimistic messages (temp_ prefixed server_ids) for a chat.
+   * Called after syncMissedMessages saves all real server messages,
+   * to clean up any orphaned optimistic records that weren't matched by dedup.
+   * @param {string} chatId - Chat server ID
+   * @param {string} settingId - Current setting ID
+   * @returns {Promise<void>}
+   */
+  static async deleteOptimisticMessages(chatId, settingId) {
+    if (!chatId || !settingId) return;
+    await databaseManager.execute(
+      `DELETE FROM ${Tables.MESSAGES} WHERE chat_id = ? AND setting_id = ? AND server_id LIKE 'temp_%'`,
+      [chatId, settingId]
+    );
   }
 
   /**

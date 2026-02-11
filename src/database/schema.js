@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 11;
 
 // Table Names
 export const Tables = {
@@ -40,6 +40,7 @@ export const CREATE_TABLES_SQL = {
       last_message_body TEXT,
       last_message_time INTEGER,
       last_message_direction TEXT,
+      last_message_json TEXT,
       unread_count INTEGER DEFAULT 0,
       is_pinned INTEGER DEFAULT 0,
       is_archived INTEGER DEFAULT 0,

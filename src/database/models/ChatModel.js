@@ -16,12 +16,50 @@ class ChatModel {
    * @param {string} settingId - Current setting ID
    * @returns {Object} Database record
    */
+  /**
+   * Extract lastMessage from various API formats
+   * Mirrors normalizeLastMessage logic in inboxSlice.jsx
+   */
+  static _normalizeLastMessage(chat) {
+    if (!chat || typeof chat !== 'object') return null;
+
+    // 1. Direct object properties
+    const direct = chat.lastMessage || chat.last_message || chat.latestMessage || chat.latest_message || null;
+    if (direct && typeof direct === 'object' && Object.keys(direct).length > 0) return direct;
+
+    // 2. Messages array (last element)
+    const msgs = Array.isArray(chat.messages) ? chat.messages : null;
+    if (msgs && msgs.length > 0) return msgs[msgs.length - 1];
+
+    // 3. Build synthetic lastMessage from flat fields
+    const type = chat.lastMessageType || chat.last_message_type || null;
+    const text = chat.lastMessageText || chat.last_message_text || chat.lastMessageBody || chat.last_message_body || null;
+    const lastAt = chat.lastMessageAt || chat.last_message_at || chat.lastMessageTime || chat.last_message_time || chat.updatedAt || chat.createdAt || null;
+    const status = chat.lastMessageStatus || chat.last_message_status || null;
+    const sentBy = chat.lastMessageSentBy || chat.last_message_sent_by || null;
+    const direction = chat.lastMessageDirection || chat.last_message_direction || null;
+
+    if (!type && !text) return null;
+
+    return {
+      type: type || 'text',
+      status: status || undefined,
+      sentBy: sentBy || undefined,
+      direction: direction || undefined,
+      createdAt: lastAt || undefined,
+      timestamp: lastAt || undefined,
+      message: { body: text || '' },
+    };
+  }
+
   static toDbRecord(chat, settingId) {
     const now = Date.now();
 
-    // Extract last message info
-    const lastMessage = chat.lastMessage || chat.last_message || {};
+    // Extract last message info — normalize from all API formats
+    const lastMessage = this._normalizeLastMessage(chat) || {};
     const lastMessageData = lastMessage.message || lastMessage;
+    // Type can be on lastMessage (API format) or lastMessage.message (nested format)
+    const messageType = lastMessage.type || lastMessageData.type || 'text';
 
     // Extract contact info
     const contact = chat.contact || {};
@@ -38,12 +76,18 @@ class ChatModel {
       wa_id: chat.waId || chat.wa_id || null,
       phone_number_id: chat.phoneNumberId || chat.phone_number_id || null,
       last_message_id: lastMessage._id || lastMessage.id || null,
-      last_message_type: lastMessageData.type || 'text',
-      last_message_body: this._extractMessageBody(lastMessageData),
-      last_message_time: chat.lastMessageTime || lastMessage.timestamp
-        ? new Date(chat.lastMessageTime || lastMessage.timestamp).getTime()
-        : now,
+      last_message_type: messageType,
+      last_message_body: this._extractMessageBody({ ...lastMessageData, type: messageType }),
+      last_message_time: (() => {
+        const ts = lastMessage.timestamp || lastMessage.createdAt || chat.lastMessageTime
+          || chat.lastMessageAt || chat.last_message_time || chat.last_message_at
+          || chat.updatedAt || chat.createdAt;
+        return ts ? new Date(ts).getTime() : now;
+      })(),
       last_message_direction: lastMessage.direction || (lastMessage.isFromMe ? 'outbound' : 'inbound'),
+      last_message_json: (lastMessage && Object.keys(lastMessage).length > 0)
+        ? JSON.stringify(lastMessage)
+        : null,
       unread_count: chat.unreadCount || chat.unread_count || 0,
       is_pinned: chat.isPinned || chat.is_pinned ? 1 : 0,
       is_archived: chat.isArchived || chat.is_archived ? 1 : 0,
@@ -103,6 +147,30 @@ class ChatModel {
   static fromDbRecord(record) {
     if (!record) return null;
 
+    // Parse full lastMessage from JSON blob (zero data loss)
+    let lastMessage = null;
+    if (record.last_message_json) {
+      try {
+        lastMessage = JSON.parse(record.last_message_json);
+      } catch (e) {
+        lastMessage = null;
+      }
+    }
+
+    // Fallback for rows saved before V8 (without JSON blob)
+    if (!lastMessage) {
+      lastMessage = {
+        _id: record.last_message_id,
+        type: record.last_message_type,
+        message: {
+          type: record.last_message_type,
+          body: record.last_message_body,
+        },
+        direction: record.last_message_direction,
+        timestamp: record.last_message_time,
+      };
+    }
+
     return {
       _id: record.server_id,
       id: record.server_id,
@@ -116,15 +184,7 @@ class ChatModel {
         profilePic: record.contact_profile_pic,
         lastActive: record.contact_last_active || null,
       },
-      lastMessage: {
-        _id: record.last_message_id,
-        message: {
-          type: record.last_message_type,
-          body: record.last_message_body,
-        },
-        direction: record.last_message_direction,
-        timestamp: record.last_message_time,
-      },
+      lastMessage,
       lastMessageTime: record.last_message_time,
       unreadCount: record.unread_count,
       isPinned: Boolean(record.is_pinned),
@@ -152,15 +212,15 @@ class ChatModel {
    * @returns {Promise<void>}
    */
   static async saveChats(chats, settingId) {
-    if (!chats || chats.length === 0) return;
+    if (!chats || chats.length === 0) {
+      return;
+    }
 
     const records = chats.map((chat) => this.toDbRecord(chat, settingId));
     await databaseManager.batchInsert(Tables.CHATS, records);
 
     // Update last fetch time
     await this.updateCacheMetadata(CacheKeys.LAST_CHATS_FETCH, settingId);
-
-    // Log:(`[ChatModel] Saved ${chats.length} chats to cache`);
   }
 
   /**
@@ -246,6 +306,20 @@ class ChatModel {
    */
   static async updateChatWithMessage(chatId, messageData, settingId) {
     const now = Date.now();
+    const messageType = messageData.type || 'text';
+    const extractedBody = this._extractMessageBody(messageData.message || messageData);
+
+    // Build the lastMessage object to store as JSON
+    const lastMessageObj = {
+      _id: messageData._id || messageData.id,
+      type: messageType,
+      message: messageData.message || { type: messageType, body: extractedBody },
+      direction: messageData.direction || 'inbound',
+      status: messageData.status || null,
+      sentBy: messageData.sentBy || null,
+      timestamp: messageData.timestamp || now,
+      createdAt: messageData.createdAt || messageData.timestamp || now,
+    };
 
     await databaseManager.execute(
       `UPDATE ${Tables.CHATS}
@@ -254,15 +328,17 @@ class ChatModel {
            last_message_body = ?,
            last_message_time = ?,
            last_message_direction = ?,
+           last_message_json = ?,
            unread_count = unread_count + ?,
            updated_at = ?
        WHERE server_id = ? AND setting_id = ?`,
       [
         messageData._id || messageData.id,
-        messageData.type || 'text',
-        this._extractMessageBody(messageData.message || messageData),
+        messageType,
+        extractedBody,
         messageData.timestamp || now,
         messageData.direction || 'inbound',
+        JSON.stringify(lastMessageObj),
         messageData.direction === 'inbound' ? 1 : 0,
         now,
         chatId,

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Text, ActivityIndicator, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useDrawerStatus } from '@react-navigation/native';
@@ -24,6 +24,7 @@ export default function InboxScreen() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [showQuickAddContact, setShowQuickAddContact] = useState(false);
   const [isSilentRefresh, setIsSilentRefresh] = useState(false);
+  const [isHeaderRefreshing, setIsHeaderRefreshing] = useState(false);
 
   const {
     chats,
@@ -107,11 +108,12 @@ export default function InboxScreen() {
   }, [dispatch, isOffline]);
 
   const onRefresh = useCallback(() => {
-    // Don't refresh if offline
-    if (isOffline) return;
-    // Force refresh from server on pull-to-refresh
-    loadChats(true);
-  }, [loadChats, isOffline]);
+    if (isOffline || isHeaderRefreshing) return;
+    setIsHeaderRefreshing(true);
+    dispatch(resetPagination());
+    dispatch(fetchChatsWithCache({ all: true, forceRefresh: true }))
+      .finally(() => setIsHeaderRefreshing(false));
+  }, [dispatch, isOffline, isHeaderRefreshing]);
 
   // Handle load more (pagination) - disabled since we now fetch all chats at once
   // Keeping this for potential future use if pagination is re-enabled
@@ -313,6 +315,8 @@ export default function InboxScreen() {
           onSearchSubmit={handleSearchSubmit}
           onSearchClose={handleSearchClose}
           onAddContact={handleAddContact}
+          onRefresh={onRefresh}
+          isRefreshing={isHeaderRefreshing}
           connectionStatus={connectionStatus}
           isSearchLoading={isSearchLoading}
         />
@@ -331,6 +335,8 @@ export default function InboxScreen() {
         onSearchSubmit={handleSearchSubmit}
         onSearchClose={handleSearchClose}
         onAddContact={handleAddContact}
+        onRefresh={onRefresh}
+        isRefreshing={isHeaderRefreshing}
         connectionStatus={connectionStatus}
         isSearchLoading={isSearchLoading}
       />
@@ -346,14 +352,6 @@ export default function InboxScreen() {
             styles.listContent,
             displayedChats.length === 0 && styles.emptyListContent,
           ]}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              colors={[chatColors.primary]}
-              tintColor={chatColors.primary}
-            />
-          }
           ListEmptyComponent={renderEmptyState}
           ListFooterComponent={renderFooter}
           onEndReached={handleLoadMore}

@@ -43,6 +43,8 @@ const SUPPORTED_MESSAGE_TYPES = [
   'contacts',
   'template',
   'interactive',
+  'button_reply',
+  'list_reply',
   'order',
   'reaction',
   'system',
@@ -147,6 +149,8 @@ const ChatMessageItem = ({
       case 'template':
         return '📋 Template message';
       case 'interactive':
+      case 'button_reply':
+      case 'list_reply':
         const interactiveData = getInteractiveData(originalMessage);
         return interactiveData?.body || '📱 Interactive message';
       case 'order':
@@ -312,6 +316,8 @@ const ChatMessageItem = ({
         );
 
       case 'interactive':
+      case 'button_reply':
+      case 'list_reply':
         return (
           <InteractiveMessage
             message={message}
