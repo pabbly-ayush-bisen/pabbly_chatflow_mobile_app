@@ -662,6 +662,8 @@ const initialState = {
   // Message Reactions
   reactionStatus: 'idle',
   reactionError: null,
+  // Pending reaction blast animation (emoji string or null)
+  pendingReactionBlast: null,
   // Team Members for assignment
   teamMembers: [],
   teamMembersStatus: 'idle',
@@ -832,14 +834,33 @@ const inboxSlice = createSlice({
 
         // Check if message already exists (by wamid or _id)
         // Exclude temp_ prefixed IDs from _id comparison — server IDs should not match temp IDs
-        const messageExists = state.currentConversation.messages.some(
+        const existingIndex = state.currentConversation.messages.findIndex(
           m => (message.wamid && m.wamid === message.wamid) ||
                (message._id && m._id === message._id &&
                 !String(message._id).startsWith('temp_') &&
                 !String(m._id).startsWith('temp_'))
         );
-        if (!messageExists) {
-          // Add new message and sort by timestamp to maintain chronological order
+
+        if (existingIndex !== -1) {
+          // Message exists — merge reaction field if the incoming message has updated reaction data
+          // This handles the case where the backend sends the target message with reaction already applied
+          const existing = state.currentConversation.messages[existingIndex];
+          const incomingReaction = message.reaction;
+          const existingReaction = existing.reaction;
+          const reactionChanged = JSON.stringify(incomingReaction) !== JSON.stringify(existingReaction);
+
+          if (reactionChanged && incomingReaction !== undefined) {
+            state.currentConversation.messages[existingIndex] = {
+              ...existing,
+              reaction: incomingReaction,
+            };
+            // Trigger blast animation for new reactions
+            if (incomingReaction?.emoji) {
+              state.pendingReactionBlast = incomingReaction.emoji;
+            }
+          }
+        } else {
+          // New message — add and sort by timestamp to maintain chronological order
           // Without sorting, socket messages arriving out of order would display incorrectly
           state.currentConversation.messages.push(message);
           state.currentConversation.messages.sort((a, b) => {
@@ -996,37 +1017,48 @@ const inboxSlice = createSlice({
       const { chatId, messageWaId, reaction, sentBy } = action.payload;
       if (state.currentConversation && state.currentConversation._id === chatId) {
         const messageIndex = state.currentConversation.messages?.findIndex(
-          m => m.wamid === messageWaId || m._id === messageWaId
+          m => m.wamid === messageWaId || m._id === messageWaId || m.server_id === messageWaId
         );
         if (messageIndex !== -1 && messageIndex !== undefined) {
-          // Initialize reactions array if not present
-          if (!state.currentConversation.messages[messageIndex].reactions) {
-            state.currentConversation.messages[messageIndex].reactions = [];
+          const msg = state.currentConversation.messages[messageIndex];
+
+          // Always update the singular reaction field (web-app compatible)
+          msg.reaction = reaction.emoji ? { emoji: reaction.emoji } : null;
+
+          // Update reactions array
+          if (!msg.reactions) {
+            msg.reactions = [];
           }
-          // Check if this user already reacted
-          const existingReactionIndex = state.currentConversation.messages[messageIndex].reactions.findIndex(
-            r => r.sentBy === sentBy || r.from === sentBy
+          // Find existing reaction from this sender
+          const existingIdx = msg.reactions.findIndex(
+            r => (r.sentBy && r.sentBy === sentBy) || (r.from && r.from === sentBy)
           );
-          if (reaction.emoji === '') {
-            // Remove reaction if emoji is empty (unreact)
-            if (existingReactionIndex !== -1) {
-              state.currentConversation.messages[messageIndex].reactions.splice(existingReactionIndex, 1);
+          if (!reaction.emoji || reaction.emoji === '') {
+            // Unreact - remove existing
+            if (existingIdx !== -1) {
+              msg.reactions.splice(existingIdx, 1);
             }
-          } else if (existingReactionIndex !== -1) {
-            // Update existing reaction
-            state.currentConversation.messages[messageIndex].reactions[existingReactionIndex] = {
-              ...reaction,
-              sentBy,
-            };
+          } else if (existingIdx !== -1) {
+            // Replace existing reaction
+            msg.reactions[existingIdx] = { emoji: reaction.emoji, sentBy };
           } else {
             // Add new reaction
-            state.currentConversation.messages[messageIndex].reactions.push({
-              ...reaction,
-              sentBy,
-            });
+            msg.reactions.push({ emoji: reaction.emoji, sentBy });
+          }
+
+          // Force new message reference so memo/FlatList detects the change
+          state.currentConversation.messages[messageIndex] = { ...msg };
+
+          // Trigger blast animation
+          if (reaction.emoji) {
+            state.pendingReactionBlast = reaction.emoji;
           }
         }
       }
+    },
+    // Clear pending reaction blast after animation plays
+    clearReactionBlast: (state) => {
+      state.pendingReactionBlast = null;
     },
     // Add optimistic message (immediately show message with pending status)
     addOptimisticMessage: (state, action) => {
@@ -1814,7 +1846,25 @@ const inboxSlice = createSlice({
             m => m._id === messageId || m.wamid === messageId
           );
           if (messageIndex !== -1 && messageIndex !== undefined) {
-            state.currentConversation.messages[messageIndex].reaction = { emoji };
+            const msg = state.currentConversation.messages[messageIndex];
+            // Update singular reaction field (for compatibility)
+            msg.reaction = { emoji };
+            // Also update reactions array for immediate UI rendering
+            if (!msg.reactions) {
+              msg.reactions = [];
+            }
+            // Find existing reaction from 'me' (local user)
+            const existingIdx = msg.reactions.findIndex(r => r.sentBy === 'me');
+            if (emoji === '') {
+              // Unreact
+              if (existingIdx !== -1) {
+                msg.reactions.splice(existingIdx, 1);
+              }
+            } else if (existingIdx !== -1) {
+              msg.reactions[existingIdx] = { emoji, sentBy: 'me' };
+            } else {
+              msg.reactions.push({ emoji, sentBy: 'me' });
+            }
           }
         }
       })
@@ -2016,6 +2066,7 @@ export const {
   removeNoteFromList,
   setTeamMembers,
   updateMessageReaction,
+  clearReactionBlast,
   setCurrentConversationFromCache,
   // Reaction and optimistic message exports
   updateMessageReactionInConversation,

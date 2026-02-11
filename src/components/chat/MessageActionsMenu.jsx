@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { colors, chatColors } from '../../theme/colors';
+import { colors } from '../../theme/colors';
 import { getMessageText, getMessageCaption } from '../../utils/messageHelpers';
 import { toastActions, showWarning } from '../../utils/toast';
 
@@ -19,7 +19,6 @@ const MessageActionsMenu = ({
   visible,
   onClose,
   message,
-  onReply,
   onForward,
   onReaction,
 }) => {
@@ -44,12 +43,6 @@ const MessageActionsMenu = ({
     }
   }, [getTextToCopy, onClose]);
 
-  // Handle reply
-  const handleReply = useCallback(() => {
-    onReply?.(message);
-    onClose();
-  }, [message, onReply, onClose]);
-
   // Handle forward
   const handleForward = useCallback(async () => {
     const text = getTextToCopy();
@@ -68,17 +61,11 @@ const MessageActionsMenu = ({
 
   // Handle reaction selection
   const handleReactionSelect = useCallback((emoji) => {
-    onReaction?.(message, emoji);
+    onReaction?.(emoji, message);
     onClose();
   }, [message, onReaction, onClose]);
 
   const actions = [
-    {
-      icon: 'reply',
-      label: 'Reply',
-      onPress: handleReply,
-      color: chatColors.primary,
-    },
     {
       icon: 'content-copy',
       label: 'Copy',

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Modal, ScrollView, ImageBackground } from 'react-native';
+import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, StatusBar, TouchableOpacity, Modal, ScrollView, ImageBackground, Clipboard } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
@@ -11,7 +11,7 @@ import {
   toggleAiAssistant,
   setChatStatus,
   setAiAssistantStatus,
-  sendMessageReaction,
+  clearReactionBlast,
   clearInboxError,
   addOptimisticMessage,
   markOptimisticMessageFailed,
@@ -30,14 +30,15 @@ import { getMediaUrl } from '../utils/messageHelpers';
 import { colors, chatColors, getAvatarColor } from '../theme/colors';
 import { useSocket } from '../contexts/SocketContext';
 import MessageBubble from '../components/chat/MessageBubble';
+import SwipeableMessage from '../components/chat/SwipeableMessage';
 import ChatInput from '../components/chat/ChatInput';
 import AttachmentPicker from '../components/chat/AttachmentPicker';
 import DateSeparator from '../components/chat/DateSeparator';
-import MessageActionsMenu from '../components/chat/MessageActionsMenu';
 import ChatOptionsMenu from '../components/chat/ChatOptionsMenu';
 import ImageLightbox from '../components/chat/ImageLightbox';
 import VideoPlayerModal from '../components/chat/VideoPlayerModal';
 import ChatNotes from '../components/chat/ChatNotes';
+import EmojiBlast from '../components/chat/EmojiBlast';
 import UploadingMediaMessage from '../components/chat/messages/UploadingMediaMessage';
 
 // Chat wallpaper background image
@@ -54,14 +55,13 @@ export default function ChatDetailsScreen({ route, navigation }) {
   const [isSending, setIsSending] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [showAttachmentPicker, setShowAttachmentPicker] = useState(false);
-  const [showMessageActions, setShowMessageActions] = useState(false);
   const [showChatOptions, setShowChatOptions] = useState(false);
   const [showChatNotes, setShowChatNotes] = useState(false);
-  const [selectedMessage, setSelectedMessage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [videoPlayerUrl, setVideoPlayerUrl] = useState(null);
   const [sharedContacts, setSharedContacts] = useState([]);
   const [showSharedContactSheet, setShowSharedContactSheet] = useState(false);
+  const [blastEmoji, setBlastEmoji] = useState(null);
 
   // Upload state management for WhatsApp-style progress UI
   const {
@@ -94,6 +94,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
     updateContactChatStatus,
     toggleAiAssistantStatus,
     chats: inboxChats,
+    pendingReactionBlast,
   } = useSelector((state) => state.inbox);
 
   // Get templates from redux store
@@ -199,6 +200,14 @@ export default function ChatDetailsScreen({ route, navigation }) {
     }
   }, [sendMessageError, dispatch]);
 
+  // Watch for incoming reaction blast from socket
+  useEffect(() => {
+    if (pendingReactionBlast) {
+      setBlastEmoji(pendingReactionBlast);
+      dispatch(clearReactionBlast());
+    }
+  }, [pendingReactionBlast, dispatch]);
+
   // Group messages by date and include pending uploads
   const groupedMessages = useMemo(() => {
     const groups = [];
@@ -212,7 +221,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
         const bT = new Date(b.timestamp || b.createdAt || 0).getTime();
         return aT - bT;
       });
-      sortedMessages.forEach((message, index) => {
+      sortedMessages.filter((m) => m?.type !== 'reaction').forEach((message, index) => {
         const messageDate = new Date(message.timestamp || message.createdAt);
         const dateKey = messageDate.toDateString();
 
@@ -974,45 +983,16 @@ export default function ChatDetailsScreen({ route, navigation }) {
     });
   }, [settingId, startDownload, dispatch]);
 
-  // Handle message long press - show actions menu
+  // Handle message long press - copy message text directly
   const handleMessageLongPress = useCallback((message) => {
-    setSelectedMessage(message);
-    setShowMessageActions(true);
-  }, []);
-
-  // Handle message action selection
-  const handleMessageAction = useCallback((action, message) => {
-    setShowMessageActions(false);
-
-    switch (action) {
-      case 'reply':
-        setReplyingTo(message);
-        break;
-      case 'copy':
-        // Copy is handled in MessageActionsMenu
-        break;
-      case 'forward':
-        // TODO: Implement forward functionality
-        showWarning('Forward functionality coming soon', 'Coming Soon');
-        break;
-      default:
-        break;
+    const text = message?.message?.body || message?.message?.caption || '';
+    if (text) {
+      Clipboard.setString(text);
+      toastActions.copiedToClipboard();
+    } else {
+      showWarning('This message type cannot be copied', 'Cannot Copy');
     }
   }, []);
-
-  // Handle reaction selection
-  const handleReaction = useCallback(async (emoji, message) => {
-    setShowMessageActions(false);
-    try {
-      await dispatch(sendMessageReaction({
-        chatId,
-        messageId: message._id || message.wamid,
-        emoji,
-      })).unwrap();
-    } catch (error) {
-      showError('Failed to send reaction');
-    }
-  }, [chatId, dispatch]);
 
   // Handle chat options menu actions
   const handleChatOptionsAction = useCallback((action) => {
@@ -1112,26 +1092,27 @@ export default function ChatDetailsScreen({ route, navigation }) {
     const messageId = msg?._id || msg?.wamid || msg?.server_id;
 
     return (
-      <MessageBubble
-        message={msg}
-        originalMessage={originalMessage}
-        onImagePress={handleImagePress}
-        onVideoPress={handleVideoPress}
-        onLongPress={handleMessageLongPress}
-        onMediaDownload={handleMediaDownload}
-        downloadState={messageId ? getDownloadState(messageId) : null}
-        // onReplyPress is used both for tapping reply preview and right-swipe-to-reply
-        onReplyPress={(target) => {
-          // If target looks like an ID of another message → scroll to it (tap on reply preview)
-          if (typeof target === 'string' && (target.startsWith('msg-') || target.length > 16)) {
-            scrollToMessage(target);
-          } else {
-            // Otherwise treat as current message → start replying
-            setReplyingTo(msg);
-          }
-        }}
-        onContactPress={handleSharedContactPress}
-      />
+      <SwipeableMessage
+        onSwipeReply={() => setReplyingTo(msg)}
+        enabled={msg?.type !== 'system'}
+      >
+        <MessageBubble
+          message={msg}
+          originalMessage={originalMessage}
+          onImagePress={handleImagePress}
+          onVideoPress={handleVideoPress}
+          onLongPress={handleMessageLongPress}
+          onMediaDownload={handleMediaDownload}
+          downloadState={messageId ? getDownloadState(messageId) : null}
+          onReplyPress={(target) => {
+            // Tap on reply preview → scroll to original message
+            if (typeof target === 'string') {
+              scrollToMessage(target);
+            }
+          }}
+          onContactPress={handleSharedContactPress}
+        />
+      </SwipeableMessage>
     );
   }, [handleImagePress, handleVideoPress, handleMessageLongPress, handleMediaDownload, getDownloadState, handleCancelUpload, handleRetryUpload, messages, scrollToMessage]);
 
@@ -1241,7 +1222,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
             inverted
-            extraData={[uploads, downloads]} // Ensure re-render on upload/download progress change
+            extraData={[uploads, downloads, messages]} // Ensure re-render on upload/download/reaction change
             contentContainerStyle={[
               styles.messagesList,
               groupedMessagesInverted.length === 0 && styles.emptyList,
@@ -1283,14 +1264,6 @@ export default function ChatDetailsScreen({ route, navigation }) {
         onSelect={handleAttachmentSelect}
       />
 
-      {/* Message actions menu (long-press) */}
-      <MessageActionsMenu
-        visible={showMessageActions}
-        onClose={() => setShowMessageActions(false)}
-        message={selectedMessage}
-        onAction={handleMessageAction}
-        onReaction={handleReaction}
-      />
 
       {/* Chat options menu (header dots) */}
       <ChatOptionsMenu
@@ -1399,6 +1372,12 @@ export default function ChatDetailsScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Emoji blast animation for reactions */}
+      <EmojiBlast
+        emoji={blastEmoji}
+        onComplete={() => setBlastEmoji(null)}
+      />
     </View>
   );
 }

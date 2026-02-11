@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Image, Linking, Pressable, PanResponder, Animated } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Image, Linking, Pressable, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSelector } from 'react-redux';
@@ -95,8 +95,17 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
     }
   }, []); // Run only once on mount
 
-  // Get reactions if present
-  const reactions = message.reactions || [];
+  // Get reactions if present (from reactions array or singular reaction field)
+  const reactions = useMemo(() => {
+    if (message.reactions && message.reactions.length > 0) {
+      return message.reactions;
+    }
+    // Fallback: singular reaction field (from API response)
+    if (message.reaction?.emoji) {
+      return [{ emoji: message.reaction.emoji, sentBy: 'me' }];
+    }
+    return [];
+  }, [message.reactions, message.reaction]);
 
   // Some incoming WhatsApp interactive replies come as:
   // { type: 'interactive', interactive: { type: 'button_reply' | 'list_reply', ... } }
@@ -134,24 +143,6 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
     }
   }
 
-  // Swipe-to-reply (WhatsApp-style right swipe)
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Horizontal movement more than vertical, small threshold
-        const { dx, dy } = gestureState;
-        return Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy);
-      },
-      onPanResponderRelease: (evt, gestureState) => {
-        const { dx } = gestureState;
-        // Right swipe threshold → trigger reply
-        if (dx > 40) {
-          onReplyPress?.(message._id || message.wamid);
-        }
-      },
-    })
-  ).current;
 
   // Format time
   const formatTime = (ts) => {
@@ -1140,7 +1131,6 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
 
   return (
     <Animated.View
-      {...panResponder.panHandlers}
       style={[
         styles.container,
         isOutgoing ? styles.outgoingContainer : styles.incomingContainer,

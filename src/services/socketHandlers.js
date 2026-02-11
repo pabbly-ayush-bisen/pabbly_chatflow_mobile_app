@@ -58,10 +58,17 @@ export const handleNewMessage = async (dispatch, newChat) => {
     // Use the LAST message for chat list preview (correct — shows most recent)
     const lastMessage = allMessages[allMessages.length - 1];
 
-    // Handle reaction messages - reactions come as single-message events
+    // Handle reaction messages - try direct update via reducer (safety net)
+    // Do NOT return early — continue processing all non-reaction messages below
+    // so that the target message with reaction already applied by the backend gets merged
     if (lastMessage?.type === 'reaction') {
-      const emoji = lastMessage?.reaction?.emoji || lastMessage?.message?.emoji || '';
-      const reactedToMessageId = lastMessage?.reaction?.message_id || lastMessage?.message?.message_id || lastMessage?.context?.id;
+      const emoji = lastMessage?.reaction?.emoji || lastMessage?.message?.emoji
+        || lastMessage?.message?.reaction?.emoji || '';
+      const reactedToMessageId = lastMessage?.reaction?.message_id
+        || lastMessage?.message?.message_id
+        || lastMessage?.reaction?.messageId
+        || lastMessage?.message?.reaction?.message_id
+        || lastMessage?.context?.id || '';
 
       if (reactedToMessageId) {
         dispatch(updateMessageReactionInConversation({
@@ -70,28 +77,24 @@ export const handleNewMessage = async (dispatch, newChat) => {
           reaction: { emoji },
           sentBy: lastMessage?.sentBy || lastMessage?.from,
         }));
-
-        // Update chat list without adding reaction as lastMessage (reactions don't show in chat list)
-        const chatForList = {
-          ...newChat,
-          messages: undefined,
-          lastMessageTime: newChat?.updatedAt || newChat?.createdAt,
-          unreadCount: newChat.unreadCount || 0,
-        };
-        dispatch(updateChatInList(chatForList));
-        try { await cacheManager.updateChat(chatForList); } catch (e) {}
-
-        return;
       }
+
+      // Don't return — fall through to process all non-reaction messages below
+      // The backend may include the target message with reaction already applied
+      // and the dedup merge in addMessageToCurrentConversation will pick it up
     }
 
     // Create chat object for list (still uses last message for preview — correct behavior)
+    // For reaction events, lastMessage is the reaction itself — use a non-reaction message if available
+    const previewMessage = lastMessage?.type === 'reaction'
+      ? allMessages.filter(m => m.type !== 'reaction').pop() || lastMessage
+      : lastMessage;
     const chatForList = {
       ...newChat,
       messages: undefined,
-      lastMessage,
-      lastMessageTime: lastMessage?.timestamp || lastMessage?.createdAt || newChat?.updatedAt || newChat?.createdAt,
-      unreadCount: newChat.unreadCount || (lastMessage?.sentBy !== 'user' ? 1 : 0),
+      lastMessage: previewMessage,
+      lastMessageTime: previewMessage?.timestamp || previewMessage?.createdAt || newChat?.updatedAt || newChat?.createdAt,
+      unreadCount: newChat.unreadCount || (previewMessage?.sentBy !== 'user' ? 1 : 0),
     };
 
     // Update chat list - move to top if not system message
@@ -321,7 +324,28 @@ export const handleNewMessagesBulk = async (dispatch, newChats, getState) => {
       };
       updatedChatsMap.set(newChat._id, processedChat);
 
-      // Add ALL messages to current conversation (not just the last one)
+      // Handle reaction messages from bulk events
+      for (const msg of allMessages) {
+        if (msg && msg.type === 'reaction') {
+          const emoji = msg?.reaction?.emoji || msg?.message?.emoji
+            || msg?.message?.reaction?.emoji || '';
+          const reactedToMessageId = msg?.reaction?.message_id
+            || msg?.message?.message_id
+            || msg?.reaction?.messageId
+            || msg?.message?.reaction?.message_id
+            || msg?.context?.id;
+          if (reactedToMessageId) {
+            dispatch(updateMessageReactionInConversation({
+              chatId: newChat._id,
+              messageWaId: reactedToMessageId,
+              reaction: { emoji },
+              sentBy: msg?.sentBy || msg?.from,
+            }));
+          }
+        }
+      }
+
+      // Add ALL non-reaction messages to current conversation
       for (const msg of allMessages) {
         if (msg && msg.type !== 'reaction') {
           dispatch(addMessageToCurrentConversation({
