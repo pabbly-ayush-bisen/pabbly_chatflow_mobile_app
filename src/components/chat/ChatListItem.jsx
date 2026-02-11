@@ -87,31 +87,31 @@ const ChatListItem = ({ chat, onPress, isSelected }) => {
       case 'system':
         return { icon: 'shield-lock-outline', text: 'System Message' };
       case 'reaction':
-        return { icon: 'emoticon-outline', text: 'Reaction' };
+        return { icon: 'emoticon-outline', text: 'Reaction Message' };
       case 'image':
-        return { icon: 'image-outline', text: 'Photo' };
+        return { icon: 'image-outline', text: 'Image Message' };
       case 'sticker':
-        return { icon: 'sticker-emoji', text: 'Sticker' };
+        return { icon: 'sticker-emoji', text: 'Sticker Message' };
       case 'video':
-        return { icon: 'video-outline', text: 'Video' };
+        return { icon: 'video-outline', text: 'Video Message' };
       case 'audio':
-        return { icon: 'microphone-outline', text: 'Audio' };
+        return { icon: "microphone-outline", text: "Audio Message" };
       case 'document':
       case 'file':
-        return { icon: 'file-document-outline', text: 'Document' };
+        return { icon: "file-document-outline", text: "Document Message" };
       case 'location':
-        return { icon: 'map-marker-outline', text: 'Location' };
+        return { icon: "map-marker-outline", text: "Location Message" };
       case 'interactive':
       case 'button_reply':
       case 'list_reply':
-        return { icon: 'gesture-tap', text: 'Interactive' };
+        return { icon: "gesture-tap", text: "Interactive Message" };
       case 'template':
-        return { icon: 'file-document-outline', text: 'Template' };
+        return { icon: "file-document-outline", text: "Template Message" };
       case 'order':
-        return { icon: 'cart-outline', text: 'Order' };
+        return { icon: "cart-outline", text: "Order Message" };
       case 'contacts':
       case 'contact':
-        return { icon: 'account-outline', text: 'Contact' };
+        return { icon: "account-outline", text: "Contact Message" };
       default:
         return { icon: null, text: 'Unsupported Message' };
     }
