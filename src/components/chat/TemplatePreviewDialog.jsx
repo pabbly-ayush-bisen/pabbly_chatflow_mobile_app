@@ -19,37 +19,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import { colors, chatColors } from '../../theme/colors';
 import { uploadFile } from '../../services/fileUploadService';
 import { showError, showWarning, showInfo } from '../../utils/toast';
-import { CustomDialog } from '../common';
+import { CustomDialog, MessagePreviewBubble } from '../common';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// Default fallback colors and icons for template preview (similar to web app)
-const DEFAULT_PLACEHOLDER_CONFIG = {
-  IMAGE: {
-    backgroundColor: '#E3F2FD',
-    iconColor: '#2196F3',
-    icon: 'image',
-    text: 'Tap to upload image',
-  },
-  VIDEO: {
-    backgroundColor: '#F3E5F5',
-    iconColor: '#9C27B0',
-    icon: 'video',
-    text: 'Tap to upload video',
-  },
-  DOCUMENT: {
-    backgroundColor: '#FFF3E0',
-    iconColor: '#FF9800',
-    icon: 'file-pdf-box',
-    text: 'Tap to upload document',
-  },
-  TEXT: {
-    backgroundColor: '#F5F5F5',
-    iconColor: '#757575',
-    icon: 'text',
-    text: 'Text Template',
-  },
-};
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
  * TemplatePreviewDialog Component
@@ -381,32 +353,22 @@ const TemplatePreviewDialog = ({
     }
   }, [template]);
 
-  // Replace variables in text with actual values or styled placeholders
-  const replaceVariables = useCallback((text, variables, showPlaceholder = true) => {
-    if (!text) return '';
-    let result = text;
-    Object.keys(variables).forEach(key => {
-      const value = variables[key];
-      if (value?.trim()) {
-        result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-      } else if (showPlaceholder) {
-        result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), `[Variable ${key}]`);
-      }
+  // Convert 1-based variable keys to 0-based for MessagePreviewBubble compatibility
+  const previewBodyParams = useMemo(() => {
+    const params = {};
+    Object.entries(bodyVariables).forEach(([key, value]) => {
+      params[parseInt(key, 10) - 1] = value;
     });
-    return result;
-  }, []);
+    return params;
+  }, [bodyVariables]);
 
-  // Get preview text with variables replaced
-  const previewBodyText = useMemo(() => {
-    return replaceVariables(bodyComponent?.text, bodyVariables);
-  }, [bodyComponent, bodyVariables, replaceVariables]);
-
-  const previewHeaderText = useMemo(() => {
-    if (headerComponent?.format === 'TEXT') {
-      return replaceVariables(headerComponent?.text, headerVariables);
-    }
-    return headerComponent?.text || '';
-  }, [headerComponent, headerVariables, replaceVariables]);
+  const previewHeaderParams = useMemo(() => {
+    const params = {};
+    Object.entries(headerVariables).forEach(([key, value]) => {
+      params[parseInt(key, 10) - 1] = value;
+    });
+    return params;
+  }, [headerVariables]);
 
   // Check if all required variables are filled
   const allVariablesFilled = useMemo(() => {
@@ -660,22 +622,6 @@ const TemplatePreviewDialog = ({
       onClose?.();
     });
   }, [onClose, slideAnim, fadeAnim]);
-
-  // Get button icon
-  const getButtonIcon = (type) => {
-    switch (type) {
-      case 'URL':
-        return 'open-in-new';
-      case 'PHONE_NUMBER':
-        return 'phone';
-      case 'QUICK_REPLY':
-        return 'reply';
-      case 'COPY_CODE':
-        return 'content-copy';
-      default:
-        return 'gesture-tap-button';
-    }
-  };
 
   // Get category info
   const getCategoryInfo = (category) => {
@@ -1197,187 +1143,20 @@ const TemplatePreviewDialog = ({
                 <Text style={styles.sectionTitle}>Message Preview</Text>
               </View>
 
-              {/* WhatsApp Chat Preview */}
-              <View style={styles.chatContainer}>
-                {/* Chat Background Pattern */}
-                <View style={styles.chatBackground}>
-                  <View style={styles.messageBubbleWrapper}>
-                    <View style={styles.messageBubble}>
-                      {/* Message Tail */}
-                      <View style={styles.bubbleTail} />
-
-                      {/* Header */}
-                      {headerComponent && (
-                        <View style={styles.messageHeader}>
-                          {headerComponent.format?.toUpperCase() === 'TEXT' ? (
-                            <Text style={styles.messageHeaderText}>
-                              {previewHeaderText}
-                            </Text>
-                          ) : headerComponent.format?.toUpperCase() === 'IMAGE' ? (
-                            <TouchableOpacity
-                              style={styles.imagePreviewContainer}
-                              onPress={!uploadedMedia ? handleMediaUpload : undefined}
-                              activeOpacity={uploadedMedia ? 1 : 0.7}
-                            >
-                              {uploadedMedia?.type?.toUpperCase() === 'IMAGE' && uploadedMedia.uri ? (
-                                <>
-                                  <Image
-                                    key={uploadedMedia.uri}
-                                    source={{ uri: uploadedMedia.uri }}
-                                    style={styles.uploadedImage}
-                                    resizeMode="cover"
-                                    onError={(e) => { /* Log:('[TemplatePreview] Image load error:', e.nativeEvent.error) */ }}
-                                  />
-                                  {isUploadingMedia && (
-                                    <View style={styles.uploadingOverlay}>
-                                      <ActivityIndicator size="large" color={colors.common.white} />
-                                      <Text style={styles.uploadingText}>Uploading...</Text>
-                                    </View>
-                                  )}
-                                </>
-                              ) : (
-                                <View style={[styles.fallbackImageContainer, { backgroundColor: DEFAULT_PLACEHOLDER_CONFIG.IMAGE.backgroundColor }]}>
-                                  <View style={styles.fallbackIconContainer}>
-                                    <Icon name={DEFAULT_PLACEHOLDER_CONFIG.IMAGE.icon} size={48} color={DEFAULT_PLACEHOLDER_CONFIG.IMAGE.iconColor} />
-                                  </View>
-                                  <View style={styles.uploadPromptContainer}>
-                                    <Icon name="cloud-upload" size={24} color={DEFAULT_PLACEHOLDER_CONFIG.IMAGE.iconColor} />
-                                    <Text style={[styles.uploadPromptText, { color: DEFAULT_PLACEHOLDER_CONFIG.IMAGE.iconColor }]}>
-                                      {DEFAULT_PLACEHOLDER_CONFIG.IMAGE.text}
-                                    </Text>
-                                  </View>
-                                </View>
-                              )}
-                            </TouchableOpacity>
-                          ) : headerComponent.format?.toUpperCase() === 'VIDEO' ? (
-                            <TouchableOpacity
-                              style={styles.uploadedVideoPreview}
-                              onPress={!uploadedMedia ? handleMediaUpload : undefined}
-                              activeOpacity={uploadedMedia ? 1 : 0.7}
-                            >
-                              {uploadedMedia?.type?.toUpperCase() === 'VIDEO' && uploadedMedia.uri ? (
-                                <>
-                                  <Image
-                                    key={uploadedMedia.uri}
-                                    source={{ uri: uploadedMedia.uri }}
-                                    style={styles.uploadedVideo}
-                                    resizeMode="cover"
-                                    onError={(e) => { /* Log:('[TemplatePreview] Video thumbnail load error:', e.nativeEvent.error) */ }}
-                                  />
-                                  <View style={styles.videoPlayButton}>
-                                    <Icon name="play" size={24} color={colors.common.white} />
-                                  </View>
-                                  {isUploadingMedia && (
-                                    <View style={styles.uploadingOverlay}>
-                                      <ActivityIndicator size="large" color={colors.common.white} />
-                                    </View>
-                                  )}
-                                </>
-                              ) : (
-                                <View style={[styles.fallbackImageContainer, { backgroundColor: DEFAULT_PLACEHOLDER_CONFIG.VIDEO.backgroundColor }]}>
-                                  <View style={styles.fallbackIconContainer}>
-                                    <Icon name={DEFAULT_PLACEHOLDER_CONFIG.VIDEO.icon} size={48} color={DEFAULT_PLACEHOLDER_CONFIG.VIDEO.iconColor} />
-                                  </View>
-                                  <View style={styles.uploadPromptContainer}>
-                                    <Icon name="cloud-upload" size={24} color={DEFAULT_PLACEHOLDER_CONFIG.VIDEO.iconColor} />
-                                    <Text style={[styles.uploadPromptText, { color: DEFAULT_PLACEHOLDER_CONFIG.VIDEO.iconColor }]}>
-                                      {DEFAULT_PLACEHOLDER_CONFIG.VIDEO.text}
-                                    </Text>
-                                  </View>
-                                </View>
-                              )}
-                            </TouchableOpacity>
-                          ) : headerComponent.format?.toUpperCase() === 'DOCUMENT' ? (
-                            <TouchableOpacity
-                              style={styles.documentPreview}
-                              onPress={!uploadedMedia ? handleMediaUpload : undefined}
-                              activeOpacity={uploadedMedia ? 1 : 0.7}
-                            >
-                              {uploadedMedia?.type?.toUpperCase() === 'DOCUMENT' ? (
-                                <>
-                                  <View style={[styles.documentIconWrapper, { backgroundColor: colors.success.lighter }]}>
-                                    <Icon name="file-check" size={28} color={colors.success.main} />
-                                  </View>
-                                  <View style={styles.documentInfo}>
-                                    <Text style={styles.documentName} numberOfLines={1}>
-                                      {uploadedMedia.fileName || 'Document'}
-                                    </Text>
-                                    <Text style={styles.documentType}>
-                                      {uploadedMedia.fileSize ? `${uploadedMedia.fileSize} MB • ` : ''}
-                                      {isUploadingMedia ? 'Uploading...' : 'Uploaded'}
-                                    </Text>
-                                  </View>
-                                  {isUploadingMedia && (
-                                    <ActivityIndicator size="small" color={colors.primary.main} style={{ marginLeft: 8 }} />
-                                  )}
-                                </>
-                              ) : (
-                                <>
-                                  <View style={[styles.documentIconWrapper, { backgroundColor: DEFAULT_PLACEHOLDER_CONFIG.DOCUMENT.backgroundColor }]}>
-                                    <Icon name={DEFAULT_PLACEHOLDER_CONFIG.DOCUMENT.icon} size={28} color={DEFAULT_PLACEHOLDER_CONFIG.DOCUMENT.iconColor} />
-                                  </View>
-                                  <View style={styles.documentInfo}>
-                                    <Text style={styles.documentName}>Tap to upload document</Text>
-                                    <Text style={styles.documentType}>PDF, DOC, XLS supported</Text>
-                                  </View>
-                                  <Icon name="cloud-upload" size={20} color={DEFAULT_PLACEHOLDER_CONFIG.DOCUMENT.iconColor} />
-                                </>
-                              )}
-                            </TouchableOpacity>
-                          ) : headerComponent.format?.toUpperCase() === 'LOCATION' ? (
-                            <View style={styles.locationPreview}>
-                              <View style={styles.locationMap}>
-                                <Icon name="map-marker" size={32} color="#E53935" />
-                              </View>
-                              <Text style={styles.locationLabel}>Location</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      )}
-
-                      {/* Body */}
-                      {bodyComponent && (
-                        <Text style={styles.messageBody}>
-                          {previewBodyText}
-                        </Text>
-                      )}
-
-                      {/* Footer */}
-                      {footerComponent && (
-                        <Text style={styles.messageFooter}>
-                          {footerComponent.text}
-                        </Text>
-                      )}
-
-                      {/* Timestamp & Status */}
-                      <View style={styles.messageMetaRow}>
-                        <Text style={styles.messageTime}>
-                          {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </Text>
-                        <Icon name="check-all" size={14} color={chatColors.tickBlue} />
-                      </View>
-                    </View>
-
-                    {/* Template Buttons */}
-                    {buttonsComponent?.buttons?.length > 0 && (
-                      <View style={styles.buttonsWrapper}>
-                        {buttonsComponent.buttons.map((button, index) => (
-                          <View key={index} style={styles.templateButton}>
-                            <Icon
-                              name={getButtonIcon(button.type)}
-                              size={15}
-                              color={chatColors.primary}
-                            />
-                            <Text style={styles.templateButtonText} numberOfLines={1}>
-                              {button.text}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </View>
+              <MessagePreviewBubble
+                mode="template"
+                templateData={template}
+                templateName={template.name}
+                bodyParams={previewBodyParams}
+                headerParams={previewHeaderParams}
+                headerFileUrl={uploadedMedia?.fileUrl || uploadedMedia?.uri || ''}
+                showActualMedia={!!(uploadedMedia?.fileUrl || uploadedMedia?.uri)}
+                buttonsInsideBubble={true}
+                showTypeBadge={false}
+                showCarousel={isCarouselTemplate}
+                showLTO={isLtoTemplate}
+                preservePlaceholders={false}
+              />
             </View>
 
             {/* Media Upload Section (for non-carousel templates) */}
@@ -2448,214 +2227,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
 
-  // Chat Preview
-  chatContainer: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.grey[200],
-  },
-  chatBackground: {
-    backgroundColor: '#E4DDD6',
-    padding: 16,
-    minHeight: 180,
-    // Subtle pattern effect
-    backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.01) 10px, rgba(0,0,0,0.01) 20px)',
-  },
-  messageBubbleWrapper: {
-    alignItems: 'flex-start',
-    maxWidth: '88%',
-  },
-  messageBubble: {
-    backgroundColor: colors.common.white,
-    borderRadius: 12,
-    borderTopLeftRadius: 4,
-    padding: 10,
-    paddingBottom: 6,
-    position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  bubbleTail: {
-    position: 'absolute',
-    left: -6,
-    top: 0,
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderRightWidth: 8,
-    borderBottomWidth: 0,
-    borderLeftWidth: 0,
-    borderTopColor: colors.common.white,
-    borderRightColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: 'transparent',
-  },
-  messageHeader: {
-    marginBottom: 8,
-  },
-  messageHeaderText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text.primary,
-    lineHeight: 20,
-  },
-  mediaPlaceholder: {
-    backgroundColor: colors.grey[100],
-    borderRadius: 10,
-    height: 130,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  mediaPlaceholderView: {
-    width: '100%',
-    height: 180,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  placeholderIconWrapper: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  placeholderText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  mediaIconWrapper: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.grey[200],
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  mediaLabel: {
-    fontSize: 12,
-    color: colors.grey[500],
-  },
-  videoPlayButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  documentPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.grey[50],
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.grey[200],
-    marginBottom: 4,
-  },
-  documentIconWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#FFEBEE',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  documentInfo: {
-    flex: 1,
-  },
-  documentName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text.primary,
-    marginBottom: 2,
-  },
-  documentType: {
-    fontSize: 11,
-    color: colors.text.secondary,
-  },
-  locationPreview: {
-    backgroundColor: colors.grey[100],
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  locationMap: {
-    height: 80,
-    backgroundColor: '#E8F5E9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationLabel: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    padding: 8,
-    textAlign: 'center',
-  },
-  messageBody: {
-    fontSize: 14,
-    color: colors.text.primary,
-    lineHeight: 20,
-  },
-  messageFooter: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    marginTop: 6,
-    fontStyle: 'italic',
-  },
-  messageMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: 4,
-    gap: 4,
-  },
-  messageTime: {
-    fontSize: 11,
-    color: colors.grey[500],
-  },
-  buttonsWrapper: {
-    marginTop: 6,
-    gap: 4,
-    width: '100%',
-  },
-  templateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.common.white,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.04)',
-  },
-  templateButtonText: {
-    fontSize: 13,
-    color: chatColors.primary,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-  },
-
   // Variables Section
   variablesSection: {
     paddingHorizontal: 16,
@@ -2925,90 +2496,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: chatColors.primary,
-  },
-
-  // Uploaded Media Preview Styles
-  imagePreviewContainer: {
-    width: '100%',
-    position: 'relative',
-  },
-  uploadedImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: 8,
-    backgroundColor: colors.grey[100],
-  },
-  uploadedVideoPreview: {
-    width: '100%',
-    height: 180,
-    borderRadius: 8,
-    backgroundColor: colors.grey[900],
-    position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  uploadedVideo: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 8,
-  },
-  uploadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-    gap: 8,
-  },
-  uploadingText: {
-    color: colors.common.white,
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 8,
-  },
-
-  // Fallback Image Styles
-  fallbackImageContainer: {
-    width: '100%',
-    height: 180,
-    borderRadius: 8,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fallbackIconContainer: {
-    marginBottom: 12,
-  },
-  fallbackImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: colors.grey[200],
-  },
-  fallbackOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  uploadPromptContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  uploadPromptText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
-    textAlign: 'center',
   },
 
   // Carousel Section Styles
