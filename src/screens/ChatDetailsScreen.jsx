@@ -4,7 +4,7 @@ import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { showError, showSuccess, showWarning, toastActions } from '../utils/toast';
+import { showError, showSuccess, showWarning, showInfo, toastActions } from '../utils/toast';
 import {
   resetUnreadCount,
   updateContactChat,
@@ -447,11 +447,13 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
       if (sent) {
         // Message was sent successfully via socket
+        console.log(`[ChatDetails] Message sent via socket (tempId=${tempId})`);
         setIsSending(false);
         // Don't refresh conversation - socket handlers will update the message status
         // The optimistic message is already in the UI with pending status
       } else {
         // Socket not connected — queue the message for sending on reconnect
+        console.log(`[ChatDetails] Socket offline — queuing message (tempId=${tempId})`);
         try {
           await cacheManager.addToSyncQueue('sendMessage', 'messages', tempId, {
             socketData,
@@ -460,9 +462,11 @@ export default function ChatDetailsScreen({ route, navigation }) {
             messageType,
             timestamp,
           });
+          console.log(`[ChatDetails] Message queued in sync queue (tempId=${tempId})`);
           dispatch(markOptimisticMessageQueued({ chatId, tempId }));
-          toastActions.info('Message queued. Will send when connected.');
+          showInfo('Message queued. Will send when connected.');
         } catch (queueError) {
+          console.log(`[ChatDetails] Failed to queue message (tempId=${tempId}):`, queueError.message);
           // Fallback to failed if queue save fails
           dispatch(markOptimisticMessageFailed({
             chatId,
@@ -657,6 +661,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
         message: carouselOptimisticMessage,
       }));
 
+      // Save optimistic message to SQLite cache for persistence across navigation
+      try { await cacheManager.addMessage(carouselOptimisticMessage, chatId); } catch (e) {}
+
       setReplyingTo(null);
 
       // Build carousel socket payload EXACTLY like web app's handleSendTemplate:
@@ -686,15 +693,32 @@ export default function ChatDetailsScreen({ route, navigation }) {
       const sent = sendMessageViaSocket(carouselTemplateData);
 
       if (sent) {
+        console.log(`[ChatDetails] Carousel template sent via socket (tempId=${tempId})`);
         setIsSending(false);
       } else {
-        dispatch(markOptimisticMessageFailed({
-          chatId,
-          tempId,
-          error: 'Failed to send carousel template. Please try again.',
-        }));
+        // Socket not connected — queue the carousel template for sending on reconnect
+        console.log(`[ChatDetails] Socket offline — queuing carousel template (tempId=${tempId})`);
+        try {
+          await cacheManager.addToSyncQueue('sendMessage', 'messages', tempId, {
+            socketData: carouselTemplateData,
+            chatId,
+            tempId,
+            messageType: 'template',
+            timestamp,
+          });
+          console.log(`[ChatDetails] Carousel template queued in sync queue (tempId=${tempId})`);
+          dispatch(markOptimisticMessageQueued({ chatId, tempId }));
+          showInfo('Template queued. Will send when connected.');
+        } catch (queueError) {
+          console.log(`[ChatDetails] Failed to queue carousel template (tempId=${tempId}):`, queueError.message);
+          dispatch(markOptimisticMessageFailed({
+            chatId,
+            tempId,
+            error: 'Could not send carousel template. Please check your connection.',
+          }));
+          showError('Could not send carousel template. Please check your connection.');
+        }
         setIsSending(false);
-        showError('Failed to send carousel template. Please try again.');
       }
       return;
     }
@@ -764,6 +788,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
       message: optimisticMessage,
     }));
 
+    // Save optimistic message to SQLite cache for persistence across navigation
+    try { await cacheManager.addMessage(optimisticMessage, chatId); } catch (e) {}
+
     // Clear reply state immediately for better UX
     setReplyingTo(null);
 
@@ -815,16 +842,32 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
     if (sent) {
       // Clear sending state - socket handlers will update the message status
+      console.log(`[ChatDetails] Template sent via socket (tempId=${tempId})`);
       setIsSending(false);
     } else {
-      // Mark the optimistic message as failed
-      dispatch(markOptimisticMessageFailed({
-        chatId,
-        tempId,
-        error: 'Failed to send template. Please try again.',
-      }));
+      // Socket not connected — queue the template for sending on reconnect
+      console.log(`[ChatDetails] Socket offline — queuing template (tempId=${tempId})`);
+      try {
+        await cacheManager.addToSyncQueue('sendTemplate', 'messages', tempId, {
+          socketData: templateData,
+          chatId,
+          tempId,
+          messageType: 'template',
+          timestamp,
+        });
+        console.log(`[ChatDetails] Template queued in sync queue (tempId=${tempId})`);
+        dispatch(markOptimisticMessageQueued({ chatId, tempId }));
+        showInfo('Template queued. Will send when connected.');
+      } catch (queueError) {
+        console.log(`[ChatDetails] Failed to queue template (tempId=${tempId}):`, queueError.message);
+        dispatch(markOptimisticMessageFailed({
+          chatId,
+          tempId,
+          error: 'Could not send template. Please check your connection.',
+        }));
+        showError('Could not send template. Please check your connection.');
+      }
       setIsSending(false);
-      showError('Failed to send template. Please try again.');
     }
   }, [chatId, contactPhoneNumber, isSending, replyingTo, dispatch]);
 
