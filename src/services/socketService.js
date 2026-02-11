@@ -55,16 +55,28 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
 
   // Connection events
   socket.on('connect', () => {
-    // Log:('Socket connected successfully');
+    console.log('[SocketService] Socket connected successfully, id:', socket.id);
     socketId = socket.id;
     reconnectAttempts = 0;
     onConnect?.();
   });
 
   socket.on('connect_error', (error) => {
-    // Error:('Socket connection error:', error.message);
-    onError?.('Connection failed. Retrying...');
-    socket.disconnect();
+    // Do NOT call socket.disconnect() here — it kills socket.io's built-in
+    // reconnection (reconnection: true, reconnectionAttempts: 5).
+    // Let socket.io handle retries automatically.
+    reconnectAttempts += 1;
+    console.log(`[SocketService] connect_error (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}):`, error.message);
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      onError?.('Connection failed. Retrying...');
+    }
+    // socket.io will fire 'reconnect_failed' on the manager after all attempts exhausted
+  });
+
+  // All built-in reconnection attempts exhausted
+  socket.io.on('reconnect_failed', () => {
+    console.log('[SocketService] All reconnection attempts exhausted — permanent failure');
+    onError?.('Connection lost. Please check your network.');
   });
 
   socket.on('error', (error) => {
@@ -73,26 +85,22 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
   });
 
   socket.on('disconnect', (reason) => {
-    // Log:('Socket disconnected:', reason);
+    console.log('[SocketService] Socket disconnected, reason:', reason);
     onDisconnect?.(reason);
 
-    if (reason === 'io server disconnect' || reason === 'transport close') {
-      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttempts += 1;
-        // Log:(`Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
-
-        setTimeout(() => {
-          if (socket && !socket.connected) {
-            socket.connect();
-          }
-        }, RECONNECT_INTERVAL);
-      } else {
-        // Log:('Max reconnection attempts reached');
-        onError?.('Connection lost. Please restart the app.');
-        socket.disconnect();
-        socket = null;
-      }
+    // 'io server disconnect' means the server forcefully disconnected us.
+    // socket.io does NOT auto-reconnect for this reason, so we must do it manually.
+    if (reason === 'io server disconnect') {
+      console.log('[SocketService] Server forced disconnect — scheduling manual reconnect');
+      setTimeout(() => {
+        if (socket && !socket.connected) {
+          console.log('[SocketService] Attempting manual reconnect after server disconnect');
+          socket.connect();
+        }
+      }, RECONNECT_INTERVAL);
     }
+    // For all other reasons (transport close, transport error, ping timeout),
+    // socket.io's built-in reconnection handles it automatically.
   });
 
   // Attempt initial connection
