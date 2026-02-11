@@ -15,7 +15,7 @@ export default ({ config }) => {
   const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID || '848504831060-uen6psucq9c3ovguk3utheiidi4hpotc.apps.googleusercontent.com';
   const GOOGLE_ANDROID_CLIENT_ID = process.env.GOOGLE_ANDROID_CLIENT_ID || '848504831060-p68o8ogq2lrfg7kg2tk42oosqfjnbodi.apps.googleusercontent.com';
   const GOOGLE_IOS_CLIENT_ID = process.env.GOOGLE_IOS_CLIENT_ID || '848504831060-dt3ve1h090q2979md9eoqq8epc1rd7tr.apps.googleusercontent.com';
-  const EXPO_USERNAME = process.env.EXPO_USERNAME || 'ayush_bisen_pabbly';
+  const EXPO_USERNAME = process.env.EXPO_USERNAME || 'ankit_mandli';
 
   return {
     ...config,
@@ -94,7 +94,7 @@ export default ({ config }) => {
     ],
     // EAS Update configuration for OTA updates
     updates: {
-      url: 'https://u.expo.dev/aae850ee-f690-43e6-9b5b-3faa4f60fee7',
+      url: 'https://u.expo.dev/bb80159f-367e-4d0a-96d2-37ef7ea9716c',
       enabled: true,
       fallbackToCacheTimeout: 0,
       checkAutomatically: 'ON_LOAD',
@@ -105,7 +105,7 @@ export default ({ config }) => {
     extra: {
       // EAS project configuration
       eas: {
-        projectId: 'aae850ee-f690-43e6-9b5b-3faa4f60fee7',
+        projectId: 'bb80159f-367e-4d0a-96d2-37ef7ea9716c',
       },
       // Environment variables available at runtime via expo-constants
       API_URL,
