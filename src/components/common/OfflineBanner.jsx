@@ -79,7 +79,7 @@ export function OfflineBanner({ showRetry = true, onRetry, customMessage }) {
       <View style={styles.content}>
         <Ionicons name="cloud-offline-outline" size={20} color="#fff" />
         <Text style={styles.text}>
-          {customMessage || 'You are offline. Showing cached data.'}
+          {customMessage || 'You are offline'}
         </Text>
       </View>
       {showRetry && (

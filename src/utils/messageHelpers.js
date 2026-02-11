@@ -409,9 +409,6 @@ export const isOutgoingMessage = (message) => {
 export const getMessageStatus = (message) => {
   // Use status field directly if available (matches web app behavior)
   if (message?.status && ['failed', 'sent', 'delivered', 'read', 'pending', 'queued'].includes(message.status)) {
-    if (message.status === 'queued') {
-      console.log(`[MessageHelpers] getMessageStatus — returning 'queued' for message ${message._id || message.tempId}`);
-    }
     return message.status;
   }
 

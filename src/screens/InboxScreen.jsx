@@ -59,9 +59,7 @@ export default function InboxScreen() {
   useEffect(() => {
     // Always try to load chats on mount — fetchChatsWithCache returns cached data
     // from SQLite even when offline, and silently fails the server fetch.
-    console.log(`[InboxScreen] Mount — chats.length=${chats.length}, isOffline=${isOffline}`);
     if (chats.length === 0) {
-      console.log('[InboxScreen] No chats in Redux — loading from cache/server');
       loadChats();
     }
   }, []);
@@ -95,9 +93,7 @@ export default function InboxScreen() {
   const loadChats = useCallback((forceRefresh = false) => {
     // Don't force refresh if offline (server fetch will fail)
     // But DO allow cache-first fetch even when offline
-    console.log(`[InboxScreen] loadChats — forceRefresh=${forceRefresh}, isOffline=${isOffline}`);
     if (forceRefresh && isOffline) {
-      console.log('[InboxScreen] Skipping forceRefresh — device is offline');
       return;
     }
 
