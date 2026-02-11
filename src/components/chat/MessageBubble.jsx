@@ -853,7 +853,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
   const renderReplyPreviewContent = () => {
     if (!originalMessage) {
       return (
-        <Text style={styles.replyText} numberOfLines={1}>
+        <Text style={styles.replyText} numberOfLines={2}>
           Replying to message
         </Text>
       );
@@ -865,7 +865,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
     const baseText = () => {
       const text = getMessageText(originalMessage) || getMessageCaption(originalMessage);
       if (!text) return null;
-      const trimmed = text.length > 60 ? `${text.slice(0, 57)}...` : text;
+      const trimmed = text.length > 120 ? `${text.slice(0, 117)}...` : text;
       return trimmed;
     };
 
@@ -873,7 +873,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
       case 'text': {
         const text = baseText() || 'Text message';
         return (
-          <Text style={styles.replyText} numberOfLines={1}>
+          <Text style={styles.replyText} numberOfLines={2}>
             {text}
           </Text>
         );
@@ -883,7 +883,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
         if (!imgUrl) {
           const text = getMessageCaption(originalMessage) || 'Image';
           return (
-            <Text style={styles.replyText} numberOfLines={1}>
+            <Text style={styles.replyText} numberOfLines={2}>
               {text}
             </Text>
           );
@@ -895,7 +895,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
               style={styles.replyImageThumb}
               resizeMode="cover"
             />
-            <Text style={styles.replyText} numberOfLines={1}>
+            <Text style={styles.replyText} numberOfLines={2}>
               Image
             </Text>
           </View>
@@ -907,7 +907,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
             <View style={styles.replyVideoThumb}>
               <Icon name="play-circle" size={18} color={colors.common.white} />
             </View>
-            <Text style={styles.replyText} numberOfLines={1}>
+            <Text style={styles.replyText} numberOfLines={2}>
               Video
             </Text>
           </View>
@@ -917,7 +917,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
         return (
           <View style={styles.replyMediaRow}>
             <Icon name="music" size={16} color={colors.grey[600]} />
-            <Text style={styles.replyText} numberOfLines={1}>
+            <Text style={styles.replyText} numberOfLines={2}>
               Audio
             </Text>
           </View>
@@ -929,7 +929,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
         return (
           <View style={styles.replyMediaRow}>
             <Icon name="file-document" size={16} color={colors.grey[700]} />
-            <Text style={styles.replyText} numberOfLines={1}>
+            <Text style={styles.replyText} numberOfLines={2}>
               {fileName}
             </Text>
           </View>
@@ -939,7 +939,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
         return (
           <View style={styles.replyMediaRow}>
             <Icon name="map-marker" size={16} color={colors.error.main} />
-            <Text style={styles.replyText} numberOfLines={1}>
+            <Text style={styles.replyText} numberOfLines={2}>
               Location
             </Text>
           </View>
@@ -949,7 +949,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
         return (
           <View style={styles.replyMediaRow}>
             <Icon name="account" size={16} color={colors.grey[700]} />
-            <Text style={styles.replyText} numberOfLines={1}>
+            <Text style={styles.replyText} numberOfLines={2}>
               Contact
             </Text>
           </View>
@@ -958,7 +958,7 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
         const tpl = getTemplateData(originalMessage);
         const name = tpl?.templateName || 'Template message';
         return (
-          <Text style={styles.replyText} numberOfLines={1}>
+          <Text style={styles.replyText} numberOfLines={2}>
             {name}
           </Text>
         );
@@ -1008,21 +1008,21 @@ const MessageBubble = ({ message, originalMessage, onImagePress, onVideoPress, o
 
         const text = getInteractiveReplyText();
         return (
-          <Text style={styles.replyText} numberOfLines={1}>
+          <Text style={styles.replyText} numberOfLines={2}>
             {text}
           </Text>
         );
       }
       case 'order':
         return (
-          <Text style={styles.replyText} numberOfLines={1}>
+          <Text style={styles.replyText} numberOfLines={2}>
             Order
           </Text>
         );
       default: {
         const text = baseText() || 'Message';
         return (
-          <Text style={styles.replyText} numberOfLines={1}>
+          <Text style={styles.replyText} numberOfLines={2}>
             {text}
           </Text>
         );
@@ -1254,6 +1254,7 @@ const styles = StyleSheet.create({
   },
   incomingContainer: {
     alignItems: 'flex-start',
+    
   },
   bubble: {
     maxWidth: '80%',
@@ -1833,15 +1834,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(0,0,0,0.03)',
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    minWidth: 150,
   },
   replyBar: {
     width: 3,
     height: '100%',
-    minHeight: 24,
+    minHeight: 32,
     backgroundColor: chatColors.primary,
     borderRadius: 2,
     marginRight: 8,
@@ -1856,7 +1858,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   replyAuthor: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     marginBottom: 2,
   },
@@ -1867,7 +1869,8 @@ const styles = StyleSheet.create({
     color: 'rgba(0,0,0,0.8)',
   },
   replyText: {
-    fontSize: 12,
+    fontSize: 13,
+    lineHeight: 18,
     color: colors.text.secondary,
   },
   replyMediaRow: {
@@ -1876,15 +1879,15 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   replyImageThumb: {
-    width: 34,
-    height: 34,
-    borderRadius: 5,
+    width: 40,
+    height: 40,
+    borderRadius: 6,
     backgroundColor: colors.grey[200],
   },
   replyVideoThumb: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.grey[600],
     justifyContent: 'center',
     alignItems: 'center',
