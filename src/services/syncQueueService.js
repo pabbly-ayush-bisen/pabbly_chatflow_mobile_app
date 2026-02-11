@@ -11,6 +11,12 @@ import { updateQueuedMessageStatus } from '../redux/slices/inboxSlice';
 
 let isProcessing = false;
 
+// Delay between sends to ensure server processes them in FIFO order.
+// Without this, rapid socket.emit() calls arrive nearly simultaneously
+// and the server may process them out of order.
+const SEND_DELAY_MS = 500;
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * Process all pending items in the sync queue.
  * @param {Function} dispatch - Redux dispatch function
@@ -87,6 +93,9 @@ export async function processSyncQueue(dispatch) {
           }
         }
         // Future: handle other operation types (update, delete)
+
+        // Wait between sends so the server processes them in FIFO order
+        await delay(SEND_DELAY_MS);
 
       } catch (opError) {
         console.log(`[SyncQueue] Error processing op ${op.id}:`, opError.message);
