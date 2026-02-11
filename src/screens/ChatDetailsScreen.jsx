@@ -447,13 +447,11 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
       if (sent) {
         // Message was sent successfully via socket
-        console.log(`[ChatDetails] Message sent via socket (tempId=${tempId})`);
         setIsSending(false);
         // Don't refresh conversation - socket handlers will update the message status
         // The optimistic message is already in the UI with pending status
       } else {
         // Socket not connected — queue the message for sending on reconnect
-        console.log(`[ChatDetails] Socket offline — queuing message (tempId=${tempId})`);
         try {
           await cacheManager.addToSyncQueue('sendMessage', 'messages', tempId, {
             socketData,
@@ -462,11 +460,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
             messageType,
             timestamp,
           });
-          console.log(`[ChatDetails] Message queued in sync queue (tempId=${tempId})`);
           dispatch(markOptimisticMessageQueued({ chatId, tempId }));
           showInfo('Message queued. Will send when connected.');
         } catch (queueError) {
-          console.log(`[ChatDetails] Failed to queue message (tempId=${tempId}):`, queueError.message);
           // Fallback to failed if queue save fails
           dispatch(markOptimisticMessageFailed({
             chatId,
@@ -693,11 +689,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
       const sent = sendMessageViaSocket(carouselTemplateData);
 
       if (sent) {
-        console.log(`[ChatDetails] Carousel template sent via socket (tempId=${tempId})`);
         setIsSending(false);
       } else {
         // Socket not connected — queue the carousel template for sending on reconnect
-        console.log(`[ChatDetails] Socket offline — queuing carousel template (tempId=${tempId})`);
         try {
           await cacheManager.addToSyncQueue('sendMessage', 'messages', tempId, {
             socketData: carouselTemplateData,
@@ -706,11 +700,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
             messageType: 'template',
             timestamp,
           });
-          console.log(`[ChatDetails] Carousel template queued in sync queue (tempId=${tempId})`);
           dispatch(markOptimisticMessageQueued({ chatId, tempId }));
           showInfo('Template queued. Will send when connected.');
         } catch (queueError) {
-          console.log(`[ChatDetails] Failed to queue carousel template (tempId=${tempId}):`, queueError.message);
           dispatch(markOptimisticMessageFailed({
             chatId,
             tempId,
@@ -842,11 +834,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
     if (sent) {
       // Clear sending state - socket handlers will update the message status
-      console.log(`[ChatDetails] Template sent via socket (tempId=${tempId})`);
       setIsSending(false);
     } else {
       // Socket not connected — queue the template for sending on reconnect
-      console.log(`[ChatDetails] Socket offline — queuing template (tempId=${tempId})`);
       try {
         await cacheManager.addToSyncQueue('sendTemplate', 'messages', tempId, {
           socketData: templateData,
@@ -855,11 +845,9 @@ export default function ChatDetailsScreen({ route, navigation }) {
           messageType: 'template',
           timestamp,
         });
-        console.log(`[ChatDetails] Template queued in sync queue (tempId=${tempId})`);
         dispatch(markOptimisticMessageQueued({ chatId, tempId }));
         showInfo('Template queued. Will send when connected.');
       } catch (queueError) {
-        console.log(`[ChatDetails] Failed to queue template (tempId=${tempId}):`, queueError.message);
         dispatch(markOptimisticMessageFailed({
           chatId,
           tempId,

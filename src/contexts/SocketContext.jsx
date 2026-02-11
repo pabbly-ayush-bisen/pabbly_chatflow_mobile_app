@@ -60,13 +60,11 @@ export const SocketProvider = ({ children }) => {
   const disconnectedAtRef = useRef(null); // Track when disconnection happened for smart reconnect
 
   const handleConnect = useCallback(() => {
-    console.log('[SocketContext] handleConnect — socket connected');
     setConnectionStatus('connected');
     setError(null);
 
     if (!hasConnectedBeforeRef.current) {
       // First connection: load from cache first, then fetch all from API
-      console.log('[SocketContext] First connection — fetching chats with cache');
       dispatch(fetchChatsWithCache({ all: true }));
       hasConnectedBeforeRef.current = true;
     } else {
@@ -88,21 +86,17 @@ export const SocketProvider = ({ children }) => {
         maxPages = 50;
       }
 
-      console.log(`[SocketContext] Reconnection — fetching with maxPages=${maxPages}`);
       dispatch(fetchChatsWithCache({ all: true, forceRefresh: true, maxPages }));
       disconnectedAtRef.current = null;
     }
 
     // Process queued messages after reconnection
-    console.log('[SocketContext] Scheduling sync queue processing (1s delay)');
     setTimeout(() => {
-      console.log('[SocketContext] Processing sync queue after reconnection');
       processSyncQueue(dispatch);
     }, 1000);
   }, [dispatch]);
 
   const handleDisconnect = useCallback((reason) => {
-    console.log('[SocketContext] handleDisconnect — reason:', reason);
     setConnectionStatus('disconnected');
     disconnectedAtRef.current = Date.now();
   }, []);
@@ -113,10 +107,8 @@ export const SocketProvider = ({ children }) => {
     // so InboxHeader shows "Connecting..." instead of "Connection error".
     // Only permanent failures (after max retries) should show 'error'.
     if (errorMessage && errorMessage.includes('Retrying')) {
-      console.log('[SocketContext] handleError — retrying, keeping status as "connecting"');
       setConnectionStatus('connecting');
     } else {
-      console.log('[SocketContext] handleError — permanent error:', errorMessage);
       setConnectionStatus('error');
     }
   }, []);
@@ -319,16 +311,13 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     const unregister = registerNetworkChangeCallback((event) => {
       if (event.type === 'online') {
-        console.log('[SocketContext] Network online event — socketConnected:', isSocketConnected());
         if (isSocketConnected()) {
           // Socket still connected — just process queued messages
-          console.log('[SocketContext] Socket still connected — processing sync queue');
           processSyncQueue(dispatch);
         } else if (authenticated) {
           // Socket is NOT connected (disconnected or destroyed after max retries).
           // Trigger a fresh connection. handleConnect will call processSyncQueue
           // after the socket connects.
-          console.log('[SocketContext] Socket disconnected — triggering fresh connection');
           connect();
         }
       }

@@ -55,18 +55,16 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
 
   // Connection events
   socket.on('connect', () => {
-    console.log('[SocketService] Socket connected successfully, id:', socket.id);
     socketId = socket.id;
     reconnectAttempts = 0;
     onConnect?.();
   });
 
-  socket.on('connect_error', (error) => {
+  socket.on('connect_error', () => {
     // Do NOT call socket.disconnect() here — it kills socket.io's built-in
     // reconnection (reconnection: true, reconnectionAttempts: 5).
     // Let socket.io handle retries automatically.
     reconnectAttempts += 1;
-    console.log(`[SocketService] connect_error (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}):`, error.message);
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       onError?.('Connection failed. Retrying...');
     }
@@ -75,7 +73,6 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
 
   // All built-in reconnection attempts exhausted
   socket.io.on('reconnect_failed', () => {
-    console.log('[SocketService] All reconnection attempts exhausted — permanent failure');
     onError?.('Connection lost. Please check your network.');
   });
 
@@ -85,16 +82,13 @@ export const initializeSocket = async (onConnect, onDisconnect, onError) => {
   });
 
   socket.on('disconnect', (reason) => {
-    console.log('[SocketService] Socket disconnected, reason:', reason);
     onDisconnect?.(reason);
 
     // 'io server disconnect' means the server forcefully disconnected us.
     // socket.io does NOT auto-reconnect for this reason, so we must do it manually.
     if (reason === 'io server disconnect') {
-      console.log('[SocketService] Server forced disconnect — scheduling manual reconnect');
       setTimeout(() => {
         if (socket && !socket.connected) {
-          console.log('[SocketService] Attempting manual reconnect after server disconnect');
           socket.connect();
         }
       }, RECONNECT_INTERVAL);
@@ -168,15 +162,11 @@ export const emitSocketEventAsync = (eventName, data, timeoutMs = 8000) => {
     }
 
     const timer = setTimeout(() => {
-      // Timeout — server didn't ack, but message was emitted. Assume sent.
-      console.log(`[SocketService] emitAsync timeout (${timeoutMs}ms) for ${eventName} — proceeding`);
       resolve(true);
     }, timeoutMs);
 
     socket.emit(eventName, data, () => {
-      // Server acknowledged receipt
       clearTimeout(timer);
-      console.log(`[SocketService] emitAsync ack received for ${eventName}`);
       resolve(true);
     });
   });

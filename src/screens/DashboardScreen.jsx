@@ -268,15 +268,8 @@ export default function DashboardScreen() {
     if (isNetworkAvailable) {
       dispatch(getSettings('mobileDevices'))
         .unwrap()
-        .then((response) => {
-          console.log('=== MOBILE DEVICES SETTINGS ===');
-          console.log('Full Response:', JSON.stringify(response, null, 2));
-          console.log('Mobile Devices:', JSON.stringify(response?.data?.mobileDevices, null, 2));
-          console.log('===============================');
-        })
-        .catch((error) => {
-          console.log('Failed to fetch mobileDevices settings:', error);
-        });
+        .then(() => {})
+        .catch(() => {});
     }
   }, [dispatch, isNetworkAvailable]);
 
@@ -505,10 +498,8 @@ export default function DashboardScreen() {
     try {
       // Clear ALL cache data (SQLite + Redux) BEFORE switching WhatsApp numbers
       // This prevents showing old account's chats when navigating to inbox
-      console.log('🔄 [DashboardScreen] Switching WhatsApp number, clearing all cache...');
       dispatch(clearInboxData());
       await cacheManager.clearAllCache();
-      console.log('✅ [DashboardScreen] Cache cleared, proceeding with access...');
 
       const result = await dispatch(accessBusinessAccount(numberId)).unwrap();
       if (result.status === 'success') {
@@ -564,10 +555,8 @@ export default function DashboardScreen() {
     try {
       // Clear ALL cache data (SQLite + Redux) BEFORE switching accounts
       // This prevents showing old account's chats when navigating to inbox
-      console.log('🔄 [DashboardScreen] Switching to team member account, clearing all cache...');
       dispatch(clearInboxData());
       await cacheManager.clearAllCache();
-      console.log('✅ [DashboardScreen] Cache cleared, proceeding with login...');
 
       const payload = {
         email: row.email,
@@ -610,10 +599,8 @@ export default function DashboardScreen() {
     try {
       // Clear ALL cache data (SQLite + Redux) BEFORE switching back to admin
       // This prevents showing team member's chats when navigating to inbox
-      console.log('🔄 [DashboardScreen] Exiting team member mode, clearing all cache...');
       dispatch(clearInboxData());
       await cacheManager.clearAllCache();
-      console.log('✅ [DashboardScreen] Cache cleared, proceeding with logout...');
 
       await dispatch(logoutFromTeammember()).unwrap();
 
