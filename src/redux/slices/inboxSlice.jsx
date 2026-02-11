@@ -808,12 +808,15 @@ const inboxSlice = createSlice({
             const optType = m.type || 'text';
             const optTime = new Date(m.timestamp || m.createdAt).getTime();
 
-            // Match if same type, similar content, and within 30 seconds
+            // Match if same type and similar content
+            // For queued offline messages, the time gap between original send and server
+            // processing can be minutes/hours, so use a generous window (10 min).
+            // For live sends it's typically < 5 seconds.
             const timeDiff = Math.abs(messageTime - optTime);
             const textMatch = messageType === 'text' ? messageText === optText : true; // For media, don't check text
             const typeMatch = messageType === optType;
 
-            return typeMatch && textMatch && timeDiff < 30000;
+            return typeMatch && textMatch && timeDiff < 600000;
           });
 
           if (optimisticIndex !== -1) {
