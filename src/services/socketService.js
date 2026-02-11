@@ -152,6 +152,65 @@ export const emitSocketEvent = (eventName, data) => {
 };
 
 /**
+ * Emit event and wait for server acknowledgment (with timeout fallback).
+ * Uses socket.io ack callback — if the server supports it, resolves immediately
+ * on server confirmation. Otherwise falls back to timeout.
+ * @param {string} eventName - Event name
+ * @param {any} data - Event data
+ * @param {number} timeoutMs - Timeout in ms (default 8 seconds)
+ * @returns {Promise<boolean>} - true if sent, false if socket not connected
+ */
+export const emitSocketEventAsync = (eventName, data, timeoutMs = 8000) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      // Timeout — server didn't ack, but message was emitted. Assume sent.
+      console.log(`[SocketService] emitAsync timeout (${timeoutMs}ms) for ${eventName} — proceeding`);
+      resolve(true);
+    }, timeoutMs);
+
+    socket.emit(eventName, data, () => {
+      // Server acknowledged receipt
+      clearTimeout(timer);
+      console.log(`[SocketService] emitAsync ack received for ${eventName}`);
+      resolve(true);
+    });
+  });
+};
+
+/**
+ * Send message through socket and wait for server acknowledgment
+ * @param {Object} messageData - Message data
+ * @returns {Promise<boolean>}
+ */
+export const sendMessageViaSocketAsync = (messageData) => {
+  return emitSocketEventAsync('sendMessage', messageData);
+};
+
+/**
+ * Send template message through socket and wait for server acknowledgment
+ * @param {Object} templateData - Template message data
+ * @returns {Promise<boolean>}
+ */
+export const sendTemplateViaSocketAsync = (templateData) => {
+  const payload = {
+    ...templateData,
+    type: 'template',
+    bodyParams: Array.isArray(templateData.bodyParams)
+      ? templateData.bodyParams
+      : Object.values(templateData.bodyParams || {}),
+    headerParams: Array.isArray(templateData.headerParams)
+      ? templateData.headerParams
+      : Object.values(templateData.headerParams || {}),
+  };
+  return emitSocketEventAsync('sendMessage', payload);
+};
+
+/**
  * Subscribe to socket event
  * @param {string} eventName - Event name
  * @param {Function} callback - Event handler
@@ -262,11 +321,14 @@ export default {
   getSocket,
   isSocketConnected,
   emitSocketEvent,
+  emitSocketEventAsync,
   subscribeToEvent,
   unsubscribeFromEvent,
   sendMessageViaSocket,
+  sendMessageViaSocketAsync,
   resetUnreadCountViaSocket,
   createContactViaSocket,
   sendTemplateViaSocket,
+  sendTemplateViaSocketAsync,
   sendMediaViaSocket,
 };

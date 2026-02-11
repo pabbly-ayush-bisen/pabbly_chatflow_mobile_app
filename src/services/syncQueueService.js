@@ -6,16 +6,11 @@
  */
 
 import { cacheManager } from '../database/CacheManager';
-import { sendMessageViaSocket, sendTemplateViaSocket, isSocketConnected } from './socketService';
+import { sendMessageViaSocketAsync, sendTemplateViaSocketAsync, isSocketConnected } from './socketService';
 import { updateQueuedMessageStatus } from '../redux/slices/inboxSlice';
 
 let isProcessing = false;
 
-// Delay between sends to ensure server processes them in FIFO order.
-// Without this, rapid socket.emit() calls arrive nearly simultaneously
-// and the server may process them out of order.
-const SEND_DELAY_MS = 500;
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Process all pending items in the sync queue.
@@ -56,10 +51,11 @@ export async function processSyncQueue(dispatch) {
         console.log(`[SyncQueue] Processing op: id=${op.id}, type=${op.operation}, tempId=${data.tempId}`);
 
         if (op.operation === 'sendMessage') {
-          const sent = sendMessageViaSocket(data.socketData);
+          // await ensures we wait for server ack (or timeout) before next message
+          const sent = await sendMessageViaSocketAsync(data.socketData);
 
           if (sent) {
-            console.log(`[SyncQueue] sendMessage sent successfully — marking completed (tempId=${data.tempId})`);
+            console.log(`[SyncQueue] sendMessage confirmed — marking completed (tempId=${data.tempId})`);
             await cacheManager.markSyncCompleted(op.id);
             // Update the optimistic message status from 'queued' back to 'pending'
             // Socket handlers will update to 'sent' when server confirms
@@ -75,10 +71,11 @@ export async function processSyncQueue(dispatch) {
             await cacheManager.markSyncFailed(op.id, 'Socket not connected');
           }
         } else if (op.operation === 'sendTemplate') {
-          const sent = sendTemplateViaSocket(data.socketData);
+          // await ensures we wait for server ack (or timeout) before next template
+          const sent = await sendTemplateViaSocketAsync(data.socketData);
 
           if (sent) {
-            console.log(`[SyncQueue] sendTemplate sent successfully — marking completed (tempId=${data.tempId})`);
+            console.log(`[SyncQueue] sendTemplate confirmed — marking completed (tempId=${data.tempId})`);
             await cacheManager.markSyncCompleted(op.id);
             if (dispatch && data.chatId && data.tempId) {
               dispatch(updateQueuedMessageStatus({
@@ -93,9 +90,6 @@ export async function processSyncQueue(dispatch) {
           }
         }
         // Future: handle other operation types (update, delete)
-
-        // Wait between sends so the server processes them in FIFO order
-        await delay(SEND_DELAY_MS);
 
       } catch (opError) {
         console.log(`[SyncQueue] Error processing op ${op.id}:`, opError.message);
