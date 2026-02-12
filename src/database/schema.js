@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 // Table Names
 export const Tables = {

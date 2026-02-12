@@ -23,33 +23,30 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
  * Features: Smooth animations, intuitive filtering, beautiful card design
  */
 
-// Template categories with icons
+// Template categories with icons and colors
 const TEMPLATE_CATEGORIES = [
-  { id: 'all', label: 'All', icon: 'view-grid' },
-  { id: 'MARKETING', label: 'Marketing', icon: 'bullhorn' },
-  { id: 'UTILITY', label: 'Utility', icon: 'wrench' },
-  { id: 'AUTHENTICATION', label: 'Auth', icon: 'shield-check' },
+  { id: 'all', label: 'All', icon: 'view-grid', color: '#6366F1' },
+  { id: 'MARKETING', label: 'Marketing', icon: 'bullhorn', color: '#8B5CF6' },
+  { id: 'UTILITY', label: 'Utility', icon: 'wrench', color: '#0891B2' },
+  { id: 'AUTHENTICATION', label: 'Auth', icon: 'shield-check', color: '#059669' },
 ];
 
-// Category color mapping
-const CATEGORY_COLORS = {
-  MARKETING: { bg: '#F3E5F5', text: '#8E24AA', icon: '#AB47BC' },
-  UTILITY: { bg: '#E8F5E9', text: '#2E7D32', icon: '#43A047' },
-  AUTHENTICATION: { bg: '#E3F2FD', text: '#1565C0', icon: '#1E88E5' },
-  default: { bg: colors.grey[100], text: colors.grey[600], icon: colors.grey[500] },
+// Category config (matches TemplatesScreen TYPE_CONFIG)
+const CATEGORY_CONFIG = {
+  marketing:      { label: 'Marketing', color: '#8B5CF6' },
+  utility:        { label: 'Utility',   color: '#0891B2' },
+  authentication: { label: 'Auth',      color: '#059669' },
 };
 
-// Template type configuration with icons and colors
-const TEMPLATE_TYPE_CONFIG = {
-  TEXT: { icon: 'text', color: '#9E9E9E', bg: '#F5F5F5', label: 'Text' },
-  IMAGE: { icon: 'image', color: '#2196F3', bg: '#E3F2FD', label: 'Image' },
-  VIDEO: { icon: 'video', color: '#9C27B0', bg: '#F3E5F5', label: 'Video' },
-  DOCUMENT: { icon: 'file-document', color: '#FF9800', bg: '#FFF3E0', label: 'Document' },
-  AUDIO: { icon: 'music', color: '#3F51B5', bg: '#E8EAF6', label: 'Audio' },
-  LOCATION: { icon: 'map-marker', color: '#F44336', bg: '#FFEBEE', label: 'Location' },
-  CAROUSEL: { icon: 'view-carousel', color: '#2196F3', bg: '#E3F2FD', label: 'Carousel' },
-  LTO: { icon: 'clock-outline', color: '#FF9800', bg: '#FFF3E0', label: 'Limited Offer' },
-  CATALOG: { icon: 'shopping', color: '#4CAF50', bg: '#E8F5E9', label: 'Catalog' },
+// Header format config (matches TemplatesScreen FORMAT_CONFIG)
+const FORMAT_CONFIG = {
+  IMAGE:              { label: 'Image',    icon: 'image-outline',         color: '#0EA5E9' },
+  VIDEO:              { label: 'Video',    icon: 'video-outline',         color: '#F97316' },
+  DOCUMENT:           { label: 'Document', icon: 'file-document-outline', color: '#8B5CF6' },
+  TEXT:               { label: 'Text',     icon: 'format-text',           color: '#64748B' },
+  LOCATION:           { label: 'Location', icon: 'map-marker-outline',    color: '#10B981' },
+  CAROUSEL:           { label: 'Carousel', icon: 'view-carousel-outline', color: '#EC4899' },
+  LIMITED_TIME_OFFER: { label: 'LTO',      icon: 'clock-alert-outline',   color: '#F59E0B' },
 };
 
 const TemplatePickerDialog = ({
@@ -147,10 +144,10 @@ const TemplatePickerDialog = ({
     return buttonsComponent?.buttons || [];
   }, []);
 
-  // Check if template has variables
+  // Check if template has variables (both numeric {{1}} and named {{name}})
   const hasVariables = useCallback((template) => {
     const bodyText = getTemplateBodyText(template);
-    return /\{\{\d+\}\}/.test(bodyText);
+    return /\{\{.*?\}\}/.test(bodyText);
   }, [getTemplateBodyText]);
 
   // Handle template selection
@@ -175,41 +172,43 @@ const TemplatePickerDialog = ({
     searchInputRef.current?.focus();
   }, []);
 
-  // Get category styling
-  const getCategoryStyle = useCallback((category) => {
-    return CATEGORY_COLORS[category] || CATEGORY_COLORS.default;
+  // Get format config from header format
+  const getFormatConfig = useCallback((format) => {
+    return FORMAT_CONFIG[(format || 'TEXT').toUpperCase()] || FORMAT_CONFIG.TEXT;
   }, []);
 
-  // Get template type config
-  const getTemplateTypeConfig = useCallback((type) => {
-    const typeUpper = (type || 'TEXT').toUpperCase();
-    return TEMPLATE_TYPE_CONFIG[typeUpper] || TEMPLATE_TYPE_CONFIG.TEXT;
+  // Get category config from template category
+  const getCategoryConfig = useCallback((category) => {
+    return CATEGORY_CONFIG[(category || '').toLowerCase()] || { label: category || 'Other', color: '#64748B' };
   }, []);
 
   // Render category chip
   const renderCategoryChip = useCallback((category) => {
     const isActive = activeCategory === category.id;
+    const pillColor = category.color;
 
     return (
       <TouchableOpacity
         key={category.id}
         style={[
           styles.categoryChip,
-          isActive && styles.categoryChipActive,
+          isActive
+            ? { backgroundColor: pillColor, borderColor: pillColor }
+            : { backgroundColor: pillColor + '08', borderColor: pillColor + '25' },
         ]}
         onPress={() => setActiveCategory(category.id)}
         activeOpacity={0.7}
       >
         <Icon
           name={category.icon}
-          size={16}
-          color={isActive ? colors.common.white : colors.grey[500]}
+          size={14}
+          color={isActive ? '#FFFFFF' : pillColor}
           style={styles.categoryChipIcon}
         />
         <Text
           style={[
             styles.categoryChipText,
-            isActive && styles.categoryChipTextActive,
+            { color: isActive ? '#FFFFFF' : pillColor },
           ]}
         >
           {category.label}
@@ -223,7 +222,12 @@ const TemplatePickerDialog = ({
     const bodyText = getTemplateBodyText(item);
     const buttons = getTemplateButtons(item);
     const hasVars = hasVariables(item);
-    const templateTypeConfig = getTemplateTypeConfig(item.type);
+    const header = getTemplateHeader(item);
+    const hasCarousel = item.components?.some(c => c.type === 'CAROUSEL' || c.type === 'carousel');
+    const hasLTO = item.components?.some(c => c.type === 'LIMITED_TIME_OFFER' || c.type === 'limited_time_offer');
+    const detectedFormat = hasCarousel ? 'CAROUSEL' : hasLTO ? 'LIMITED_TIME_OFFER' : header?.type?.toUpperCase() || 'TEXT';
+    const formatConfig = getFormatConfig(detectedFormat);
+    const categoryConfig = getCategoryConfig(item.category);
 
     return (
       <Animated.View
@@ -238,11 +242,11 @@ const TemplatePickerDialog = ({
         <TouchableOpacity
           style={styles.templateCard}
           onPress={() => handleSelect(item)}
-          activeOpacity={0.9}
+          activeOpacity={0.8}
         >
           {/* Card Content */}
           <View style={styles.cardContent}>
-            {/* Title and Badges Row */}
+            {/* Title Row */}
             <View style={styles.cardTopRow}>
               <Text style={styles.templateName} numberOfLines={1}>
                 {item.name?.replace(/_/g, ' ')}
@@ -250,23 +254,23 @@ const TemplatePickerDialog = ({
               <Icon name="chevron-right" size={20} color={colors.grey[300]} />
             </View>
 
-            {/* Badges Row */}
-            <View style={styles.metaRow}>
-              <View style={[styles.typeTag, { backgroundColor: templateTypeConfig.bg }]}>
-                <Icon name={templateTypeConfig.icon} size={9} color={templateTypeConfig.color} />
-                <Text style={[styles.typeTagText, { color: templateTypeConfig.color }]}>
-                  {templateTypeConfig.label}
-                </Text>
+            {/* Chips Row */}
+            <View style={styles.chipsRow}>
+              <View style={[styles.chip, { backgroundColor: categoryConfig.color + '12' }]}>
+                <Icon name="tag-outline" size={12} color={categoryConfig.color} />
+                <Text style={[styles.chipText, { color: categoryConfig.color }]}>{categoryConfig.label}</Text>
               </View>
-              <View style={styles.divider} />
-              <Text style={styles.categoryText}>
-                {item.category}
-              </Text>
+              <View style={[styles.chip, { backgroundColor: formatConfig.color + '12' }]}>
+                <Icon name={formatConfig.icon} size={12} color={formatConfig.color} />
+                <Text style={[styles.chipText, { color: formatConfig.color }]}>{formatConfig.label}</Text>
+              </View>
+              <View style={styles.langChip}>
+                <Text style={styles.langChipText}>{(item.language || 'en').toUpperCase()}</Text>
+              </View>
               {hasVars && (
-                <>
-                  <View style={styles.divider} />
-                  <Icon name="code-braces" size={11} color={colors.grey[500]} />
-                </>
+                <View style={[styles.chip, { backgroundColor: '#F59E0B12' }]}>
+                  <Icon name="code-braces" size={12} color="#F59E0B" />
+                </View>
               )}
             </View>
 
@@ -290,7 +294,7 @@ const TemplatePickerDialog = ({
         </TouchableOpacity>
       </Animated.View>
     );
-  }, [handleSelect, getTemplateBodyText, getTemplateButtons, hasVariables, getTemplateTypeConfig]);
+  }, [handleSelect, getTemplateBodyText, getTemplateButtons, hasVariables, getTemplateHeader, getFormatConfig, getCategoryConfig]);
 
   // Render empty state
   const renderEmptyState = useCallback(() => (
@@ -584,28 +588,18 @@ const styles = StyleSheet.create({
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: colors.grey[50],
     borderWidth: 1,
-    borderColor: colors.grey[200],
     marginRight: 8,
   },
-  categoryChipActive: {
-    backgroundColor: chatColors.primary,
-    borderColor: chatColors.primary,
-  },
   categoryChipIcon: {
-    marginRight: 6,
+    marginRight: 5,
   },
   categoryChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.grey[700],
-  },
-  categoryChipTextActive: {
-    color: colors.common.white,
   },
   resultsHeader: {
     paddingHorizontal: 20,
@@ -627,69 +621,62 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   templateCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.grey[200],
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
+    borderColor: colors.grey[100],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardContent: {
-    padding: 16,
+    padding: 14,
   },
   cardTopRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   templateName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.text.primary,
-    textTransform: 'capitalize',
     flex: 1,
-    marginRight: 8,
+    marginRight: 10,
+    lineHeight: 20,
   },
-  metaRow: {
+  chipsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
     flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
   },
-  typeTag: {
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    gap: 3,
+    gap: 4,
   },
-  typeTagText: {
+  chipText: {
     fontSize: 11,
     fontWeight: '600',
-    letterSpacing: 0.2,
   },
-  divider: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: colors.grey[300],
-    marginHorizontal: 4,
+  langChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: colors.grey[100],
   },
-  categoryText: {
+  langChipText: {
     fontSize: 11,
     fontWeight: '500',
-    color: colors.grey[600],
+    color: colors.text.tertiary,
   },
   previewBody: {
     fontSize: 13,

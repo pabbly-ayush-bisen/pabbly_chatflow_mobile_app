@@ -769,6 +769,7 @@ export default function ChatDetailsScreen({ route, navigation }) {
           language: { code: languageCode },
           templateId: template._id,
           components: template.components, // Include components for variable substitution in display
+          type: templateTypeUpper, // Include type so TemplateMessage can render media headers immediately
         },
         body: { text: bodyText },
         // Include body and header params for display

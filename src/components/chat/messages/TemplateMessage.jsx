@@ -116,29 +116,35 @@ const TemplateMessage = ({ message, isOutgoing, onImagePress }) => {
       components = fullTemplate.components;
     }
   }
-  const headerComponent = components.find(c => c.type === 'HEADER');
-  const bodyComponent = components.find(c => c.type === 'BODY');
-  const footerComponent = components.find(c => c.type === 'FOOTER');
-  const buttonsComponent = components.find(c => c.type === 'BUTTONS');
+  const headerComponent = components.find(c => c.type?.toUpperCase() === 'HEADER');
+  const bodyComponent = components.find(c => c.type?.toUpperCase() === 'BODY');
+  const footerComponent = components.find(c => c.type?.toUpperCase() === 'FOOTER');
+  const buttonsComponent = components.find(c => c.type?.toUpperCase() === 'BUTTONS');
 
-  // Get body text with parameter substitution
+  // Get body text with parameter substitution (handles both {{1}} and {{name}} style)
   const getBodyText = () => {
     let text = bodyComponent?.text || '';
     if (bodyParams && bodyParams.length > 0) {
+      const placeholders = [...text.matchAll(/\{\{(.*?)\}\}/g)];
       bodyParams.forEach((param, index) => {
-        text = text.replace(`{{${index + 1}}}`, param);
+        if (placeholders[index]) {
+          text = text.replace(placeholders[index][0], param);
+        }
       });
     }
     return text;
   };
 
-  // Get header text with parameter substitution
+  // Get header text with parameter substitution (handles both {{1}} and {{name}} style)
   const getHeaderText = () => {
-    if (headerComponent?.format === 'TEXT') {
+    if (headerComponent?.format?.toUpperCase() === 'TEXT') {
       let text = headerComponent?.text || '';
       if (headerParams && headerParams.length > 0) {
+        const placeholders = [...text.matchAll(/\{\{(.*?)\}\}/g)];
         headerParams.forEach((param, index) => {
-          text = text.replace(`{{${index + 1}}}`, param);
+          if (placeholders[index]) {
+            text = text.replace(placeholders[index][0], param);
+          }
         });
       }
       return text;

@@ -141,13 +141,14 @@ const TemplatePreviewDialog = ({
     return headerComp?.format?.toUpperCase() || 'IMAGE';
   }, [isCarouselTemplate, carouselCards]);
 
-  // Extract variables from text ({{1}}, {{2}}, etc.)
+  // Extract variables from text ({{1}}, {{2}}, {{name}}, {{email}}, etc.)
+  // Matches both numeric and named placeholders — same as web app regex
   // IMPORTANT: This must be defined BEFORE carouselCardVariables which uses it
   const extractVariables = useCallback((text) => {
     if (!text) return [];
-    const matches = text.match(/\{\{(\d+)\}\}/g);
+    const matches = text.match(/\{\{(.*?)\}\}/g);
     if (!matches) return [];
-    return [...new Set(matches)].map(m => m.replace(/[{}]/g, ''));
+    return [...new Set(matches)].map(m => m.replace(/^\{\{|\}\}$/g, ''));
   }, []);
 
   // Extract variables from each carousel card's body
@@ -246,18 +247,19 @@ const TemplatePreviewDialog = ({
       prevTemplateIdRef.current = currentTemplateId;
 
       // Extract variables directly here to avoid dependency issues
+      // Matches both numeric {{1}} and named {{name}} placeholders
       const extractVarsFromText = (text) => {
         if (!text) return [];
-        const matches = text.match(/\{\{(\d+)\}\}/g);
+        const matches = text.match(/\{\{(.*?)\}\}/g);
         if (!matches) return [];
-        return [...new Set(matches)].map(m => m.replace(/[{}]/g, ''));
+        return [...new Set(matches)].map(m => m.replace(/^\{\{|\}\}$/g, ''));
       };
 
-      const bodyComp = template?.components?.find(c => c.type === 'BODY');
-      const headerComp = template?.components?.find(c => c.type === 'HEADER');
+      const bodyComp = template?.components?.find(c => c.type?.toUpperCase() === 'BODY');
+      const headerComp = template?.components?.find(c => c.type?.toUpperCase() === 'HEADER');
 
       const extractedBodyVars = extractVarsFromText(bodyComp?.text);
-      const extractedHeaderVars = headerComp?.format === 'TEXT'
+      const extractedHeaderVars = headerComp?.format?.toUpperCase() === 'TEXT'
         ? extractVarsFromText(headerComp?.text)
         : [];
 
@@ -353,22 +355,23 @@ const TemplatePreviewDialog = ({
     }
   }, [template]);
 
-  // Convert 1-based variable keys to 0-based for MessagePreviewBubble compatibility
+  // Convert variable keys to 0-based positional indices for MessagePreviewBubble
+  // Uses bodyVars order so both numeric ({{1}}) and named ({{name}}) vars work
   const previewBodyParams = useMemo(() => {
     const params = {};
-    Object.entries(bodyVariables).forEach(([key, value]) => {
-      params[parseInt(key, 10) - 1] = value;
+    bodyVars.forEach((varKey, index) => {
+      params[index] = bodyVariables[varKey] || '';
     });
     return params;
-  }, [bodyVariables]);
+  }, [bodyVariables, bodyVars]);
 
   const previewHeaderParams = useMemo(() => {
     const params = {};
-    Object.entries(headerVariables).forEach(([key, value]) => {
-      params[parseInt(key, 10) - 1] = value;
+    headerVars.forEach((varKey, index) => {
+      params[index] = headerVariables[varKey] || '';
     });
     return params;
-  }, [headerVariables]);
+  }, [headerVariables, headerVars]);
 
   // Check if all required variables are filled
   const allVariablesFilled = useMemo(() => {
@@ -2048,11 +2051,11 @@ const TemplatePreviewDialog = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   backdropTouch: {
     flex: 1,
@@ -2063,14 +2066,14 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     maxHeight: SCREEN_HEIGHT * 0.95,
     minHeight: SCREEN_HEIGHT * 0.75,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 20,
   },
   handleContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingTop: 12,
     paddingBottom: 4,
   },
@@ -2081,17 +2084,17 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.grey[100],
   },
   headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   headerIconContainer: {
@@ -2099,8 +2102,8 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 12,
     backgroundColor: chatColors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
   },
   headerTextContainer: {
@@ -2108,7 +2111,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.text.primary,
     letterSpacing: -0.3,
   },
@@ -2122,8 +2125,8 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: colors.grey[100],
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   scrollView: {
     flex: 1,
@@ -2143,15 +2146,15 @@ const styles = StyleSheet.create({
     borderColor: colors.grey[100],
   },
   templateCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   categoryIcon: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
   },
   templateCardInfo: {
@@ -2159,14 +2162,14 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.primary,
     marginBottom: 6,
   },
   templateBadges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
     gap: 8,
   },
   badge: {
@@ -2176,13 +2179,13 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
+    fontWeight: "600",
+    textTransform: "uppercase",
     letterSpacing: 0.3,
   },
   languageBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -2191,7 +2194,7 @@ const styles = StyleSheet.create({
   },
   languageText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.secondary,
   },
 
@@ -2201,28 +2204,28 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 12,
   },
   sectionIconContainer: {
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: chatColors.primary + '15',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: chatColors.primary + "15",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 10,
   },
   sectionHeaderContent: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   sectionTitle: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.primary,
     letterSpacing: -0.2,
   },
@@ -2233,8 +2236,8 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   progressBar: {
@@ -2242,15 +2245,15 @@ const styles = StyleSheet.create({
     height: 4,
     backgroundColor: colors.grey[200],
     borderRadius: 2,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   progressFill: {
-    height: '100%',
+    height: "100%",
     borderRadius: 2,
   },
   progressText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.secondary,
   },
   variablesDescription: {
@@ -2263,8 +2266,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   variableGroupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     marginBottom: 10,
     paddingBottom: 8,
@@ -2273,9 +2276,9 @@ const styles = StyleSheet.create({
   },
   variableGroupTitle: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.secondary,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   variableInputContainer: {
@@ -2284,62 +2287,57 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.grey[200],
     marginBottom: 10,
-    overflow: 'hidden',
-    transition: 'all 0.2s ease',
+    overflow: "hidden",
+    transition: "all 0.2s ease",
   },
   variableInputContainerActive: {
-    borderColor: chatColors.primary,
-    shadowColor: chatColors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    borderColor: colors.grey[400],
   },
   variableInputContainerFilled: {
     borderColor: colors.success.light,
-    backgroundColor: colors.success.lighter + '30',
   },
   variableInputHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 6,
   },
   variableLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   variableNumberBadge: {
-    width: 22,
-    height: 22,
+    paddingTop: 4,
+    paddingLeft: 4,
+    paddingRight: 4,
+    paddingBottom: 4,
     borderRadius: 6,
     backgroundColor: colors.grey[100],
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   variableNumberBadgeFilled: {
-    backgroundColor: colors.success.main,
+    backgroundColor: colors.success.main + "20",
   },
   variableNumber: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.text.secondary,
   },
   variableNumberFilled: {
-    color: colors.common.white,
+    color: colors.success.main,
   },
   variableLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.primary,
   },
   variableTextInput: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    paddingTop: 4,
     fontSize: 15,
     color: colors.text.primary,
     minHeight: 44,
@@ -2349,14 +2347,14 @@ const styles = StyleSheet.create({
   footer: {
     padding: 16,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+    paddingBottom: Platform.OS === "ios" ? 28 : 16,
     borderTopWidth: 1,
     borderTopColor: colors.grey[100],
     backgroundColor: colors.common.white,
   },
   warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     backgroundColor: colors.warning.lighter,
     paddingHorizontal: 12,
@@ -2367,13 +2365,13 @@ const styles = StyleSheet.create({
   warningText: {
     fontSize: 12,
     color: colors.warning.dark,
-    fontWeight: '500',
+    fontWeight: "500",
     flex: 1,
   },
   sendButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: chatColors.accent,
     borderRadius: 14,
     paddingVertical: 15,
@@ -2391,7 +2389,7 @@ const styles = StyleSheet.create({
   },
   sendButtonText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.common.white,
     letterSpacing: 0.2,
   },
@@ -2410,30 +2408,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text.secondary,
     marginBottom: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   uploadButton: {
     backgroundColor: colors.grey[50],
     borderWidth: 2,
-    borderColor: chatColors.primary + '40',
-    borderStyle: 'dashed',
+    borderColor: chatColors.primary + "40",
+    borderStyle: "dashed",
     borderRadius: 12,
     padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   uploadButtonIcon: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: chatColors.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: chatColors.primary + "15",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 12,
   },
   uploadButtonText: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.primary,
     marginBottom: 4,
   },
@@ -2445,8 +2443,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   uploadedMediaInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.grey[50],
     padding: 16,
     borderRadius: 12,
@@ -2456,8 +2454,8 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   },
   mediaFileInfo: {
@@ -2466,7 +2464,7 @@ const styles = StyleSheet.create({
   },
   mediaFileName: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.primary,
     marginBottom: 4,
   },
@@ -2477,13 +2475,13 @@ const styles = StyleSheet.create({
   removeMediaButton: {
     width: 36,
     height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   replaceMediaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.common.white,
     borderWidth: 1,
     borderColor: chatColors.primary,
@@ -2494,7 +2492,7 @@ const styles = StyleSheet.create({
   },
   replaceMediaText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: chatColors.primary,
   },
 
@@ -2529,13 +2527,13 @@ const styles = StyleSheet.create({
     borderColor: colors.success.main,
   },
   carouselTabContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
   carouselTabText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.primary,
   },
   carouselTabTextActive: {
@@ -2544,7 +2542,7 @@ const styles = StyleSheet.create({
   carouselCardPreview: {
     backgroundColor: colors.grey[50],
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.grey[200],
   },
@@ -2552,71 +2550,71 @@ const styles = StyleSheet.create({
   carouselUploadButton: {
     backgroundColor: colors.grey[50],
     borderWidth: 2,
-    borderColor: chatColors.primary + '40',
-    borderStyle: 'dashed',
+    borderColor: chatColors.primary + "40",
+    borderStyle: "dashed",
     borderRadius: 12,
     padding: 24,
     margin: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     minHeight: 160,
   },
   carouselMediaWithPreview: {
     height: 200,
     backgroundColor: colors.grey[900],
-    position: 'relative',
+    position: "relative",
   },
   carouselMediaPreviewImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   carouselVideoPreview: {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
+    width: "100%",
+    height: "100%",
+    position: "relative",
   },
   carouselVideoPlayButton: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
+    position: "absolute",
+    top: "50%",
+    left: "50%",
     marginTop: -25,
     marginLeft: -25,
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   carouselUploadingOverlay: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   carouselUploadingText: {
     color: colors.common.white,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 8,
   },
   carouselMediaActions: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 12,
     left: 12,
     right: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     gap: 12,
   },
   carouselMediaActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -2625,26 +2623,26 @@ const styles = StyleSheet.create({
   carouselMediaActionText: {
     color: colors.common.white,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Keep old styles for backward compatibility (can be removed later)
   carouselMediaPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     padding: 24,
   },
   carouselMediaPlaceholderIcon: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: chatColors.primary + '15',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: chatColors.primary + "15",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 12,
   },
   carouselMediaPlaceholderText: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.primary,
     marginBottom: 4,
   },
@@ -2668,9 +2666,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   carouselCardButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 10,
     gap: 6,
     borderBottomWidth: 1,
@@ -2679,7 +2677,7 @@ const styles = StyleSheet.create({
   carouselCardButtonText: {
     fontSize: 13,
     color: chatColors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   carouselVariablesSection: {
     padding: 16,
@@ -2689,16 +2687,16 @@ const styles = StyleSheet.create({
   },
   carouselVariablesTitle: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.secondary,
     marginBottom: 12,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   carouselStatusSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
     gap: 8,
@@ -2708,7 +2706,7 @@ const styles = StyleSheet.create({
   },
   carouselStatusText: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: "500",
   },
 
   // Special Template Fields Styles (Location, LTO, Catalog, Authentication)
@@ -2718,13 +2716,13 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.secondary,
     marginBottom: 6,
     marginTop: 12,
   },
   locationFieldRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   locationFieldHalf: {
@@ -2741,24 +2739,24 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   locationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: chatColors.primary + '12',
+    backgroundColor: chatColors.primary + "12",
     borderRadius: 10,
     marginTop: 16,
     gap: 8,
   },
   locationButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: chatColors.primary,
   },
   locationHintContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.grey[50],
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -2772,13 +2770,13 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
   },
   ltoDateTimeRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginTop: 8,
   },
   ltoDateTimeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 14,
     paddingHorizontal: 16,
     backgroundColor: colors.grey[50],
@@ -2789,12 +2787,12 @@ const styles = StyleSheet.create({
   },
   ltoDateTimeText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
     color: colors.text.primary,
   },
   ltoTimezoneContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 14,
     backgroundColor: colors.grey[50],
@@ -2809,8 +2807,8 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
   },
   authCodeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
     marginTop: 8,
   },
@@ -2824,7 +2822,7 @@ const styles = StyleSheet.create({
   },
   authParamText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text.secondary,
   },
   authCodeInput: {

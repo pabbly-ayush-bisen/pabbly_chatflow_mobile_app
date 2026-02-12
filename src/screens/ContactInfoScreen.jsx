@@ -46,6 +46,35 @@ const CHAT_STATUS_OPTIONS = [
   { value: 'closed', label: 'Closed', icon: 'close-circle-outline', color: colors.error.main, description: 'Chat is closed' },
 ];
 
+/**
+ * Merge settings attribute definitions with contact attribute values.
+ * Matches web app's mergeAttributes() in chat-room-single.jsx.
+ */
+const mergeAttributes = (definitions, contactAttrs) => {
+  const attributeMap = new Map();
+
+  definitions?.forEach((attr) => {
+    if (attr.value) {
+      attributeMap.set(attr.name, { ...attr });
+    } else if (!attributeMap.has(attr.name)) {
+      attributeMap.set(attr.name, { ...attr });
+    }
+  });
+
+  contactAttrs.forEach((attr) => {
+    if (!attributeMap.has(attr.name)) {
+      attributeMap.set(attr.name, { ...attr });
+    } else {
+      const existing = attributeMap.get(attr.name);
+      if (!existing.value && attr.value) {
+        attributeMap.set(attr.name, { ...attr });
+      }
+    }
+  });
+
+  return Array.from(attributeMap.values());
+};
+
 const ContactInfoScreen = ({ route, navigation }) => {
   const { contact, chatId, chat } = route.params || {};
   const dispatch = useDispatch();
@@ -73,11 +102,12 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const [isUpdatingOwner, setIsUpdatingOwner] = useState(false);
 
   // Get chat status from Redux
-  const { updateContactChatStatus } = useSelector((state) => state.inbox);
+  const { updateContactChatStatus, currentConversation } = useSelector((state) => state.inbox);
 
-  // Get team members from settings
+  // Get team members and user attribute definitions from settings
   const { settings } = useSelector((state) => state.settings);
   const teamMembers = settings?.teamMembers?.items || [];
+  const userAttributeDefinitions = settings?.userAttributes?.items || [];
 
   // Mock orders data - In real app, this would come from API/Redux
   const [orders] = useState([
@@ -113,21 +143,36 @@ const ContactInfoScreen = ({ route, navigation }) => {
     },
   ]);
 
-  // Get contact data from various sources
-  const contactData = contact || chat?.contact || {};
-  const contactName = contactData.name || contactData.phoneNumber || 'Unknown';
-  const contactPhoneNumber = contactData.phoneNumber || contactData.phone_number || '';
+  // Merge contact from: cached chat.contact, live Redux currentConversation, and route contact param.
+  // Redux currentConversation may have fresher data than route params (e.g. after socket update).
+  const reduxContact = currentConversation?.contact || {};
+  const contactData = {
+    ...(chat?.contact || {}),
+    ...(reduxContact),
+    ...(contact || {}),
+  };
+
+  const contactName = contactData.name || contactData.phoneNumber || contactData.mobile || 'Unknown';
+  const contactPhoneNumber = contactData.phoneNumber || contactData.phone_number || contactData.mobile || '';
   const contactEmail = contactData.email || '';
-  const contactTags = contactData.tags || [];
-  const contactAttributes = contactData.attributes || contactData.customAttributes || {};
   const lastActive = contactData.lastActive || chat?.lastActive;
   const createdAt = contactData.createdAt || chat?.createdAt;
-  // Check multiple possible locations for opt-in status
-  // Web app uses 'optin' field directly as a boolean (true/false)
-  const optInValue = contactData.optin ?? contactData.optIn?.status
-    ?? contactData.optInStatus ?? chat?.contact?.optin ?? 'unknown';
 
-  // Check for incoming blocked status
+  // Tags — API returns string[] (tag names), handle both string and object arrays
+  const rawTags = contactData.tags || [];
+  const contactTags = Array.isArray(rawTags) ? rawTags : [];
+
+  // Attributes — API returns array [{name, value, _id}], merge with settings definitions
+  const rawAttributes = contactData.attributes || contactData.customAttributes || [];
+  const contactAttributes = mergeAttributes(
+    userAttributeDefinitions,
+    Array.isArray(rawAttributes) ? rawAttributes : []
+  );
+
+  // Optin — boolean (web app pattern: contact.optin)
+  const optInValue = contactData.optin ?? chat?.contact?.optin ?? 'unknown';
+
+  // Incoming blocked — boolean
   const incomingBlocked = contactData.incomingBlocked ?? chat?.contact?.incomingBlocked;
 
   useEffect(() => {
@@ -151,7 +196,11 @@ const ContactInfoScreen = ({ route, navigation }) => {
     if (!settings?.teamMembers) {
       dispatch(getSettings('teamMembers'));
     }
-  }, [chat?.assignedToMember, settings?.teamMembers, dispatch]);
+    // Fetch user attribute definitions if not already loaded
+    if (!settings?.userAttributes) {
+      dispatch(getSettings('userAttributes'));
+    }
+  }, [chat?.assignedToMember, settings?.teamMembers, settings?.userAttributes, dispatch]);
 
   // Handle chat owner change
   const handleOwnerChange = useCallback(async (member) => {
@@ -507,36 +556,6 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
           <View style={styles.infoItem}>
             <View style={styles.infoIconContainer}>
-              <Icon name="shield-check-outline" size={18} color={colors.grey[500]} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Opt-in Status</Text>
-              <View style={[styles.statusBadge, { backgroundColor: optInConfig.bg }]}>
-                <Icon name={optInConfig.icon} size={12} color={optInConfig.color} />
-                <Text style={[styles.statusBadgeText, { color: optInConfig.color }]}>
-                  {optInConfig.label}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.infoItem}>
-            <View style={styles.infoIconContainer}>
-              <Icon name="message-text-lock-outline" size={18} color={colors.grey[500]} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Incoming Messages</Text>
-              <View style={[styles.statusBadge, { backgroundColor: incomingBlockedConfig.bg }]}>
-                <Icon name={incomingBlockedConfig.icon} size={12} color={incomingBlockedConfig.color} />
-                <Text style={[styles.statusBadgeText, { color: incomingBlockedConfig.color }]}>
-                  {incomingBlockedConfig.label}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.infoItem}>
-            <View style={styles.infoIconContainer}>
               <Icon name="clock-outline" size={18} color={colors.grey[500]} />
             </View>
             <View style={styles.infoContent}>
@@ -639,6 +658,66 @@ const ContactInfoScreen = ({ route, navigation }) => {
         </Text>
       </View>
 
+      {/* Incoming Status Card */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Icon name="message-text-lock-outline" size={20} color={chatColors.primary} />
+          <Text style={styles.sectionTitle}>Incoming Status</Text>
+        </View>
+
+        <View style={styles.statusSelector}>
+          <View style={styles.statusSelectorContent}>
+            <View style={[styles.statusIconContainer, { backgroundColor: `${incomingBlockedConfig.color}15` }]}>
+              <Icon name={incomingBlockedConfig.icon} size={20} color={incomingBlockedConfig.color} />
+            </View>
+            <View style={styles.statusTextContainer}>
+              <Text style={styles.statusSelectorLabel}>Incoming Messages</Text>
+              <Text style={[styles.statusSelectorValue, { color: incomingBlockedConfig.color }]}>
+                {incomingBlockedConfig.label}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={styles.statusDescription}>
+          {incomingBlocked === true
+            ? 'Incoming messages from this contact are blocked.'
+            : incomingBlocked === false
+              ? 'Incoming messages from this contact are allowed.'
+              : 'Incoming message status is unknown.'}
+        </Text>
+      </View>
+
+      {/* User Status Card (Opt-in/Opt-out) */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Icon name="shield-check-outline" size={20} color={chatColors.primary} />
+          <Text style={styles.sectionTitle}>User Status</Text>
+        </View>
+
+        <View style={styles.statusSelector}>
+          <View style={styles.statusSelectorContent}>
+            <View style={[styles.statusIconContainer, { backgroundColor: `${optInConfig.color}15` }]}>
+              <Icon name={optInConfig.icon} size={20} color={optInConfig.color} />
+            </View>
+            <View style={styles.statusTextContainer}>
+              <Text style={styles.statusSelectorLabel}>Opt-in Status</Text>
+              <Text style={[styles.statusSelectorValue, { color: optInConfig.color }]}>
+                {optInConfig.label}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={styles.statusDescription}>
+          {optInConfig.label === 'Opted In'
+            ? 'This contact has opted in to receive messages.'
+            : optInConfig.label === 'Opted Out'
+              ? 'This contact has opted out of receiving messages.'
+              : 'Opt-in status has not been set for this contact.'}
+        </Text>
+      </View>
+
       {/* Tags Section */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
@@ -651,30 +730,34 @@ const ContactInfoScreen = ({ route, navigation }) => {
 
         {contactTags.length > 0 ? (
           <View style={styles.tagsContainer}>
-            {contactTags.map((tag, index) => (
-              <View
-                key={tag._id || index}
-                style={[
-                  styles.tagChip,
-                  { backgroundColor: tag.color ? `${tag.color}20` : colors.grey[100] },
-                ]}
-              >
+            {contactTags.map((tag, index) => {
+              const tagName = typeof tag === 'string' ? tag : (tag.name || String(tag));
+              const tagColor = typeof tag === 'object' ? tag.color : null;
+              return (
                 <View
+                  key={typeof tag === 'object' ? (tag._id || index) : index}
                   style={[
-                    styles.tagDot,
-                    { backgroundColor: tag.color || colors.grey[400] },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.tagText,
-                    { color: tag.color || colors.text.primary },
+                    styles.tagChip,
+                    { backgroundColor: tagColor ? `${tagColor}20` : colors.grey[100] },
                   ]}
                 >
-                  {tag.name || tag}
-                </Text>
-              </View>
-            ))}
+                  <View
+                    style={[
+                      styles.tagDot,
+                      { backgroundColor: tagColor || chatColors.primary },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.tagText,
+                      { color: tagColor || colors.text.primary },
+                    ]}
+                  >
+                    {tagName}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
         ) : (
           <View style={styles.emptySection}>
@@ -697,13 +780,13 @@ const ContactInfoScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {Object.keys(contactAttributes).length > 0 ? (
+        {contactAttributes.length > 0 ? (
           <View style={styles.attributesList}>
-            {Object.entries(contactAttributes).map(([key, value], index) => (
-              <View key={index} style={styles.attributeItem}>
-                <Text style={styles.attributeKey}>{key}</Text>
+            {contactAttributes.map((attr, index) => (
+              <View key={attr._id || index} style={styles.attributeItem}>
+                <Text style={styles.attributeKey}>{attr.name}</Text>
                 <Text style={styles.attributeValue} numberOfLines={1}>
-                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                  {attr.value || '—'}
                 </Text>
               </View>
             ))}
