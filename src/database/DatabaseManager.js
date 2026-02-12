@@ -159,6 +159,10 @@ class DatabaseManager {
     if (fromVersion < 12 && toVersion >= 12) {
       await this._migrateToV12();
     }
+
+    if (fromVersion < 13 && toVersion >= 13) {
+      await this._migrateToV13();
+    }
   }
 
   /**
@@ -170,6 +174,27 @@ class DatabaseManager {
       await this.db.execAsync(`ALTER TABLE ${Tables.CHATS} ADD COLUMN contact_json TEXT`);
     } catch (error) {
       // Column may already exist
+    }
+  }
+
+  /**
+   * Migration to version 13: Add sender, system message, and reactions columns to messages table.
+   * Enables SQL queries on sender type, system messages, and a dedicated reactions column.
+   */
+  async _migrateToV13() {
+    const columns = [
+      `ALTER TABLE ${Tables.MESSAGES} ADD COLUMN sender_type TEXT`,
+      `ALTER TABLE ${Tables.MESSAGES} ADD COLUMN sender_id TEXT`,
+      `ALTER TABLE ${Tables.MESSAGES} ADD COLUMN system_message_type TEXT`,
+      `ALTER TABLE ${Tables.MESSAGES} ADD COLUMN system_metadata TEXT`,
+      `ALTER TABLE ${Tables.MESSAGES} ADD COLUMN reactions_json TEXT`,
+    ];
+    for (const sql of columns) {
+      try {
+        await this.db.execAsync(sql);
+      } catch (error) {
+        // Column may already exist
+      }
     }
   }
 

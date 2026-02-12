@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 // Table Names
 export const Tables = {
@@ -101,7 +101,12 @@ export const CREATE_TABLES_SQL = {
       temp_id TEXT,
       local_media_path TEXT,
       local_thumbnail_path TEXT,
-      media_download_status TEXT DEFAULT 'none'
+      media_download_status TEXT DEFAULT 'none',
+      sender_type TEXT,
+      sender_id TEXT,
+      system_message_type TEXT,
+      system_metadata TEXT,
+      reactions_json TEXT
     )
   `,
 
