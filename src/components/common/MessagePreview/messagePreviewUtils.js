@@ -37,8 +37,10 @@ export const getEffectiveMessageType = (msgType, regularMsgType) => {
 
 /**
  * Substitute body parameters into template text
- * @param {string} bodyText - Template body text with {{n}} placeholders
- * @param {Object} bodyParams - Parameter values keyed by index (0-based)
+ * Supports both numeric ({{1}}) and named ({{name}}) placeholders.
+ * Params are keyed by 0-based position index — replaces the Nth placeholder in the text.
+ * @param {string} bodyText - Template body text with placeholders
+ * @param {Object} bodyParams - Parameter values keyed by 0-based position index
  * @param {Array} examples - Example values from template definition
  * @returns {string} Text with substituted values
  */
@@ -46,18 +48,25 @@ export const substituteBodyParams = (bodyText, bodyParams, examples) => {
   if (!bodyText) return '';
   let text = bodyText;
 
+  // Find all placeholders in order (both {{1}} and {{name}} style)
+  const placeholders = [...bodyText.matchAll(/\{\{(.*?)\}\}/g)];
+
   if (bodyParams && Object.keys(bodyParams).length > 0) {
     Object.keys(bodyParams).forEach((key) => {
       const index = parseInt(key, 10);
-      if (!isNaN(index)) {
-        text = text.replace(`{{${index + 1}}}`, bodyParams[key]);
+      if (!isNaN(index) && placeholders[index]) {
+        text = text.replace(placeholders[index][0], bodyParams[key]);
       }
     });
   }
 
   if (examples && examples.length > 0) {
+    // Re-scan remaining placeholders after param substitution
+    const remaining = [...text.matchAll(/\{\{(.*?)\}\}/g)];
     examples.forEach((example, index) => {
-      text = text.replace(`{{${index + 1}}}`, example);
+      if (remaining[index]) {
+        text = text.replace(remaining[index][0], example);
+      }
     });
   }
 
@@ -66,19 +75,22 @@ export const substituteBodyParams = (bodyText, bodyParams, examples) => {
 
 /**
  * Substitute header parameters into template header text
- * @param {string} headerText - Template header text with {{n}} placeholders
- * @param {Object} headerParams - Parameter values keyed by index (0-based)
+ * Supports both numeric ({{1}}) and named ({{name}}) placeholders.
+ * @param {string} headerText - Template header text with placeholders
+ * @param {Object} headerParams - Parameter values keyed by 0-based position index
  * @returns {string} Text with substituted values
  */
 export const substituteHeaderParams = (headerText, headerParams) => {
   if (!headerText) return '';
   let text = headerText;
 
+  const placeholders = [...headerText.matchAll(/\{\{(.*?)\}\}/g)];
+
   if (headerParams && Object.keys(headerParams).length > 0) {
     Object.keys(headerParams).forEach((key) => {
       const index = parseInt(key, 10);
-      if (!isNaN(index)) {
-        text = text.replace(`{{${index + 1}}}`, headerParams[key]);
+      if (!isNaN(index) && placeholders[index]) {
+        text = text.replace(placeholders[index][0], headerParams[key]);
       }
     });
   }

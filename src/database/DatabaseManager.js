@@ -155,6 +155,22 @@ class DatabaseManager {
     if (fromVersion < 11 && toVersion >= 11) {
       await this._migrateToV11();
     }
+
+    if (fromVersion < 12 && toVersion >= 12) {
+      await this._migrateToV12();
+    }
+  }
+
+  /**
+   * Migration to version 12: Store full contact JSON in chats table
+   * Preserves tags, attributes, optin, incomingBlocked across cache cycles.
+   */
+  async _migrateToV12() {
+    try {
+      await this.db.execAsync(`ALTER TABLE ${Tables.CHATS} ADD COLUMN contact_json TEXT`);
+    } catch (error) {
+      // Column may already exist
+    }
   }
 
   /**

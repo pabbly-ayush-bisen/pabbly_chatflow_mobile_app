@@ -73,6 +73,7 @@ class ChatModel {
       contact_phone: contact.phoneNumber || contact.mobile || contact.phone || null,
       contact_profile_pic: contact.profilePic || contact.profile_pic || null,
       contact_last_active: contact.lastActive || contact.last_active || null,
+      contact_json: Object.keys(contact).length > 0 ? JSON.stringify(contact) : null,
       wa_id: chat.waId || chat.wa_id || null,
       phone_number_id: chat.phoneNumberId || chat.phone_number_id || null,
       last_message_id: lastMessage._id || lastMessage.id || null,
@@ -171,12 +172,22 @@ class ChatModel {
       };
     }
 
+    // Parse full contact from JSON (V12+), fallback to individual columns
+    let contactObj = null;
+    if (record.contact_json) {
+      try {
+        contactObj = JSON.parse(record.contact_json);
+      } catch (e) {
+        contactObj = null;
+      }
+    }
+
     return {
       _id: record.server_id,
       id: record.server_id,
       waId: record.wa_id,
       phoneNumberId: record.phone_number_id,
-      contact: {
+      contact: contactObj || {
         _id: record.contact_id,
         name: record.contact_name,
         phoneNumber: record.contact_phone,

@@ -718,7 +718,7 @@ const ChatInput = ({
               onPress={handleStopAi}
               activeOpacity={0.7}
             >
-              <Icon name="stop-circle" size={20} color={colors.error.main} />
+              <Icon name="stop-circle" size={22} color={colors.error.main} />
               <Text style={[styles.actionButtonText, { color: colors.error.main }]}>
                 Stop AI Assistant
               </Text>
@@ -747,7 +747,7 @@ const ChatInput = ({
               onPress={handleIntervene}
               activeOpacity={0.7}
             >
-              <Icon name="account-voice" size={20} color={chatColors.primary} />
+              <Icon name="account-voice" size={22} color={chatColors.primary} />
               <Text style={[styles.actionButtonText, { color: chatColors.primary }]}>
                 Intervene
               </Text>
@@ -785,7 +785,7 @@ const ChatInput = ({
       <View style={styles.container}>
         <View style={styles.actionButtonContainer}>
           <View style={styles.windowExpiredBanner}>
-            <Icon name="clock-alert-outline" size={18} color={colors.warning.main} />
+            <Icon name="clock-alert-outline" size={20} color={colors.warning.main} />
             <Text style={styles.windowExpiredText}>
               24-hour messaging window has expired
             </Text>
@@ -795,7 +795,7 @@ const ChatInput = ({
             onPress={() => setShowTemplatePicker(true)}
             activeOpacity={0.7}
           >
-            <Icon name="file-document-outline" size={20} color={chatColors.primary} />
+            <Icon name="file-document-outline" size={22} color={chatColors.primary} />
             <Text style={[styles.actionButtonText, { color: chatColors.primary }]}>
               Send Template
             </Text>
@@ -834,7 +834,6 @@ const ChatInput = ({
       {/* Reply preview bar */}
       {replyingTo && (
         <View style={styles.replyPreview}>
-          <View style={styles.replyBar} />
           <View style={styles.replyContent}>
             <Text style={styles.replyTitle}>
               {replyingTo.sentBy === 'user' ? 'You' : 'Replying to'}
@@ -1061,36 +1060,36 @@ const ChatInput = ({
             <View style={styles.attachmentHandle} />
             <View style={styles.attachmentGrid}>
               <TouchableOpacity style={styles.attachmentOption} onPress={handlePickDocument}>
-                <View style={[styles.attachmentIcon, { backgroundColor: '#5E35B1' }]}>
-                  <Icon name="file-document" size={24} color={colors.common.white} />
+                <View style={[styles.attachmentIcon, { backgroundColor: '#5E35B115' }]}>
+                  <Icon name="file-document" size={26} color="#5E35B1" />
                 </View>
                 <Text style={styles.attachmentLabel}>Document</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.attachmentOption} onPress={handleTakePhoto}>
-                <View style={[styles.attachmentIcon, { backgroundColor: '#D32F2F' }]}>
-                  <Icon name="camera" size={24} color={colors.common.white} />
+                <View style={[styles.attachmentIcon, { backgroundColor: '#D32F2F15' }]}>
+                  <Icon name="camera" size={26} color="#D32F2F" />
                 </View>
                 <Text style={styles.attachmentLabel}>Camera</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.attachmentOption} onPress={handlePickImage}>
-                <View style={[styles.attachmentIcon, { backgroundColor: '#8E24AA' }]}>
-                  <Icon name="image" size={24} color={colors.common.white} />
+                <View style={[styles.attachmentIcon, { backgroundColor: '#8E24AA15' }]}>
+                  <Icon name="image" size={26} color="#8E24AA" />
                 </View>
                 <Text style={styles.attachmentLabel}>Gallery</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.attachmentOption} onPress={handlePickVideo}>
-                <View style={[styles.attachmentIcon, { backgroundColor: '#D32F2F' }]}>
-                  <Icon name="video" size={24} color={colors.common.white} />
+                <View style={[styles.attachmentIcon, { backgroundColor: '#D32F2F15' }]}>
+                  <Icon name="video" size={26} color="#D32F2F" />
                 </View>
                 <Text style={styles.attachmentLabel}>Video</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.attachmentOption} onPress={handlePickAudio}>
-                <View style={[styles.attachmentIcon, { backgroundColor: '#FF6F00' }]}>
-                  <Icon name="headphones" size={24} color={colors.common.white} />
+                <View style={[styles.attachmentIcon, { backgroundColor: '#FF6F0015' }]}>
+                  <Icon name="headphones" size={26} color="#FF6F00" />
                 </View>
                 <Text style={styles.attachmentLabel}>Audio</Text>
               </TouchableOpacity>
@@ -1133,42 +1132,51 @@ const ChatInput = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: chatColors.inputBg,
-    borderTopWidth: 1,
-    borderTopColor: colors.divider,
-    // paddingBottom is set dynamically based on safe area insets
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
 
   // Action button container (for intervene, stop AI, send template)
   actionButtonContainer: {
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 18,
     paddingHorizontal: 20,
   },
   actionButtonLarge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    width: '100%',
+    paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 8,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    gap: 10,
   },
   stopAiButton: {
     borderColor: colors.error.main,
-    backgroundColor: colors.error.lighter,
+    backgroundColor: `${colors.error.main}08`,
   },
   interveneButton: {
     borderColor: chatColors.primary,
-    backgroundColor: `${chatColors.primary}10`,
+    backgroundColor: `${chatColors.primary}08`,
   },
   sendTemplateButton: {
     borderColor: chatColors.primary,
-    backgroundColor: `${chatColors.primary}10`,
+    backgroundColor: `${chatColors.primary}08`,
   },
   actionButtonText: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   windowStatusText: {
     fontSize: 12,
@@ -1186,50 +1194,46 @@ const styles = StyleSheet.create({
   windowExpiredBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.warning.lighter,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-    gap: 8,
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 14,
+    gap: 10,
   },
   windowExpiredText: {
-    fontSize: 12,
-    color: colors.warning.dark,
+    fontSize: 13,
+    color: '#92400E',
     fontWeight: '500',
+    flex: 1,
   },
   templateHint: {
-    fontSize: 11,
-    color: colors.text.secondary,
-    marginTop: 10,
+    fontSize: 12,
+    color: colors.text.tertiary,
+    marginTop: 12,
     textAlign: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
   },
 
   // Reply preview styles
   replyPreview: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.common.white,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 12,
+    marginTop: 8,
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  replyBar: {
-    width: 4,
-    height: '100%',
-    minHeight: 36,
-    backgroundColor: chatColors.primary,
-    borderRadius: 2,
-    marginRight: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: chatColors.primary,
   },
   replyContent: {
     flex: 1,
   },
   replyTitle: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: chatColors.primary,
   },
   replyText: {
@@ -1238,28 +1242,30 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   cancelReplyButton: {
-    padding: 8,
+    padding: 6,
+    marginLeft: 8,
   },
 
   // File preview styles
   filePreview: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.common.white,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 12,
+    marginTop: 8,
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    paddingHorizontal: 12,
+    borderRadius: 12,
   },
   filePreviewImage: {
     width: 48,
     height: 48,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   filePreviewIcon: {
     width: 48,
     height: 48,
-    borderRadius: 8,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1269,73 +1275,74 @@ const styles = StyleSheet.create({
   },
   filePreviewName: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.text.primary,
   },
   filePreviewSize: {
     fontSize: 12,
-    color: colors.text.secondary,
-    marginTop: 2,
+    color: colors.text.tertiary,
+    marginTop: 3,
   },
   filePreviewRemove: {
-    padding: 4,
+    padding: 6,
+    marginLeft: 8,
   },
 
   // Formatting toolbar styles
   formattingToolbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.common.white,
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 12,
+    marginTop: 8,
     paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    gap: 2,
   },
   formatButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 2,
   },
   formatButtonActive: {
     backgroundColor: `${chatColors.primary}15`,
   },
   formatDivider: {
     width: 1,
-    height: 24,
-    backgroundColor: colors.divider,
-    marginHorizontal: 8,
+    height: 20,
+    backgroundColor: colors.grey[200],
+    marginHorizontal: 6,
   },
 
   // Input row styles - WhatsApp style
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 8,
-    paddingTop: 16,
-    paddingBottom: 24,
-    paddingRight: 12,
-    paddingLeft: 12,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
   inputContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: colors.common.white,
+    backgroundColor: '#FFFFFF',
     borderRadius: 24,
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
     minHeight: 48,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
       },
       android: {
-        elevation: 1,
+        elevation: 2,
       },
     }),
   },
@@ -1349,7 +1356,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: colors.text.primary,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 4,
     maxHeight: 120,
     fontWeight: '400',
@@ -1371,6 +1378,17 @@ const styles = StyleSheet.create({
   },
   sendButtonActive: {
     backgroundColor: chatColors.accent,
+    ...Platform.select({
+      ios: {
+        shadowColor: chatColors.accent,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.35,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   micButton: {
     backgroundColor: chatColors.accent,
@@ -1379,24 +1397,24 @@ const styles = StyleSheet.create({
   // Attachment modal styles
   attachmentOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'flex-end',
   },
   attachmentContainer: {
-    backgroundColor: colors.common.white,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 24,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
     paddingBottom: 40,
-    paddingTop: 12,
+    paddingTop: 14,
   },
   attachmentHandle: {
-    width: 40,
+    width: 36,
     height: 4,
     backgroundColor: colors.grey[300],
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   attachmentGrid: {
     flexDirection: 'row',
@@ -1406,18 +1424,19 @@ const styles = StyleSheet.create({
   attachmentOption: {
     alignItems: 'center',
     width: '33%',
-    marginBottom: 24,
+    marginBottom: 28,
   },
   attachmentIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 54,
+    height: 54,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   attachmentLabel: {
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: '500',
     color: colors.text.secondary,
   },
 });

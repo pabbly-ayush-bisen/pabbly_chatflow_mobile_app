@@ -260,15 +260,15 @@ export default function TemplatesScreen() {
           {/* Bottom Row: Type, Format, Language, Preview */}
           <View style={styles.cardBottomRow}>
             <View style={styles.cardTags}>
-              <View style={[styles.typeChip, { backgroundColor: typeConfig.color + '12' }]}>
+              <View style={[styles.chip, { backgroundColor: typeConfig.color + '12' }]}>
                 <Icon name="tag-outline" size={12} color={typeConfig.color} />
-                <Text style={[styles.typeChipText, { color: typeConfig.color }]}>
+                <Text style={[styles.chipText, { color: typeConfig.color }]}>
                   {typeConfig.label}
                 </Text>
               </View>
-              <View style={[styles.formatChip, { backgroundColor: formatConfig.color + '12' }]}>
+              <View style={[styles.chip, { backgroundColor: formatConfig.color + '12' }]}>
                 <Icon name={formatConfig.icon} size={12} color={formatConfig.color} />
-                <Text style={[styles.formatChipText, { color: formatConfig.color }]}>
+                <Text style={[styles.chipText, { color: formatConfig.color }]}>
                   {formatConfig.label}
                 </Text>
               </View>
@@ -655,7 +655,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  typeChip: {
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
@@ -663,19 +663,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 4,
   },
-  typeChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  formatChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
-  },
-  formatChipText: {
+  chipText: {
     fontSize: 11,
     fontWeight: '600',
   },
