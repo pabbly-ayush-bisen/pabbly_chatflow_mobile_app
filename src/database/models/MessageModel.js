@@ -53,6 +53,28 @@ class MessageModel {
     const msgData = message.message || message;
     const messageType = this._extractMessageType(message, msgData);
 
+    // Reuse existing helper to extract media fields from message
+    const mediaInfo = this._extractMediaInfo(msgData, messageType);
+
+    // Extract reaction data — supports both array and single-object shapes
+    const reactionJson = (() => {
+      if (message.reactions && message.reactions.length > 0) {
+        return JSON.stringify(message.reactions);
+      }
+      if (message.reaction) {
+        return JSON.stringify(message.reaction);
+      }
+      return null;
+    })();
+
+    // Extract interactive data from nested or top-level location
+    const interactive = message.message?.interactive || message.interactive;
+    const interactiveJson = interactive ? JSON.stringify(interactive) : null;
+
+    // Extract template data from nested or top-level location
+    const template = message.message?.template || message.template;
+    const templateJson = template ? JSON.stringify(template) : null;
+
     return {
       id: generateUUID(),
       server_id: message._id || message.id || null,
@@ -62,11 +84,11 @@ class MessageModel {
       direction: message.direction || (message.isFromMe ? 'outbound' : 'inbound'),
       type: messageType,
       body: this._extractBody(msgData, messageType), // For search only
-      media_url: null, // Simplified - full data is in metadata
-      media_mime_type: null,
-      media_filename: null,
-      media_caption: null,
-      thumbnail_url: null,
+      media_url: mediaInfo.url || null,
+      media_mime_type: mediaInfo.mimeType || null,
+      media_filename: mediaInfo.filename || null,
+      media_caption: mediaInfo.caption || null,
+      thumbnail_url: mediaInfo.thumbnail || null,
       status: message.status || 'sent',
       timestamp: message.timestamp
         ? new Date(message.timestamp).getTime()
@@ -74,14 +96,14 @@ class MessageModel {
       sent_at: message.sentAt ? new Date(message.sentAt).getTime() : null,
       delivered_at: message.deliveredAt ? new Date(message.deliveredAt).getTime() : null,
       read_at: message.readAt ? new Date(message.readAt).getTime() : null,
-      reaction: null,
-      reply_to_id: message.context?.message_id || message.replyTo || null,
-      context_message: null,
-      interactive_data: null,
-      template_data: null,
+      reaction: reactionJson,
+      reply_to_id: message.context?.message_id || message.context?.id || message.replyToWamid || message.replyTo || null,
+      context_message: message.context ? JSON.stringify(message.context) : null,
+      interactive_data: interactiveJson,
+      template_data: templateJson,
       metadata: fullMessageJson, // FULL ORIGINAL MESSAGE - this is the source of truth
       is_from_me: message.isFromMe || message.direction === 'outbound' ? 1 : 0,
-      sender_name: message.senderName || message.sender?.name || null,
+      sender_name: message.senderName || message.sender?.name || message.from?.name || null,
       sender_phone: message.senderPhone || message.sender?.phone || null,
       error_code: message.error?.code || null,
       error_message: message.error?.message || null,
@@ -94,6 +116,12 @@ class MessageModel {
       local_media_path: null,
       local_thumbnail_path: null,
       media_download_status: 'none',
+      // V13 columns — sender info, system messages, reactions
+      sender_type: message.from?.type || null,
+      sender_id: message.from?.id || null,
+      system_message_type: message.systemMessageType || null,
+      system_metadata: message.systemMetadata ? JSON.stringify(message.systemMetadata) : null,
+      reactions_json: message.reactions ? JSON.stringify(message.reactions) : null,
     };
   }
 
@@ -159,10 +187,10 @@ class MessageModel {
     const type = messageType || message.type;
     const mediaData = message[type] || {};
 
-    // Also check direct properties on message
+    // Also check direct properties on message (API stores link/caption flat on msgData)
     return {
-      url: mediaData.link || mediaData.url || mediaData.id || message.mediaUrl || null,
-      mimeType: mediaData.mime_type || mediaData.mimeType || message.mimeType || null,
+      url: mediaData.link || mediaData.url || mediaData.id || message.link || message.url || message.mediaUrl || null,
+      mimeType: mediaData.mime_type || mediaData.mimeType || message.mime_type || message.mimeType || null,
       filename: mediaData.filename || message.filename || null,
       caption: mediaData.caption || message.caption || null,
       thumbnail: mediaData.thumbnail || message.thumbnail || null,
@@ -200,10 +228,9 @@ class MessageModel {
       }
     }
 
-    // FALLBACK: Reconstruct basic message if metadata parsing fails
-    // This should rarely happen, but provides safety
-
-    return {
+    // FALLBACK: Reconstruct from individual columns when metadata is missing/corrupted.
+    // This provides safety if the JSON blob is truncated (50KB limit) or corrupted.
+    const fallbackMessage = {
       _id: record.server_id || record.temp_id,
       id: record.server_id || record.temp_id,
       wamid: record.wa_message_id,
@@ -211,22 +238,117 @@ class MessageModel {
       chatId: record.chat_id,
       direction: record.direction,
       isFromMe: Boolean(record.is_from_me),
-      status: record.status,
-      timestamp: record.timestamp,
+      status: record.status || 'sent',
+      timestamp: record.timestamp
+        ? new Date(record.timestamp).toISOString()
+        : new Date().toISOString(),
+      createdAt: record.created_at
+        ? new Date(record.created_at).toISOString()
+        : undefined,
       senderName: record.sender_name,
       senderPhone: record.sender_phone,
       message: {
-        type: record.type,
-        body: record.body,
+        type: record.type || 'text',
+        body: record.body || '',
       },
+      tempId: record.temp_id || undefined,
+      isOptimistic: Boolean(record.is_pending),
+      isPending: Boolean(record.is_pending),
       _cached: true,
       _syncedAt: record.synced_at,
-      isPending: Boolean(record.is_pending),
-      tempId: record.temp_id,
-      _localMediaPath: record.local_media_path || null,
-      _localThumbnailPath: record.local_thumbnail_path || null,
+      _localMediaPath: record.local_media_path || undefined,
+      _localThumbnailPath: record.local_thumbnail_path || undefined,
       _mediaDownloadStatus: record.media_download_status || 'none',
     };
+
+    // Restore media data from individual columns
+    if (record.media_url) {
+      const mediaType = record.type || 'image';
+      fallbackMessage.message[mediaType] = {
+        link: record.media_url,
+        mime_type: record.media_mime_type,
+        filename: record.media_filename,
+        caption: record.media_caption,
+      };
+      if (record.thumbnail_url) {
+        fallbackMessage.message[mediaType].thumbnail = record.thumbnail_url;
+      }
+    }
+    if (record.media_caption) {
+      fallbackMessage.message.caption = record.media_caption;
+    }
+
+    // Restore reactions
+    if (record.reactions_json) {
+      try {
+        fallbackMessage.reactions = JSON.parse(record.reactions_json);
+      } catch (e) { /* ignore parse error */ }
+    } else if (record.reaction) {
+      try {
+        const parsed = JSON.parse(record.reaction);
+        if (Array.isArray(parsed)) {
+          fallbackMessage.reactions = parsed;
+        } else {
+          fallbackMessage.reaction = parsed;
+        }
+      } catch (e) { /* ignore parse error */ }
+    }
+
+    // Restore reply context
+    if (record.reply_to_id) {
+      fallbackMessage.context = { message_id: record.reply_to_id, id: record.reply_to_id };
+      fallbackMessage.replyTo = record.reply_to_id;
+      fallbackMessage.replyToWamid = record.reply_to_id;
+    }
+    if (record.context_message) {
+      try {
+        fallbackMessage.context = JSON.parse(record.context_message);
+      } catch (e) { /* ignore parse error */ }
+    }
+
+    // Restore interactive data
+    if (record.interactive_data) {
+      try {
+        fallbackMessage.message.interactive = JSON.parse(record.interactive_data);
+        fallbackMessage.interactive = fallbackMessage.message.interactive;
+      } catch (e) { /* ignore parse error */ }
+    }
+
+    // Restore template data
+    if (record.template_data) {
+      try {
+        fallbackMessage.message.template = JSON.parse(record.template_data);
+      } catch (e) { /* ignore parse error */ }
+    }
+
+    // Restore sender badge info (V13 columns)
+    if (record.sender_type) {
+      fallbackMessage.from = {
+        type: record.sender_type,
+        name: record.sender_name,
+        id: record.sender_id,
+      };
+    }
+
+    // Restore system message data (V13 columns)
+    if (record.system_message_type) {
+      fallbackMessage.systemMessageType = record.system_message_type;
+    }
+    if (record.system_metadata) {
+      try {
+        fallbackMessage.systemMetadata = JSON.parse(record.system_metadata);
+      } catch (e) { /* ignore parse error */ }
+    }
+
+    // Restore error info
+    if (record.error_code || record.error_message) {
+      fallbackMessage.error = {
+        code: record.error_code,
+        message: record.error_message,
+      };
+    }
+
+    return fallbackMessage;
   }
 
   /**
