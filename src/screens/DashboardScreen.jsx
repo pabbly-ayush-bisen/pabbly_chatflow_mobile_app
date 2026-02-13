@@ -17,9 +17,6 @@ import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import PabblyIcon from '../components/PabblyIcon';
 import {
-  getDashboardStats,
-  getWANumbers,
-  getFolders,
   setFolderFilter,
   syncWhatsAppBusinessInfo,
   clearDashboardError
@@ -31,7 +28,13 @@ import {
   loginViaTeammemberAccount,
   logoutFromTeammember,
 } from '../redux/slices/userSlice';
-import { callApi, endpoints, httpMethods } from '../utils/axios';
+import {
+  fetchDashboardStatsWithCache,
+  fetchWANumbersWithCache,
+  fetchFoldersWithCache,
+  fetchTeamMembersWithCache,
+  fetchSharedAccountsWithCache,
+} from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
 import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
 import { useNetwork } from '../contexts/NetworkContext';
@@ -62,20 +65,6 @@ export default function DashboardScreen() {
   const [syncingId, setSyncingId] = useState(null);
   const [accessingSharedId, setAccessingSharedId] = useState(null);
   const [exitingTeamMember, setExitingTeamMember] = useState(false);
-
-  // Team members (view-only) + accounts shared with you (access now)
-  const [teamMembersLoading, setTeamMembersLoading] = useState(true);
-  const [teamMembersError, setTeamMembersError] = useState(null);
-  const [teamMembers, setTeamMembers] = useState([]);
-  const [teamMemberStats, setTeamMemberStats] = useState({
-    totalMembers: 0,
-    activeMembers: 0,
-    inactiveMembers: 0,
-  });
-
-  const [sharedAccountsLoading, setSharedAccountsLoading] = useState(true);
-  const [sharedAccountsError, setSharedAccountsError] = useState(null);
-  const [sharedAccounts, setSharedAccounts] = useState([]);
 
   // Folder scroll UX: auto-scroll active folder into view
   const foldersScrollRef = useRef(null);
@@ -182,6 +171,13 @@ export default function DashboardScreen() {
     folders,
     foldersCount,
     selectedFolder,
+    teamMembers,
+    teamMembersStatus,
+    teamMembersError,
+    teamMemberStats,
+    sharedAccounts,
+    sharedAccountsStatus,
+    sharedAccountsError,
   } = useSelector((state) => state.dashboard);
 
   const { settingId, teamMemberStatus, user } = useSelector((state) => state.user);
@@ -206,7 +202,7 @@ export default function DashboardScreen() {
     if (user?.email) return user.email.split('@')[0];
     return 'there';
   };
-  const isRefreshing = statsStatus === 'loading' && accountStatus === 'loading' && folderStatus === 'loading';
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const scrollActiveFolderIntoView = useCallback(() => {
     const id = selectedFolder?._id;
@@ -255,13 +251,16 @@ export default function DashboardScreen() {
     return all.find((f) => f?._id === folderId) || null;
   }, [flattenFolders]);
 
-  // Load initial data (only if online)
+  // Load initial data (cache-first: shows cached data instantly, refreshes silently)
   useEffect(() => {
-    if (isNetworkAvailable) {
-      dispatch(getDashboardStats());
-      dispatch(getFolders({ sort: -1 }));
+    dispatch(fetchDashboardStatsWithCache({}));
+    dispatch(fetchFoldersWithCache({}));
+    // Load team member widgets for admin users
+    if (!isTeamMemberLoggedIn) {
+      dispatch(fetchTeamMembersWithCache({}));
+      dispatch(fetchSharedAccountsWithCache({}));
     }
-  }, [dispatch, isNetworkAvailable]);
+  }, [dispatch, isTeamMemberLoggedIn]);
 
   // Log mobileDevices from settings (for OneSignal testing)
   useEffect(() => {
@@ -273,90 +272,12 @@ export default function DashboardScreen() {
     }
   }, [dispatch, isNetworkAvailable]);
 
-  const loadTeamMemberWidgets = useCallback(async ({ force = false } = {}) => {
-    // When logged in as a team member, these admin endpoints are not allowed.
-    // These sections are hidden in UI, so skip fetching entirely.
-    if (!force && isTeamMemberLoggedIn) {
-      setTeamMembersLoading(false);
-      setSharedAccountsLoading(false);
-      setTeamMembersError(null);
-      setSharedAccountsError(null);
-      return;
-    }
-
-    // Don't fetch if offline - skip silently without setting errors
-    if (isOffline) {
-      setTeamMembersLoading(false);
-      setSharedAccountsLoading(false);
-      return;
-    }
-
-    try {
-      setTeamMembersError(null);
-      setSharedAccountsError(null);
-      setTeamMembersLoading(true);
-      setSharedAccountsLoading(true);
-
-      const [teamMembersRes, sharedRes] = await Promise.all([
-        // Use settings endpoint with keys=teamMembers to get actual list (same as web frontend)
-        callApi(`${endpoints.settings.getSettings}?keys=teamMembers&skip=0&limit=1000&order=-1`, httpMethods.GET),
-        callApi(`${endpoints.teamMember.WANumberAccess}?skip=0&limit=1000&order=-1`, httpMethods.GET),
-      ]);
-
-      if (teamMembersRes?.success && teamMembersRes.status !== 'error') {
-        // Web frontend structure: { teamMembers: { items: [...], totalCount: number } }
-        const teamMembersData = teamMembersRes.data?.teamMembers || {};
-        const membersList = teamMembersData?.items || teamMembersData?.teamMembers || [];
-        setTeamMembers(membersList);
-        setTeamMemberStats({
-          totalMembers: teamMembersData?.totalCount ?? membersList.length,
-          activeMembers: membersList.filter(m => m?.status === 'active').length,
-          inactiveMembers: membersList.filter(m => m?.status !== 'active').length,
-        });
-      } else {
-        setTeamMembersError(teamMembersRes?.error || teamMembersRes?.message || 'Failed to load team members');
-      }
-
-      if (sharedRes?.success && sharedRes.status !== 'error') {
-        // API returns { totalCount, teamMembers } in web app; keep fallback to items for safety
-        const items = sharedRes.data?.teamMembers || sharedRes.data?.items || [];
-        setSharedAccounts(items);
-      } else {
-        setSharedAccountsError(sharedRes?.error || sharedRes?.message || 'Failed to load shared accounts');
-      }
-    } catch (e) {
-      // Only set errors if not offline (network errors during offline mode should be silent)
-      if (!isOffline) {
-        setTeamMembersError(e?.message || 'Failed to load team members');
-        setSharedAccountsError(e?.message || 'Failed to load shared accounts');
-      }
-    } finally {
-      setTeamMembersLoading(false);
-      setSharedAccountsLoading(false);
-    }
-  }, [isTeamMemberLoggedIn, isOffline]);
-
-  // Load team-member widgets only when admin user is active and online
-  useEffect(() => {
-    if (!isTeamMemberLoggedIn && isNetworkAvailable) {
-      loadTeamMemberWidgets();
-    }
-  }, [isTeamMemberLoggedIn, loadTeamMemberWidgets, isNetworkAvailable]);
-
-  // Clear errors and re-fetch data when network becomes available
+  // Clear errors and re-fetch when network becomes available
   useEffect(() => {
     if (isNetworkAvailable) {
-      // Clear any existing errors (both local state and Redux)
-      setTeamMembersError(null);
-      setSharedAccountsError(null);
       dispatch(clearDashboardError());
-
-      // Re-fetch data if we have errors or empty data
-      if (!isTeamMemberLoggedIn && (teamMembers.length === 0 || sharedAccounts.length === 0)) {
-        loadTeamMemberWidgets();
-      }
     }
-  }, [isNetworkAvailable, isTeamMemberLoggedIn, teamMembers.length, sharedAccounts.length, loadTeamMemberWidgets, dispatch]);
+  }, [isNetworkAvailable, dispatch]);
 
   // Set default folder when folders are loaded:
   // - Prefer the persisted folder (selectedFolderId) from "Access Inbox"
@@ -436,12 +357,12 @@ export default function DashboardScreen() {
   }, [settingId, folders, dispatch, findFolderById, isTeamMemberLoggedIn]);
 
   // Fetch WA numbers when selected folder changes
-  const fetchWANumbers = useCallback(() => {
-    const params = { skip: 0, limit: 20 };
+  const fetchWANumbers = useCallback(({ forceRefresh = false } = {}) => {
+    const params = { forceRefresh };
     if (selectedFolder?._id) {
       params.folderId = selectedFolder._id;
     }
-    dispatch(getWANumbers(params));
+    dispatch(fetchWANumbersWithCache(params));
   }, [dispatch, selectedFolder]);
 
   useEffect(() => {
@@ -473,23 +394,29 @@ export default function DashboardScreen() {
     }
   }, [settingId, whatsappNumbers, accountStatus, isTeamMemberLoggedIn, dispatch]);
 
-  const loadDashboardData = useCallback(() => {
-    // Don't fetch if offline
-    if (isOffline) return;
-
-    dispatch(getDashboardStats());
-    dispatch(getFolders({ sort: -1 }));
-    fetchWANumbers();
+  const loadDashboardData = useCallback(async () => {
+    const promises = [
+      dispatch(fetchDashboardStatsWithCache({ forceRefresh: true })),
+      dispatch(fetchFoldersWithCache({ forceRefresh: true })),
+      dispatch(fetchWANumbersWithCache({ forceRefresh: true, folderId: selectedFolder?._id })),
+    ];
     if (!isTeamMemberLoggedIn) {
-      loadTeamMemberWidgets();
+      promises.push(
+        dispatch(fetchTeamMembersWithCache({ forceRefresh: true })),
+        dispatch(fetchSharedAccountsWithCache({ forceRefresh: true })),
+      );
     }
-  }, [dispatch, fetchWANumbers, isTeamMemberLoggedIn, loadTeamMemberWidgets, isOffline]);
+    await Promise.all(promises);
+  }, [dispatch, selectedFolder, isTeamMemberLoggedIn]);
 
-  const onRefresh = () => {
-    // Don't refresh if offline
-    if (isOffline) return;
-    loadDashboardData();
-  };
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadDashboardData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadDashboardData]);
 
   // Handlers - Same as web app's handleSettingId
   const handleAccessInbox = async (numberId) => {
@@ -574,12 +501,12 @@ export default function DashboardScreen() {
 
         // Reload all dashboard data for the team member context
         await Promise.all([
-          dispatch(getDashboardStats()),
-          dispatch(getFolders({ sort: -1 })),
+          dispatch(fetchDashboardStatsWithCache({ forceRefresh: true })),
+          dispatch(fetchFoldersWithCache({ forceRefresh: true })),
         ]);
 
         // Fetch WhatsApp numbers
-        fetchWANumbers();
+        fetchWANumbers({ forceRefresh: true });
 
         // Fetch fresh inbox chats for the new account
         dispatch(fetchChats({ all: true }));
@@ -627,18 +554,19 @@ export default function DashboardScreen() {
 
       // Reload all dashboard data for admin context
       await Promise.all([
-        dispatch(getDashboardStats()),
-        dispatch(getFolders({ sort: -1 })),
+        dispatch(fetchDashboardStatsWithCache({ forceRefresh: true })),
+        dispatch(fetchFoldersWithCache({ forceRefresh: true })),
       ]);
 
       // Fetch WhatsApp numbers
-      fetchWANumbers();
+      fetchWANumbers({ forceRefresh: true });
 
       // Fetch fresh inbox chats for the admin account
       dispatch(fetchChats({ all: true }));
 
       // Reload team member widgets (admin-only data)
-      loadTeamMemberWidgets({ force: true });
+      dispatch(fetchTeamMembersWithCache({ forceRefresh: true }));
+      dispatch(fetchSharedAccountsWithCache({ forceRefresh: true }));
     } catch (error) {
       // Error:('Failed to logout from team member:', error);
     } finally {
@@ -647,7 +575,7 @@ export default function DashboardScreen() {
   };
 
   const renderTeamMembersPreview = () => {
-    if (teamMembersLoading) {
+    if (teamMembersStatus === 'loading') {
       return <TeamMembersListSkeleton count={3} />;
     }
 
@@ -702,7 +630,7 @@ export default function DashboardScreen() {
   };
 
   const renderSharedAccounts = () => {
-    if (sharedAccountsLoading) {
+    if (sharedAccountsStatus === 'loading') {
       return <SharedAccountsListSkeleton count={3} />;
     }
 
