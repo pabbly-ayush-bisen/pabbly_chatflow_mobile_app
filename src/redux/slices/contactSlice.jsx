@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import { fetchContactsWithCache, fetchContactListsWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getContactList = createAsyncThunk(
@@ -205,6 +206,21 @@ const contactSlice = createSlice({
       state.statsError = null;
       state.gotoChatError = null;
     },
+    // Silent update from background refresh — updates data without loading states
+    silentUpdateContacts: (state, action) => {
+      const { contacts, totalCount } = action.payload;
+      state.contacts = contacts;
+      if (typeof totalCount === 'number') {
+        state.totalCount = totalCount;
+      }
+    },
+    silentUpdateContactLists: (state, action) => {
+      const { contactsCount, totalLists, totalContactsCount, unassignedCount } = action.payload;
+      state.contactListData = contactsCount || [];
+      state.totalListCount = totalLists || 0;
+      state.totalContactsCount = totalContactsCount || 0;
+      state.unassignedCount = unassignedCount || 0;
+    },
   },
   extraReducers: (builder) => {
     // Get Contact List
@@ -335,6 +351,50 @@ const contactSlice = createSlice({
         state.contactStatsStatus = 'failed';
         state.statsError = action.payload;
       });
+
+    // Fetch Contacts with Cache
+    builder
+      .addCase(fetchContactsWithCache.pending, (state) => {
+        state.contactsStatus = 'loading';
+        state.contactsError = null;
+      })
+      .addCase(fetchContactsWithCache.fulfilled, (state, action) => {
+        state.contactsStatus = 'succeeded';
+        const { contacts, totalCount, skip } = action.payload;
+
+        if (skip > 0) {
+          state.contacts = [...state.contacts, ...contacts];
+        } else {
+          state.contacts = contacts;
+        }
+
+        if (typeof totalCount === 'number') {
+          state.totalCount = totalCount;
+        }
+      })
+      .addCase(fetchContactsWithCache.rejected, (state, action) => {
+        state.contactsStatus = 'failed';
+        state.contactsError = action.payload;
+      });
+
+    // Fetch Contact Lists with Cache
+    builder
+      .addCase(fetchContactListsWithCache.pending, (state) => {
+        state.contactListStatus = 'loading';
+        state.contactListError = null;
+      })
+      .addCase(fetchContactListsWithCache.fulfilled, (state, action) => {
+        state.contactListStatus = 'succeeded';
+        const data = action.payload;
+        state.contactListData = data.contactsCount || [];
+        state.totalListCount = data.totalLists || 0;
+        state.totalContactsCount = data.totalContactsCount || 0;
+        state.unassignedCount = data.unassignedCount || 0;
+      })
+      .addCase(fetchContactListsWithCache.rejected, (state, action) => {
+        state.contactListStatus = 'failed';
+        state.contactListError = action.payload;
+      });
   },
 });
 
@@ -343,6 +403,8 @@ export const {
   setShouldFetchContacts,
   setShouldFetchStats,
   clearContactError,
+  silentUpdateContacts,
+  silentUpdateContactLists,
 } = contactSlice.actions;
 
 export default contactSlice.reducer;

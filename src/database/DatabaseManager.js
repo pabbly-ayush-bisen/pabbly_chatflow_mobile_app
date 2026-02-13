@@ -167,6 +167,10 @@ class DatabaseManager {
     if (fromVersion < 14 && toVersion >= 14) {
       await this._migrateToV14();
     }
+
+    if (fromVersion < 15 && toVersion >= 15) {
+      await this._migrateToV15();
+    }
   }
 
   /**
@@ -217,6 +221,33 @@ class DatabaseManager {
         await this.db.execAsync(CREATE_TABLES_SQL[table]);
       } catch (error) {
         // Table may already exist — non-fatal
+      }
+    }
+  }
+
+  /**
+   * Migration to version 15: Add ContactsScreen offline caching support.
+   * - Creates contact_lists table for caching contact list groups
+   * - Adds list_name and metadata columns to existing contacts table
+   */
+  async _migrateToV15() {
+    // 1. Create contact_lists table
+    try {
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACT_LISTS]);
+    } catch (error) {
+      // Table may already exist — non-fatal
+    }
+
+    // 2. Add new columns to contacts table
+    const columns = [
+      `ALTER TABLE ${Tables.CONTACTS} ADD COLUMN list_name TEXT`,
+      `ALTER TABLE ${Tables.CONTACTS} ADD COLUMN metadata TEXT`,
+    ];
+    for (const sql of columns) {
+      try {
+        await this.db.execAsync(sql);
+      } catch (error) {
+        // Column may already exist
       }
     }
   }
@@ -795,6 +826,7 @@ class DatabaseManager {
       Tables.QUICK_REPLIES,
       Tables.DASHBOARD_STATS,
       Tables.APP_SETTINGS,
+      Tables.CONTACT_LISTS,
     ];
 
     for (const table of tables) {

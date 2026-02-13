@@ -1051,6 +1051,296 @@ async function fetchSharedAccountsFromServer() {
   return result;
 }
 
+// ==========================================
+// CONTACTS CACHE THUNKS
+// ==========================================
+
+/**
+ * Fetch contacts with incremental page-by-page caching strategy.
+ *
+ * Only "All Contacts" (listName=null) are cached in SQLite. Filtered views
+ * (Unassigned, custom lists) always fetch from API since contacts can only be
+ * stored once per server_id+setting_id due to the UNIQUE constraint.
+ *
+ * Incremental caching flow for "All Contacts":
+ *   Page 1 → save 10 contacts to cache
+ *   Page 2 → append 10 more → cache now has 20
+ *   App restart → return all 20 from cache (no API calls)
+ *   User scrolls → fetch page 3 from API → cache now has 30
+ *
+ * forceRefresh (pull-to-refresh) → clear cache, fetch page 1 fresh.
+ * Search → fetch from API (full-text search); offline fallback to local SQL LIKE.
+ * Filtered views → always API; offline rejects.
+ */
+export const fetchContactsWithCache = createAsyncThunk(
+  'contacts/fetchContactsWithCache',
+  async (params = {}, { rejectWithValue }) => {
+    try {
+      const {
+        forceRefresh = false,
+        skip = 0,
+        limit = 10,
+        listName = null,
+        search = null,
+      } = params;
+
+      // ----------------------------------------------------------
+      // CASE A: Search query — always fetch from API for full results
+      // ----------------------------------------------------------
+      if (search) {
+        try {
+          const page = await fetchContactsPage({ skip, limit, listName, search });
+          // Don't cache search results — they're transient
+          return { contacts: page.contacts, totalCount: page.totalCount, skip };
+        } catch (apiError) {
+          // Offline fallback: search locally in cached contacts (SQL LIKE)
+          const fallback = await cacheManager.getContacts({ skip, limit, search, listName: null });
+          if (fallback.contacts.length > 0) {
+            return { contacts: fallback.contacts, totalCount: fallback.totalCount, skip, fromCache: true };
+          }
+          return rejectWithValue(apiError.message);
+        }
+      }
+
+      // ----------------------------------------------------------
+      // CASE B: Filtered view (Unassigned / custom list) — always API
+      // ----------------------------------------------------------
+      if (listName) {
+        try {
+          const page = await fetchContactsPage({ skip, limit, listName });
+          return { contacts: page.contacts, totalCount: page.totalCount, skip };
+        } catch (apiError) {
+          return rejectWithValue(apiError.message);
+        }
+      }
+
+      // ----------------------------------------------------------
+      // CASE C: "All Contacts" with forceRefresh (pull-to-refresh)
+      // ----------------------------------------------------------
+      if (forceRefresh) {
+        // Clear cache, fetch fresh page 1
+        const { ContactModel } = require('../database/models');
+        const settingId = cacheManager.getSettingId();
+        if (settingId) {
+          await ContactModel.clearContacts(settingId);
+        }
+
+        const page = await fetchContactsPage({ skip: 0, limit });
+        await cacheManager.saveContacts(page.contacts);
+        await cacheManager.saveContactServerTotal(page.totalCount);
+        return { contacts: page.contacts, totalCount: page.totalCount, skip: 0 };
+      }
+
+      // ----------------------------------------------------------
+      // CASE D: "All Contacts" initial load (skip=0) — cache-first
+      // ----------------------------------------------------------
+      if (skip === 0) {
+        // Check how many contacts are cached
+        const { ContactModel } = require('../database/models');
+        const settingId = cacheManager.getSettingId();
+        const cachedCount = settingId
+          ? await ContactModel.getContactCount(settingId)
+          : 0;
+
+        if (cachedCount > 0) {
+          // Return ALL cached contacts at once (accumulated pages from previous sessions)
+          const cacheResult = await cacheManager.getContacts({ skip: 0, limit: cachedCount });
+          const storedTotal = await cacheManager.getContactServerTotal();
+          return {
+            contacts: cacheResult.contacts,
+            totalCount: storedTotal ?? cachedCount,
+            skip: 0,
+            fromCache: true,
+          };
+        }
+
+        // Cache miss — fetch page 1 from API
+        try {
+          const page = await fetchContactsPage({ skip: 0, limit });
+          await cacheManager.saveContacts(page.contacts);
+          await cacheManager.saveContactServerTotal(page.totalCount);
+          return { contacts: page.contacts, totalCount: page.totalCount, skip: 0 };
+        } catch (apiError) {
+          return rejectWithValue(apiError.message);
+        }
+      }
+
+      // ----------------------------------------------------------
+      // CASE E: "All Contacts" load more (skip > 0) — fetch & append
+      // ----------------------------------------------------------
+      try {
+        const page = await fetchContactsPage({ skip, limit });
+        // Append new page to existing cache (don't clear)
+        await cacheManager.saveContacts(page.contacts, null, { append: true });
+        // Update stored total in case it changed
+        if (typeof page.totalCount === 'number') {
+          await cacheManager.saveContactServerTotal(page.totalCount);
+        }
+        return { contacts: page.contacts, totalCount: page.totalCount, skip };
+      } catch (apiError) {
+        // Offline: try serving the next slice from cache (if user previously cached beyond skip)
+        try {
+          const fallback = await cacheManager.getContacts({ skip, limit });
+          if (fallback.contacts.length > 0) {
+            const storedTotal = await cacheManager.getContactServerTotal();
+            return {
+              contacts: fallback.contacts,
+              totalCount: storedTotal ?? fallback.totalCount,
+              skip,
+              fromCache: true,
+            };
+          }
+        } catch (cacheErr) {
+          // Cache read also failed — fall through to reject
+        }
+        return rejectWithValue(apiError.message);
+      }
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch a single page of contacts from the API.
+ * @param {Object} options
+ * @param {number} options.skip - Number of contacts to skip
+ * @param {number} options.limit - Number of contacts to return
+ * @param {string|null} [options.listName] - List filter (null for "All", 'Unassigned' for unassigned, etc.)
+ * @param {string|null} [options.search] - Search query
+ * @returns {Promise<{contacts: Array, totalCount: number}>}
+ */
+async function fetchContactsPage({ skip = 0, limit = 10, listName = null, search = null } = {}) {
+  let url = `${endpoints.contacts.getContacts}?skip=${skip}&limit=${limit}`;
+
+  if (listName) {
+    url += `&list=${encodeURIComponent(listName)}`;
+  }
+
+  if (search) {
+    url += `&search=${encodeURIComponent(search)}`;
+  }
+
+  const response = await callApi(url, httpMethods.GET);
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch contacts');
+  }
+
+  const data = response.data || response;
+  const contacts = data.contacts || [];
+  const totalCount = typeof data.totalCount === 'number' ? data.totalCount : contacts.length;
+
+  return { contacts, totalCount };
+}
+
+/**
+ * Fetch contact lists with cache-first strategy.
+ *
+ * Contact lists are the filter chips shown on ContactsScreen (e.g., "Leads", "Customers").
+ * The lists array is cached in the contact_lists table; aggregate metadata
+ * (totalLists, totalContactsCount, unassignedCount) is cached in app_settings.
+ *
+ * Cache hit → return cached lists + metadata instantly, silently refresh from API.
+ * Cache miss or forceRefresh → fetch from API, save to cache, return.
+ */
+export const fetchContactListsWithCache = createAsyncThunk(
+  'contacts/fetchContactListsWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      // Try cache first
+      if (!forceRefresh) {
+        const cacheResult = await cacheManager.getContactLists();
+        const cachedMeta = await cacheManager.getAppSetting('contactListMeta');
+
+        if (cacheResult.fromCache) {
+          // Silently refresh from server in background
+          fetchContactListsFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateContactLists } = require('./slices/contactSlice');
+                dispatch(silentUpdateContactLists(freshData));
+              }
+            })
+            .catch(() => {
+              // Silent fail — cached data is already shown
+            });
+
+          return {
+            contactsCount: cacheResult.contactLists,
+            totalLists: cachedMeta?.totalLists || cacheResult.contactLists.length,
+            totalContactsCount: cachedMeta?.totalContactsCount || 0,
+            unassignedCount: cachedMeta?.unassignedCount || 0,
+            fromCache: true,
+          };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchContactListsFromServer();
+
+      return {
+        ...freshData,
+        fromCache: false,
+      };
+    } catch (error) {
+      // On error (e.g., offline), try to return cached data as fallback
+      try {
+        const fallback = await cacheManager.getContactLists();
+        const fallbackMeta = await cacheManager.getAppSetting('contactListMeta');
+
+        if (fallback.fromCache) {
+          return {
+            contactsCount: fallback.contactLists,
+            totalLists: fallbackMeta?.totalLists || fallback.contactLists.length,
+            totalContactsCount: fallbackMeta?.totalContactsCount || 0,
+            unassignedCount: fallbackMeta?.unassignedCount || 0,
+            fromCache: true,
+          };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed — fall through to reject
+      }
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch contact lists from API and save to SQLite.
+ * Saves the lists array to the contact_lists table and aggregate metadata
+ * (totalLists, totalContactsCount, unassignedCount) to app_settings.
+ * @returns {Promise<Object>} { contactsCount, totalLists, totalContactsCount, unassignedCount }
+ */
+async function fetchContactListsFromServer() {
+  const url = `${endpoints.contacts.getContactList}/?skip=1&limit=50`;
+  const response = await callApi(url, httpMethods.GET);
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch contact lists');
+  }
+
+  const data = response.data || response;
+  const contactsCount = data.contactsCount || [];
+  const totalLists = data.totalLists || contactsCount.length;
+  const totalContactsCount = data.totalContactsCount || 0;
+  const unassignedCount = data.unassignedCount || 0;
+
+  // Save lists array to contact_lists table
+  await cacheManager.saveContactLists(contactsCount);
+
+  // Save aggregate metadata to app_settings
+  await cacheManager.saveAppSetting('contactListMeta', {
+    totalLists,
+    totalContactsCount,
+    unassignedCount,
+  });
+
+  return { contactsCount, totalLists, totalContactsCount, unassignedCount };
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -1071,4 +1361,6 @@ export default {
   fetchFoldersWithCache,
   fetchTeamMembersWithCache,
   fetchSharedAccountsWithCache,
+  fetchContactsWithCache,
+  fetchContactListsWithCache,
 };
