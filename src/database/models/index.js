@@ -10,3 +10,5 @@ export { default as QuickReplyModel } from './QuickReplyModel';
 export { default as WANumberModel } from './WANumberModel';
 export { default as DashboardStatsModel, StatTypes } from './DashboardStatsModel';
 export { default as AppSettingsModel, SettingKeys } from './AppSettingsModel';
+export { default as ContactModel } from './ContactModel';
+export { default as ContactListModel } from './ContactListModel';

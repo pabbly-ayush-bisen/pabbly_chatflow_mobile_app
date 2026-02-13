@@ -12,7 +12,7 @@
  */
 
 import { databaseManager } from './DatabaseManager';
-import { ChatModel, MessageModel, QuickReplyModel, WANumberModel, DashboardStatsModel, AppSettingsModel } from './models';
+import { ChatModel, MessageModel, QuickReplyModel, WANumberModel, DashboardStatsModel, AppSettingsModel, ContactModel, ContactListModel } from './models';
 import { StatTypes } from './models/DashboardStatsModel';
 import { SettingKeys } from './models/AppSettingsModel';
 import { Tables, CacheKeys } from './schema';
@@ -378,6 +378,130 @@ class CacheManager {
     if (!settingId) return false;
 
     return QuickReplyModel.hasQuickReplies(settingId);
+  }
+
+  // ==========================================
+  // CONTACTS CACHE OPERATIONS
+  // ==========================================
+
+  /**
+   * Get contacts from cache with pagination, search, and list filtering.
+   * @param {Object} [options] - Query options (skip, limit, search, listName)
+   * @returns {Promise<{contacts: Array, totalCount: number, fromCache: boolean}>}
+   */
+  async getContacts(options = {}) {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return { contacts: [], totalCount: 0, fromCache: false };
+
+    const result = await ContactModel.getContacts(settingId, options);
+    return {
+      contacts: result.contacts,
+      totalCount: result.totalCount,
+      fromCache: result.contacts.length > 0,
+    };
+  }
+
+  /**
+   * Save contacts to cache
+   * @param {Array} contacts - Array of contact objects from API
+   * @param {string} [listName] - The list name filter (null for "All Contacts")
+   * @param {Object} [options] - Save options
+   * @param {boolean} [options.append=false] - If true, append without clearing existing data
+   * @returns {Promise<void>}
+   */
+  async saveContacts(contacts, listName = null, { append = false } = {}) {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId || !contacts) return;
+
+    await ContactModel.saveContacts(contacts, settingId, listName, { append });
+  }
+
+  /**
+   * Save the server-reported total contacts count for a list.
+   * Stored in app_settings so we know how many contacts exist on the server
+   * even when only a subset is cached locally (incremental page-by-page caching).
+   * @param {number} totalCount - Server-reported total contacts count
+   * @param {string} [listName] - The list name (null for "All Contacts")
+   * @returns {Promise<void>}
+   */
+  async saveContactServerTotal(totalCount, listName = null) {
+    await this.ensureInitialized();
+    const key = listName ? `contactsTotal_${listName}` : 'contactsTotal_all';
+    await AppSettingsModel.save(key, { totalCount }, this.currentSettingId);
+  }
+
+  /**
+   * Get the server-reported total contacts count for a list.
+   * @param {string} [listName] - The list name (null for "All Contacts")
+   * @returns {Promise<number|null>} The stored total count, or null if not cached
+   */
+  async getContactServerTotal(listName = null) {
+    await this.ensureInitialized();
+    const key = listName ? `contactsTotal_${listName}` : 'contactsTotal_all';
+    const data = await AppSettingsModel.get(key, this.currentSettingId);
+    return data?.totalCount ?? null;
+  }
+
+  /**
+   * Check if contacts are cached for current setting
+   * @returns {Promise<boolean>}
+   */
+  async hasContacts() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return false;
+
+    return ContactModel.hasContacts(settingId);
+  }
+
+  // ==========================================
+  // CONTACT LISTS CACHE OPERATIONS
+  // ==========================================
+
+  /**
+   * Get contact lists from cache
+   * @returns {Promise<{contactLists: Array, fromCache: boolean}>}
+   */
+  async getContactLists() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return { contactLists: [], fromCache: false };
+
+    const contactLists = await ContactListModel.getContactLists(settingId);
+    return { contactLists, fromCache: contactLists.length > 0 };
+  }
+
+  /**
+   * Save contact lists to cache
+   * @param {Array} lists - Array of contact list objects from API
+   * @returns {Promise<void>}
+   */
+  async saveContactLists(lists) {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId || !lists) return;
+
+    await ContactListModel.saveContactLists(lists, settingId);
+  }
+
+  /**
+   * Check if contact lists are cached for current setting
+   * @returns {Promise<boolean>}
+   */
+  async hasContactLists() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return false;
+
+    return ContactListModel.hasContactLists(settingId);
   }
 
   // ==========================================

@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 // Table Names
 export const Tables = {
@@ -21,6 +21,7 @@ export const Tables = {
   WA_NUMBERS: 'wa_numbers',
   DASHBOARD_STATS: 'dashboard_stats',
   APP_SETTINGS: 'app_settings',
+  CONTACT_LISTS: 'contact_lists',
 };
 
 // SQL statements to create tables
@@ -129,6 +130,8 @@ export const CREATE_TABLES_SQL = {
       notes TEXT,
       is_blocked INTEGER DEFAULT 0,
       opt_in_status TEXT,
+      list_name TEXT,
+      metadata TEXT,
       created_at INTEGER,
       updated_at INTEGER,
       synced_at INTEGER,
@@ -249,6 +252,22 @@ export const CREATE_TABLES_SQL = {
       updated_at INTEGER
     )
   `,
+
+  // Contact Lists table - caches contact list groups for ContactsScreen offline access
+  [Tables.CONTACT_LISTS]: `
+    CREATE TABLE IF NOT EXISTS ${Tables.CONTACT_LISTS} (
+      id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      setting_id TEXT NOT NULL,
+      list_name TEXT NOT NULL,
+      contacts_count INTEGER DEFAULT 0,
+      metadata TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      synced_at INTEGER,
+      UNIQUE(server_id, setting_id)
+    )
+  `,
 };
 
 // Index creation SQL for performance optimization
@@ -275,6 +294,7 @@ export const CREATE_INDEXES_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_contacts_setting_id ON ${Tables.CONTACTS}(setting_id)`,
   `CREATE INDEX IF NOT EXISTS idx_contacts_phone_number ON ${Tables.CONTACTS}(phone_number)`,
   `CREATE INDEX IF NOT EXISTS idx_contacts_name ON ${Tables.CONTACTS}(name)`,
+  `CREATE INDEX IF NOT EXISTS idx_contacts_list_name ON ${Tables.CONTACTS}(list_name)`,
 
   // Template indexes
   `CREATE INDEX IF NOT EXISTS idx_templates_setting_id ON ${Tables.TEMPLATES}(setting_id)`,
@@ -295,6 +315,11 @@ export const CREATE_INDEXES_SQL = [
   // App Settings indexes
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_app_settings_key_setting ON ${Tables.APP_SETTINGS}(key, setting_id)`,
 
+  // Contact Lists indexes
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_contact_lists_server_setting ON ${Tables.CONTACT_LISTS}(server_id, setting_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_contact_lists_setting_id ON ${Tables.CONTACT_LISTS}(setting_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_contact_lists_name ON ${Tables.CONTACT_LISTS}(list_name)`,
+
   // Message deduplication indexes (partial unique — only where NOT NULL)
   // Prevents duplicate messages with the same server_id or wa_message_id within a chat
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_server_id_unique ON ${Tables.MESSAGES}(chat_id, server_id) WHERE server_id IS NOT NULL`,
@@ -306,6 +331,7 @@ export const CacheKeys = {
   LAST_SYNC_TIME: 'last_sync_time',
   LAST_CHATS_FETCH: 'last_chats_fetch',
   LAST_CONTACTS_FETCH: 'last_contacts_fetch',
+  LAST_CONTACT_LISTS_FETCH: 'last_contact_lists_fetch',
   LAST_TEMPLATES_FETCH: 'last_templates_fetch',
   SCHEMA_VERSION: 'schema_version',
   USER_SETTING_ID: 'user_setting_id',
@@ -318,6 +344,7 @@ export const CacheExpiry = {
   CHATS: Infinity,             // Never expires - device-primary like WhatsApp
   MESSAGES: Infinity,          // Never expires - messages stored permanently once fetched
   CONTACTS: Infinity,          // Never expires - contacts stored permanently
+  CONTACT_LISTS: Infinity,     // Never expires - refreshed via pull-to-refresh
   TEMPLATES: 30 * 60 * 1000,   // 30 minutes - templates may change on server
   QUICK_REPLIES: 15 * 60 * 1000, // 15 minutes - quick replies may change
   WA_NUMBERS: Infinity,        // Never expires - refreshed via pull-to-refresh or explicit refresh

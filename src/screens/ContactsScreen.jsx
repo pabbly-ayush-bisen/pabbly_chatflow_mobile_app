@@ -3,7 +3,8 @@ import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 're
 import { Text, ActivityIndicator, Searchbar, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
-import { getContactList, getContacts, gotoChat } from '../redux/slices/contactSlice';
+import { gotoChat } from '../redux/slices/contactSlice';
+import { fetchContactsWithCache, fetchContactListsWithCache } from '../redux/cacheThunks';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, getAvatarColor } from '../theme/colors';
 import { formatDistanceToNow } from 'date-fns';
@@ -23,7 +24,6 @@ export default function ContactsScreen() {
   const [selectedContact, setSelectedContact] = useState(null);
   const [bottomSheetVisible, setBottomSheetVisible] = useState(false);
   const [addContactVisible, setAddContactVisible] = useState(false);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const PAGE_SIZE = 10;
 
   const {
@@ -31,60 +31,49 @@ export default function ContactsScreen() {
     contactListError,
     contactListData,
     totalContactsCount,
+    unassignedCount,
     contactsStatus,
     contactsError,
     contacts,
     totalCount,
   } = useSelector((state) => state.contact);
 
-  const isLoadingLists = isNetworkAvailable && contactListStatus === 'loading';
-  const isLoadingContacts = isNetworkAvailable && contactsStatus === 'loading';
-  const isRefreshing = isNetworkAvailable && isLoadingLists && contactListData.length > 0;
-  const isInitialContactsLoading = isNetworkAvailable && isLoadingContacts && contacts.length === 0;
+  const isLoadingLists = contactListStatus === 'loading';
+  const isLoadingContacts = contactsStatus === 'loading';
+  const isRefreshing = isLoadingLists && contactListData.length > 0;
+  const isInitialContactsLoading = isLoadingContacts && contacts.length === 0;
 
   useEffect(() => {
-    if (isNetworkAvailable) {
-      loadContactLists();
-      loadContacts(true, null);
-    }
+    loadContactLists();
+    loadContacts(true, null);
   }, []);
 
-  // Fetch when network becomes available (if we haven't loaded yet)
+  // Retry when network comes back and we have no data
   useEffect(() => {
-    if (isNetworkAvailable && !hasLoadedOnce && contacts.length === 0) {
+    if (isNetworkAvailable && contacts.length === 0 && contactsStatus !== 'loading') {
       loadContactLists();
       loadContacts(true, null);
     }
-  }, [isNetworkAvailable, hasLoadedOnce, contacts.length]);
+  }, [isNetworkAvailable]);
 
-  const loadContactLists = () => {
-    if (isOffline) return;
-    dispatch(getContactList({ skip: 1, limit: 50 }));
+  const loadContactLists = (forceRefresh = false) => {
+    dispatch(fetchContactListsWithCache({ forceRefresh }));
   };
 
-  const buildContactsQuery = (skip, limit, listName, search) => {
-    let query = `skip=${skip}&limit=${limit}`;
-    if (listName) {
-      query += `&list=${encodeURIComponent(listName)}`;
-    }
-    if (search && search.trim()) {
-      query += `&search=${encodeURIComponent(search.trim())}`;
-    }
-    return query;
-  };
-
-  const loadContacts = (reset = false, listName = selectedList, search = searchQuery) => {
-    if (isOffline) return;
+  const loadContacts = (reset = false, listName = selectedList, search = searchQuery, forceRefresh = false) => {
     const skip = reset ? 0 : contacts.length;
-    const queries = buildContactsQuery(skip, PAGE_SIZE, listName, search);
-    dispatch(getContacts(queries))
-      .then(() => setHasLoadedOnce(true));
+    dispatch(fetchContactsWithCache({
+      forceRefresh,
+      skip,
+      limit: PAGE_SIZE,
+      listName,
+      search: search?.trim() || null,
+    }));
   };
 
   const onRefresh = () => {
-    if (isOffline) return;
-    loadContactLists();
-    loadContacts(true);
+    loadContactLists(true);
+    loadContacts(true, selectedList, searchQuery, true);
   };
 
   const handleAddContact = () => {
@@ -96,19 +85,14 @@ export default function ContactsScreen() {
   };
 
   const handleAddContactSuccess = (newContact) => {
-    // Refresh the contacts list
-    loadContacts(true, selectedList, searchQuery);
-    loadContactLists();
+    // Force refresh from server after adding a contact
+    loadContacts(true, selectedList, searchQuery, true);
+    loadContactLists(true);
   };
 
   const handleListPress = (listName) => {
-    if (listName === null) {
-      setSelectedList(null);
-      loadContacts(true, null);
-    } else {
-      setSelectedList(listName);
-      loadContacts(true, listName);
-    }
+    setSelectedList(listName);
+    loadContacts(true, listName);
   };
 
   const getOptInStatus = (status) => {
@@ -158,9 +142,9 @@ export default function ContactsScreen() {
   };
 
   // Contact List Filter Chip
-  const renderListChip = ({ item, index }) => {
-    // First item is "All Contacts"
-    if (index === 0) {
+  const renderListChip = ({ item }) => {
+    // "All Contacts" pill
+    if (item.isAllItem) {
       const isSelected = selectedList === null;
       return (
         <TouchableOpacity
@@ -185,15 +169,40 @@ export default function ContactsScreen() {
       );
     }
 
+    // "Unassigned" pill
+    if (item.isUnassignedItem) {
+      const isSelected = selectedList === 'Unassigned';
+      return (
+        <TouchableOpacity
+          onPress={() => handleListPress('Unassigned')}
+          activeOpacity={0.7}
+          style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+        >
+          <Icon
+            name="account-off-outline"
+            size={16}
+            color={isSelected ? colors.common.white : colors.text.secondary}
+          />
+          <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
+            Unassigned
+          </Text>
+          <View style={[styles.filterChipBadge, isSelected && styles.filterChipBadgeSelected]}>
+            <Text style={[styles.filterChipBadgeText, isSelected && styles.filterChipBadgeTextSelected]}>
+              {unassignedCount || 0}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
     // Regular list items
-    const actualItem = item;
-    const listName = actualItem.listName || actualItem.name || actualItem.title || 'Unnamed';
-    const count = actualItem.count ?? actualItem.contactsCount ?? 0;
-    const isSelected = selectedList === (actualItem.listName || listName);
+    const listName = item.listName || item.name || item.title || 'Unnamed';
+    const count = item.count ?? item.contactsCount ?? 0;
+    const isSelected = selectedList === (item.listName || listName);
 
     return (
       <TouchableOpacity
-        onPress={() => handleListPress(actualItem.listName || listName)}
+        onPress={() => handleListPress(item.listName || listName)}
         activeOpacity={0.7}
         style={[styles.filterChip, isSelected && styles.filterChipSelected]}
       >
@@ -309,8 +318,8 @@ export default function ContactsScreen() {
 
   // Empty State
   const renderEmptyState = () => {
-    // Show skeleton while loading (not during refresh) - only if online
-    if (isLoadingContacts && !isRefreshing && isNetworkAvailable) {
+    // Show skeleton while loading (not during refresh)
+    if (isLoadingContacts && !isRefreshing) {
       return (
         <View style={styles.skeletonInListContainer}>
           <ContactsListSkeleton count={10} />
@@ -341,9 +350,11 @@ export default function ContactsScreen() {
         </View>
         <Text style={styles.emptyTitle}>No contacts yet</Text>
         <Text style={styles.emptySubtitle}>
-          {selectedList
-            ? `No contacts found in "${selectedList}"`
-            : 'Add your first contact to get started'}
+          {selectedList === 'Unassigned'
+            ? 'All contacts are assigned to a list'
+            : selectedList
+              ? `No contacts found in "${selectedList}"`
+              : 'Add your first contact to get started'}
         </Text>
         {!selectedList && (
           <TouchableOpacity style={styles.emptyButton} onPress={handleAddContact} activeOpacity={0.8}>
@@ -388,8 +399,12 @@ export default function ContactsScreen() {
     );
   }
 
-  // Prepare list data with "All" as first item
-  const listDataWithAll = [{ _id: 'all', isAllItem: true }, ...contactListData];
+  // Prepare list data: All → Unassigned → custom lists
+  const listDataWithAll = [
+    { _id: 'all', isAllItem: true },
+    { _id: 'unassigned', isUnassignedItem: true },
+    ...contactListData,
+  ];
 
   // Bottom Sheet Handlers
   const handleCloseBottomSheet = () => {
@@ -445,24 +460,22 @@ export default function ContactsScreen() {
 
       {renderError()}
 
-      {/* Filter Chips */}
-      {contactListData.length > 0 && (
-        <View style={styles.filtersContainer}>
-          <FlatList
-            data={listDataWithAll}
-            renderItem={renderListChip}
-            keyExtractor={(item, index) => item._id || `list-${index}`}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filtersList}
-          />
-        </View>
-      )}
+      {/* Filter Chips — always show All & Unassigned, plus any custom lists */}
+      <View style={styles.filtersContainer}>
+        <FlatList
+          data={listDataWithAll}
+          renderItem={renderListChip}
+          keyExtractor={(item, index) => item._id || `list-${index}`}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersList}
+        />
+      </View>
 
       {/* Section Header */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>
-          {selectedList ? selectedList : 'All Contacts'}
+          {selectedList === 'Unassigned' ? 'Unassigned Contacts' : selectedList ? selectedList : 'All Contacts'}
         </Text>
         <Text style={styles.sectionCount}>
           {filteredContacts.length} {filteredContacts.length === 1 ? 'contact' : 'contacts'}
