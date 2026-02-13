@@ -1078,11 +1078,8 @@ export const fetchContactsWithCache = createAsyncThunk(
         search = null,
       } = params;
 
-      console.log(`[fetchContactsWithCache] called: forceRefresh=${forceRefresh}, skip=${skip}, limit=${limit}, listName=${listName}, search=${search}`);
-
       // ── FORCE REFRESH (pull-to-refresh) ──
       if (forceRefresh) {
-        console.log(`[fetchContactsWithCache] PATH: forceRefresh`);
         await cacheManager.clearContactsForList(listName);
 
         let url = `${endpoints.contacts.getContacts}?skip=0&limit=${limit}`;
@@ -1104,13 +1101,11 @@ export const fetchContactsWithCache = createAsyncThunk(
         }
         await cacheManager.saveContactsTotalCount(listName, totalCount);
 
-        console.log(`[fetchContactsWithCache] forceRefresh done: ${contacts.length} contacts, totalCount=${totalCount}`);
         return { contacts, totalCount, fromCache: false, skip: 0 };
       }
 
       // ── SEARCH (always local, no API) ──
       if (search && search.trim()) {
-        console.log(`[fetchContactsWithCache] PATH: search`);
         const cacheResult = await cacheManager.getContacts({
           skip,
           limit,
@@ -1128,17 +1123,13 @@ export const fetchContactsWithCache = createAsyncThunk(
 
       // ── INITIAL LOAD (skip=0) ──
       if (skip === 0) {
-        console.log(`[fetchContactsWithCache] PATH: initial load (skip=0)`);
         const cacheResult = await cacheManager.getContacts({
           skip: 0,
           listName,
         });
 
-        console.log(`[fetchContactsWithCache] cache returned: ${cacheResult.contacts.length} contacts, fromCache=${cacheResult.fromCache}`);
-
         if (cacheResult.fromCache && cacheResult.contacts.length > 0) {
           const storedTotal = await cacheManager.getContactsTotalCount(listName);
-          console.log(`[fetchContactsWithCache] returning ${cacheResult.contacts.length} cached contacts, storedTotal=${storedTotal}`);
           return {
             contacts: cacheResult.contacts,
             totalCount: storedTotal ?? cacheResult.contacts.length,
@@ -1148,7 +1139,6 @@ export const fetchContactsWithCache = createAsyncThunk(
         }
 
         // Cache miss — fetch first page from API
-        console.log(`[fetchContactsWithCache] cache miss, fetching from API...`);
         let url = `${endpoints.contacts.getContacts}?skip=0&limit=${limit}`;
         if (listName) {
           url += `&list=${encodeURIComponent(listName)}`;
@@ -1168,18 +1158,14 @@ export const fetchContactsWithCache = createAsyncThunk(
         }
         await cacheManager.saveContactsTotalCount(listName, totalCount);
 
-        console.log(`[fetchContactsWithCache] API returned: ${contacts.length} contacts, totalCount=${totalCount}`);
         return { contacts, totalCount, fromCache: false, skip: 0 };
       }
 
       // ── LOAD MORE (skip > 0) ──
-      console.log(`[fetchContactsWithCache] PATH: load more (skip=${skip})`);
       const cachedCount = await cacheManager.getCachedContactCount(listName);
-      console.log(`[fetchContactsWithCache] cachedCount=${cachedCount}, skip=${skip}`);
 
       if (skip < cachedCount) {
         // Enough cached data — serve from cache
-        console.log(`[fetchContactsWithCache] serving from cache (skip < cachedCount)`);
         const cacheResult = await cacheManager.getContacts({
           skip,
           limit,
@@ -1196,7 +1182,6 @@ export const fetchContactsWithCache = createAsyncThunk(
       }
 
       // Need more data — fetch next page from API
-      console.log(`[fetchContactsWithCache] fetching from API (skip >= cachedCount)`);
       let url = `${endpoints.contacts.getContacts}?skip=${skip}&limit=${limit}`;
       if (listName) {
         url += `&list=${encodeURIComponent(listName)}`;
@@ -1216,13 +1201,10 @@ export const fetchContactsWithCache = createAsyncThunk(
       }
       await cacheManager.saveContactsTotalCount(listName, totalCount);
 
-      console.log(`[fetchContactsWithCache] API returned: ${contacts.length} contacts, totalCount=${totalCount}`);
       return { contacts, totalCount, fromCache: false, skip };
     } catch (error) {
-      console.error(`[fetchContactsWithCache] ERROR:`, error.message, error);
       // Offline fallback — try to return cached data
       try {
-        console.log(`[fetchContactsWithCache] Trying offline fallback...`);
         const fallback = await cacheManager.getContacts({
           skip: params.skip || 0,
           limit: params.limit || 10,
@@ -1233,7 +1215,6 @@ export const fetchContactsWithCache = createAsyncThunk(
           const storedTotal = await cacheManager.getContactsTotalCount(
             params.listName
           );
-          console.log(`[fetchContactsWithCache] Offline fallback: returning ${fallback.contacts.length} cached contacts`);
           return {
             contacts: fallback.contacts,
             totalCount: storedTotal ?? fallback.contacts.length,
@@ -1242,7 +1223,6 @@ export const fetchContactsWithCache = createAsyncThunk(
           };
         }
       } catch (cacheErr) {
-        console.error(`[fetchContactsWithCache] Offline fallback also FAILED:`, cacheErr.message);
         // Cache read also failed — fall through to reject
       }
       return rejectWithValue(error.message);

@@ -103,18 +103,10 @@ class ContactModel {
   static async saveContacts(contacts, settingId, listName = null, startIndex = 0) {
     if (!settingId || !contacts || contacts.length === 0) return;
 
-    console.log(`[ContactModel] saveContacts: ${contacts.length} contacts, settingId=${settingId}, listName=${listName}, startIndex=${startIndex}`);
-    try {
-      const records = contacts.map((c, i) =>
-        this.toDbRecord(c, settingId, listName, startIndex + i)
-      );
-      console.log(`[ContactModel] saveContacts: ${records.length} records prepared, calling batchInsert...`);
-      await databaseManager.batchInsert(Tables.CONTACTS, records);
-      console.log(`[ContactModel] saveContacts: batchInsert complete`);
-    } catch (error) {
-      console.error(`[ContactModel] saveContacts FAILED:`, error.message, error);
-      throw error;
-    }
+    const records = contacts.map((c, i) =>
+      this.toDbRecord(c, settingId, listName, startIndex + i)
+    );
+    await databaseManager.batchInsert(Tables.CONTACTS, records);
   }
 
   /**
@@ -145,32 +137,23 @@ class ContactModel {
 
     const whereClause = conditions.join(' AND ');
 
-    console.log(`[ContactModel] getContacts: settingId=${settingId}, listName=${dbListName}, skip=${skip}, limit=${limit}, search=${search || 'none'}`);
+    // Get total count for pagination
+    const countRow = await databaseManager.queryFirst(
+      `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE ${whereClause}`,
+      params
+    );
+    const totalCount = countRow?.count || 0;
 
-    try {
-      // Get total count for pagination
-      const countRow = await databaseManager.queryFirst(
-        `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE ${whereClause}`,
-        params
-      );
-      const totalCount = countRow?.count || 0;
-      console.log(`[ContactModel] getContacts: totalCount=${totalCount}`);
+    // Get paginated results
+    const rows = await databaseManager.query(
+      `SELECT * FROM ${Tables.CONTACTS} WHERE ${whereClause} ORDER BY sort_order ASC LIMIT ? OFFSET ?`,
+      [...params, limit, skip]
+    );
 
-      // Get paginated results
-      const rows = await databaseManager.query(
-        `SELECT * FROM ${Tables.CONTACTS} WHERE ${whereClause} ORDER BY sort_order ASC LIMIT ? OFFSET ?`,
-        [...params, limit, skip]
-      );
-      console.log(`[ContactModel] getContacts: returned ${rows.length} rows`);
-
-      return {
-        contacts: rows.map((row) => this.fromDbRecord(row)),
-        totalCount,
-      };
-    } catch (error) {
-      console.error(`[ContactModel] getContacts FAILED:`, error.message, error);
-      throw error;
-    }
+    return {
+      contacts: rows.map((row) => this.fromDbRecord(row)),
+      totalCount,
+    };
   }
 
   /**
@@ -183,19 +166,11 @@ class ContactModel {
     if (!settingId) return 0;
 
     const dbListName = this._normalizeListName(listName);
-    console.log(`[ContactModel] getContactCount: settingId=${settingId}, listName=${dbListName}`);
-    try {
-      const result = await databaseManager.queryFirst(
-        `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ?`,
-        [settingId, dbListName]
-      );
-      const count = result?.count || 0;
-      console.log(`[ContactModel] getContactCount: ${count}`);
-      return count;
-    } catch (error) {
-      console.error(`[ContactModel] getContactCount FAILED:`, error.message, error);
-      throw error;
-    }
+    const result = await databaseManager.queryFirst(
+      `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ?`,
+      [settingId, dbListName]
+    );
+    return result?.count || 0;
   }
 
   /**
@@ -223,22 +198,15 @@ class ContactModel {
     if (!settingId) return { contacts: [], totalCount: 0 };
 
     const dbListName = this._normalizeListName(listName);
-    console.log(`[ContactModel] getAllContacts: settingId=${settingId}, listName=${dbListName}`);
-    try {
-      const rows = await databaseManager.query(
-        `SELECT * FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ? ORDER BY sort_order ASC`,
-        [settingId, dbListName]
-      );
-      console.log(`[ContactModel] getAllContacts: returned ${rows.length} rows`);
+    const rows = await databaseManager.query(
+      `SELECT * FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ? ORDER BY sort_order ASC`,
+      [settingId, dbListName]
+    );
 
-      return {
-        contacts: rows.map((row) => this.fromDbRecord(row)),
-        totalCount: rows.length,
-      };
-    } catch (error) {
-      console.error(`[ContactModel] getAllContacts FAILED:`, error.message, error);
-      throw error;
-    }
+    return {
+      contacts: rows.map((row) => this.fromDbRecord(row)),
+      totalCount: rows.length,
+    };
   }
 
   /**
@@ -266,17 +234,10 @@ class ContactModel {
     if (!settingId) return;
 
     const dbListName = this._normalizeListName(listName);
-    console.log(`[ContactModel] clearContactsForList: settingId=${settingId}, listName=${dbListName}`);
-    try {
-      await databaseManager.execute(
-        `DELETE FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ?`,
-        [settingId, dbListName]
-      );
-      console.log(`[ContactModel] clearContactsForList: done`);
-    } catch (error) {
-      console.error(`[ContactModel] clearContactsForList FAILED:`, error.message, error);
-      throw error;
-    }
+    await databaseManager.execute(
+      `DELETE FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ?`,
+      [settingId, dbListName]
+    );
   }
 }
 

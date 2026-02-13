@@ -392,12 +392,10 @@ class CacheManager {
    * @returns {Promise<{contacts: Array, totalCount: number, fromCache: boolean}>}
    */
   async getContacts(options = {}) {
-    console.log(`[CacheManager] getContacts called with:`, JSON.stringify(options));
     await this.ensureInitialized();
 
     const settingId = this.currentSettingId;
     if (!settingId) {
-      console.log(`[CacheManager] getContacts: no settingId, returning empty`);
       return { contacts: [], totalCount: 0, fromCache: false };
     }
 
@@ -405,35 +403,21 @@ class CacheManager {
 
     // Initial load: return ALL cached contacts for this list
     if (skip === 0 && !search) {
-      console.log(`[CacheManager] getContacts: initial load path (getAllContacts)`);
-      try {
-        const result = await ContactModel.getAllContacts(settingId, listName);
-        console.log(`[CacheManager] getContacts: getAllContacts returned ${result.contacts.length} contacts`);
-        return {
-          contacts: result.contacts,
-          totalCount: result.totalCount,
-          fromCache: result.contacts.length > 0,
-        };
-      } catch (error) {
-        console.error(`[CacheManager] getContacts: getAllContacts FAILED:`, error.message, error);
-        throw error;
-      }
-    }
-
-    // Pagination or search: use standard paginated query
-    console.log(`[CacheManager] getContacts: paginated/search path`);
-    try {
-      const result = await ContactModel.getContacts(settingId, options);
-      console.log(`[CacheManager] getContacts: getContacts returned ${result.contacts.length} contacts`);
+      const result = await ContactModel.getAllContacts(settingId, listName);
       return {
         contacts: result.contacts,
         totalCount: result.totalCount,
         fromCache: result.contacts.length > 0,
       };
-    } catch (error) {
-      console.error(`[CacheManager] getContacts: getContacts FAILED:`, error.message, error);
-      throw error;
     }
+
+    // Pagination or search: use standard paginated query
+    const result = await ContactModel.getContacts(settingId, options);
+    return {
+      contacts: result.contacts,
+      totalCount: result.totalCount,
+      fromCache: result.contacts.length > 0,
+    };
   }
 
   /**
@@ -444,22 +428,12 @@ class CacheManager {
    * @returns {Promise<void>}
    */
   async saveContacts(contacts, listName = null, startIndex = 0) {
-    console.log(`[CacheManager] saveContacts: ${contacts?.length || 0} contacts, listName=${listName}, startIndex=${startIndex}`);
     await this.ensureInitialized();
 
     const settingId = this.currentSettingId;
-    if (!settingId || !contacts) {
-      console.log(`[CacheManager] saveContacts: skipped (no settingId or contacts)`);
-      return;
-    }
+    if (!settingId || !contacts) return;
 
-    try {
-      await ContactModel.saveContacts(contacts, settingId, listName, startIndex);
-      console.log(`[CacheManager] saveContacts: done`);
-    } catch (error) {
-      console.error(`[CacheManager] saveContacts FAILED:`, error.message, error);
-      throw error;
-    }
+    await ContactModel.saveContacts(contacts, settingId, listName, startIndex);
   }
 
   /**
