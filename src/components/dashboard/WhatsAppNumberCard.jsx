@@ -84,12 +84,52 @@ const TIER_LABELS = {
 };
 
 /**
+ * Account status config (account.status)
+ * Shows active/inactive badge next to the phone number
+ */
+const ACCOUNT_STATUS_COLORS = {
+  active: '#22C55E',
+  inactive: '#EF4444',
+  archived: '#94A3B8',
+};
+
+/**
  * Quality score colors
  */
 const QUALITY_COLORS = {
   GREEN: { bg: '#DCFCE7', text: '#16A34A', label: 'High' },
   YELLOW: { bg: '#FEF9C3', text: '#CA8A04', label: 'Medium' },
   RED: { bg: '#FEE2E2', text: '#DC2626', label: 'Low' },
+};
+
+/**
+ * Meta connection status config (waPhoneNumberInfo.status)
+ * Colors and labels match the web app implementation
+ */
+const META_STATUS_CONFIG = {
+  CONNECTED: { bg: '#DCFCE7', text: '#16A34A', dot: '#22C55E', label: 'Connected' },
+  DISCONNECTED: { bg: '#FFF7ED', text: '#EA580C', dot: '#F97316', label: 'Disconnected' },
+  PENDING: { bg: '#EFF6FF', text: '#2563EB', dot: '#3B82F6', label: 'Pending' },
+  UNVERIFIED: { bg: '#FFF7ED', text: '#EA580C', dot: '#F97316', label: 'Unverified' },
+  BANNED: { bg: '#FEE2E2', text: '#DC2626', dot: '#EF4444', label: 'Banned' },
+  DELETED: { bg: '#FEE2E2', text: '#DC2626', dot: '#EF4444', label: 'Deleted' },
+  FLAGGED: { bg: '#FEE2E2', text: '#DC2626', dot: '#EF4444', label: 'Flagged' },
+  MIGRATED: { bg: '#EFF6FF', text: '#2563EB', dot: '#3B82F6', label: 'Migrated' },
+  RATE_LIMITED: { bg: '#FFF7ED', text: '#EA580C', dot: '#F97316', label: 'Rate Limited' },
+  RESTRICTED: { bg: '#FFF7ED', text: '#EA580C', dot: '#F97316', label: 'Restricted' },
+  UNKNOWN: { bg: '#F1F5F9', text: '#64748B', dot: '#94A3B8', label: 'Unknown' },
+};
+
+/**
+ * Display name status config (waPhoneNumberInfo.name_status)
+ * Colors and labels match the web app implementation
+ */
+const NAME_STATUS_CONFIG = {
+  APPROVED: { bg: '#DCFCE7', text: '#16A34A', label: 'Approved' },
+  PENDING_REVIEW: { bg: '#E0F7FA', text: '#0097A7', label: 'Pending Review' },
+  NON_EXISTS: { bg: '#F1F5F9', text: '#64748B', label: 'Does Not Exist' },
+  DECLINED: { bg: '#FEE2E2', text: '#DC2626', label: 'Declined' },
+  AVAILABLE_WITHOUT_REVIEW: { bg: '#FFF8E1', text: '#F57F17', label: 'Available Without Review' },
 };
 
 /**
@@ -135,6 +175,8 @@ const WhatsAppNumberCard = ({
   const profilePic = waBusinessProfile.profile_picture_url;
   const qualityScore = waPhoneInfo.quality_score?.score;
   const messagingTier = waPhoneInfo.messaging_limit_tier;
+  const metaStatus = waPhoneInfo.status; // CONNECTED, DISCONNECTED, BANNED, etc.
+  const nameStatus = waPhoneInfo.name_status; // APPROVED, PENDING_REVIEW, DECLINED, etc.
 
   // Credits calculation
   const upperCapUsed = number.upperCapUsed || 0;
@@ -164,9 +206,9 @@ const WhatsAppNumberCard = ({
 
       {/* Main Content */}
       <View style={styles.content}>
-        {/* Top Section: Avatar + Info + Sync Button */}
-        <View style={styles.topSection}>
-          {/* Avatar with WhatsApp Badge - Same as Web App */}
+        {/* Header: Avatar + Name + Sync Button */}
+        <View style={styles.headerRow}>
+          {/* Avatar with WhatsApp Badge */}
           <View style={styles.avatarWrapper}>
             {profilePic ? (
               <Image source={{ uri: profilePic }} style={styles.avatarImage} />
@@ -175,46 +217,31 @@ const WhatsAppNumberCard = ({
                 <Text style={styles.avatarInitials}>{initials}</Text>
               </View>
             )}
-            {/* WhatsApp Badge Overlay - Same as Web App Implementation */}
             <View style={styles.whatsappBadge}>
               <Icon name="whatsapp" size={12} color="#25D366" />
             </View>
           </View>
 
-          {/* Info */}
-          <View style={styles.infoSection}>
-            {/* Name Row with Active Indicator */}
+          {/* Name + Display Name Status + Phone + Account Status */}
+          <View style={styles.headerInfo}>
             <View style={styles.nameRow}>
               <Text style={styles.businessName} numberOfLines={1}>
                 {verifiedName}
               </Text>
-              {isActive && (
-                <View style={styles.activePulse}>
-                  <View style={styles.activeDot} />
+              {nameStatus && NAME_STATUS_CONFIG[nameStatus] && (
+                <View style={[styles.nameStatusBadge, { backgroundColor: NAME_STATUS_CONFIG[nameStatus].bg }]}>
+                  <Text style={[styles.nameStatusText, { color: NAME_STATUS_CONFIG[nameStatus].text }]}>
+                    {NAME_STATUS_CONFIG[nameStatus].label}
+                  </Text>
                 </View>
               )}
             </View>
-
             <View style={styles.phoneRow}>
-              <Icon name="phone-outline" size={14} color={colors.text.secondary} />
+              <Icon name="phone-outline" size={13} color={colors.text.secondary} />
               <Text style={styles.phoneNumber}>{phoneNumber}</Text>
-            </View>
-
-            {/* Badges Row */}
-            <View style={styles.badgesRow}>
-              {/* Quality Badge */}
-              <View style={[styles.badge, { backgroundColor: quality.bg }]}>
-                <Icon name="shield-check" size={12} color={quality.text} />
-                <Text style={[styles.badgeText, { color: quality.text }]}>{quality.label}</Text>
-              </View>
-
-              {/* Tier Badge */}
-              <View style={[styles.badge, styles.tierBadge]}>
-                <Icon name="speedometer" size={12} color="#6366F1" />
-                <Text style={[styles.badgeText, { color: '#6366F1' }]}>
-                  {TIER_LABELS[messagingTier] || 'N/A'}
-                </Text>
-              </View>
+              {account.status && ACCOUNT_STATUS_COLORS[account.status] && (
+                <View style={[styles.accountStatusDot, { backgroundColor: ACCOUNT_STATUS_COLORS[account.status] }]} />
+              )}
             </View>
           </View>
 
@@ -238,6 +265,28 @@ const WhatsAppNumberCard = ({
               />
             )}
           </TouchableOpacity>
+        </View>
+
+        {/* Quality, Tier & Meta Status Row */}
+        <View style={styles.badgesRow}>
+          <View style={[styles.badge, { backgroundColor: quality.bg }]}>
+            <Icon name="shield-check" size={12} color={quality.text} />
+            <Text style={[styles.badgeText, { color: quality.text }]}>{quality.label}</Text>
+          </View>
+          <View style={[styles.badge, styles.tierBadge]}>
+            <Icon name="speedometer" size={12} color="#6366F1" />
+            <Text style={[styles.badgeText, { color: '#6366F1' }]}>
+              {TIER_LABELS[messagingTier] || 'N/A'}
+            </Text>
+          </View>
+          {metaStatus && META_STATUS_CONFIG[metaStatus] && (
+            <View style={[styles.badge, { backgroundColor: META_STATUS_CONFIG[metaStatus].bg }]}>
+              <View style={[styles.statusDot, { backgroundColor: META_STATUS_CONFIG[metaStatus].dot }]} />
+              <Text style={[styles.badgeText, { color: META_STATUS_CONFIG[metaStatus].text }]}>
+                {META_STATUS_CONFIG[metaStatus].label}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Credits Section */}
@@ -336,13 +385,94 @@ const styles = StyleSheet.create({
     padding: 16,
   },
 
-  // Top Section
-  topSection: {
+  // Header Row: Avatar + Name/Phone + Sync
+  headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  // Sync Button
+  avatarWrapper: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F1F5F9',
+  },
+  avatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1C252E',
+  },
+  whatsappBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: 0,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  businessName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+    flexShrink: 1,
+  },
+  nameStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  nameStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  phoneNumber: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  accountStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 4,
+  },
   syncButton: {
     width: 36,
     height: 36,
@@ -355,88 +485,19 @@ const styles = StyleSheet.create({
   syncButtonDisabled: {
     backgroundColor: '#F8FAFC',
   },
-  avatarWrapper: {
-    position: 'relative',
-    marginRight: 14,
-  },
-  avatarImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#F1F5F9',
-  },
-  avatarFallback: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitials: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1C252E',
-  },
-  // WhatsApp Badge - Same as Web App Implementation
-  whatsappBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: 2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 3,
+
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 
-  // Info Section
-  infoSection: {
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  businessName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1E293B',
-    flex: 1,
-  },
-  activePulse: {
-    padding: 2,
-  },
-  activeDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#22C55E',
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-  },
-  phoneNumber: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
+  // Quality, Tier & Meta Status Badges
   badgesRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 14,
     flexWrap: 'wrap',
   },
   badge: {
