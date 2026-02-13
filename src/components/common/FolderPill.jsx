@@ -76,7 +76,7 @@ const FolderPill = ({
       style={[
         styles.container,
         isSelected && styles.containerSelected,
-        isSubfolder && styles.containerSubfolder,
+        isSubfolder && !isSelected && styles.containerSubfolder,
         isSubfolder && levelColor && !isSelected && {
           backgroundColor: levelColor.bg,
           borderColor: levelColor.border + '60',
