@@ -1,5 +1,12 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import {
+  fetchDashboardStatsWithCache,
+  fetchWANumbersWithCache,
+  fetchFoldersWithCache,
+  fetchTeamMembersWithCache,
+  fetchSharedAccountsWithCache,
+} from '../cacheThunks';
 
 // Async thunks
 export const getDashboardStats = createAsyncThunk(
@@ -187,6 +194,17 @@ const initialState = {
   shouldFetchFolders: false,
   allNumberCountInCurrentFolder: 0,
   selectedFolder: null,
+
+  // Team members (moved from DashboardScreen local state to Redux for caching)
+  teamMembers: [],
+  teamMembersStatus: 'idle',
+  teamMembersError: null,
+  teamMemberStats: { totalMembers: 0, activeMembers: 0, inactiveMembers: 0 },
+
+  // Shared accounts (moved from DashboardScreen local state to Redux for caching)
+  sharedAccounts: [],
+  sharedAccountsStatus: 'idle',
+  sharedAccountsError: null,
 };
 
 // Slice
@@ -204,6 +222,40 @@ const dashboardSlice = createSlice({
       state.statsError = null;
       state.accountError = null;
       state.folderError = null;
+      state.teamMembersError = null;
+      state.sharedAccountsError = null;
+    },
+
+    // Silent update reducers — update data without triggering loading states.
+    // Used by cache thunks when background API refresh completes after a cache hit.
+    silentUpdateDashboardStats: (state, action) => {
+      const data = action.payload;
+      state.WANumberCount = data.WANumberCount || 0;
+      state.totalQuota = data.totalQuota || 0;
+      state.quotaUsed = data.quotaUsed || 0;
+    },
+    silentUpdateWANumbers: (state, action) => {
+      const { waNumbers } = action.payload;
+      state.whatsappNumbers = waNumbers || [];
+    },
+    silentUpdateFolders: (state, action) => {
+      const data = action.payload;
+      state.folders = data.folders || {};
+      state.foldersCount = data.totalCount || 0;
+    },
+    silentUpdateTeamMembers: (state, action) => {
+      const data = action.payload;
+      const members = data.members || [];
+      state.teamMembers = members;
+      state.teamMemberStats = {
+        totalMembers: data.totalCount ?? members.length,
+        activeMembers: members.filter(m => m?.status === 'active').length,
+        inactiveMembers: members.filter(m => m?.status !== 'active').length,
+      };
+    },
+    silentUpdateSharedAccounts: (state, action) => {
+      const data = action.payload;
+      state.sharedAccounts = data.accounts || [];
     },
   },
   extraReducers: (builder) => {
@@ -322,8 +374,132 @@ const dashboardSlice = createSlice({
           updatedWANumber.account.waBusinessInfoSyncedAt = data.waBusinessInfoSyncedAt;
         }
       });
+
+    // ==========================================
+    // CACHE-FIRST THUNKS (offline support)
+    // ==========================================
+
+    // Dashboard Stats (cache-first)
+    builder
+      .addCase(fetchDashboardStatsWithCache.pending, (state) => {
+        // Only show loading skeleton on first load (no data yet)
+        if (state.statsStatus !== 'succeeded') {
+          state.statsStatus = 'loading';
+        }
+        state.statsError = null;
+      })
+      .addCase(fetchDashboardStatsWithCache.fulfilled, (state, action) => {
+        state.statsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.WANumberCount = data.WANumberCount || 0;
+        state.totalQuota = data.totalQuota || 0;
+        state.quotaUsed = data.quotaUsed || 0;
+      })
+      .addCase(fetchDashboardStatsWithCache.rejected, (state, action) => {
+        // Only show error if we have no cached data to display
+        if (state.statsStatus !== 'succeeded') {
+          state.statsStatus = 'failed';
+        }
+        state.statsError = action.payload;
+      });
+
+    // WA Numbers (cache-first)
+    builder
+      .addCase(fetchWANumbersWithCache.pending, (state) => {
+        if (state.accountStatus !== 'succeeded') {
+          state.accountStatus = 'loading';
+        }
+        state.accountError = null;
+      })
+      .addCase(fetchWANumbersWithCache.fulfilled, (state, action) => {
+        state.accountStatus = 'succeeded';
+        const data = action.payload.data || {};
+        state.whatsappNumbers = data.waNumbers || [];
+      })
+      .addCase(fetchWANumbersWithCache.rejected, (state, action) => {
+        if (state.accountStatus !== 'succeeded') {
+          state.accountStatus = 'failed';
+        }
+        state.accountError = action.payload;
+      });
+
+    // Folders (cache-first)
+    builder
+      .addCase(fetchFoldersWithCache.pending, (state) => {
+        if (state.folderStatus !== 'succeeded') {
+          state.folderStatus = 'loading';
+        }
+        state.folderError = null;
+      })
+      .addCase(fetchFoldersWithCache.fulfilled, (state, action) => {
+        state.folderStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.folders = data.folders || {};
+        state.foldersCount = data.totalCount || 0;
+      })
+      .addCase(fetchFoldersWithCache.rejected, (state, action) => {
+        if (state.folderStatus !== 'succeeded') {
+          state.folderStatus = 'failed';
+        }
+        state.folderError = action.payload;
+      });
+
+    // Team Members (cache-first)
+    builder
+      .addCase(fetchTeamMembersWithCache.pending, (state) => {
+        if (state.teamMembersStatus !== 'succeeded') {
+          state.teamMembersStatus = 'loading';
+        }
+        state.teamMembersError = null;
+      })
+      .addCase(fetchTeamMembersWithCache.fulfilled, (state, action) => {
+        state.teamMembersStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        const members = data.members || [];
+        state.teamMembers = members;
+        state.teamMemberStats = {
+          totalMembers: data.totalCount ?? members.length,
+          activeMembers: members.filter(m => m?.status === 'active').length,
+          inactiveMembers: members.filter(m => m?.status !== 'active').length,
+        };
+      })
+      .addCase(fetchTeamMembersWithCache.rejected, (state, action) => {
+        if (state.teamMembersStatus !== 'succeeded') {
+          state.teamMembersStatus = 'failed';
+        }
+        state.teamMembersError = action.payload;
+      });
+
+    // Shared Accounts (cache-first)
+    builder
+      .addCase(fetchSharedAccountsWithCache.pending, (state) => {
+        if (state.sharedAccountsStatus !== 'succeeded') {
+          state.sharedAccountsStatus = 'loading';
+        }
+        state.sharedAccountsError = null;
+      })
+      .addCase(fetchSharedAccountsWithCache.fulfilled, (state, action) => {
+        state.sharedAccountsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.sharedAccounts = data.accounts || [];
+      })
+      .addCase(fetchSharedAccountsWithCache.rejected, (state, action) => {
+        if (state.sharedAccountsStatus !== 'succeeded') {
+          state.sharedAccountsStatus = 'failed';
+        }
+        state.sharedAccountsError = action.payload;
+      });
   },
 });
 
-export const { setShouldFetchFolders, setFolderFilter, clearDashboardError } = dashboardSlice.actions;
+export const {
+  setShouldFetchFolders,
+  setFolderFilter,
+  clearDashboardError,
+  silentUpdateDashboardStats,
+  silentUpdateWANumbers,
+  silentUpdateFolders,
+  silentUpdateTeamMembers,
+  silentUpdateSharedAccounts,
+} = dashboardSlice.actions;
 export default dashboardSlice.reducer;

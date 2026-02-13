@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 // Table Names
 export const Tables = {
@@ -18,6 +18,9 @@ export const Tables = {
   QUICK_REPLIES: 'quick_replies',
   CACHE_METADATA: 'cache_metadata',
   SYNC_QUEUE: 'sync_queue',
+  WA_NUMBERS: 'wa_numbers',
+  DASHBOARD_STATS: 'dashboard_stats',
+  APP_SETTINGS: 'app_settings',
 };
 
 // SQL statements to create tables
@@ -201,6 +204,51 @@ export const CREATE_TABLES_SQL = {
       processed_at INTEGER
     )
   `,
+
+  // WhatsApp Numbers table - caches WA number list for Dashboard offline access
+  [Tables.WA_NUMBERS]: `
+    CREATE TABLE IF NOT EXISTS ${Tables.WA_NUMBERS} (
+      id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      status TEXT,
+      phone_number TEXT,
+      country_code TEXT,
+      display_name TEXT,
+      quality_score TEXT,
+      messaging_limit_tier TEXT,
+      profile_picture_url TEXT,
+      upper_cap_used INTEGER DEFAULT 0,
+      upper_cap_limit INTEGER DEFAULT 0,
+      folder_id TEXT,
+      metadata TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      synced_at INTEGER
+    )
+  `,
+
+  // Dashboard Stats table - key-value cache for dashboard statistics
+  [Tables.DASHBOARD_STATS]: `
+    CREATE TABLE IF NOT EXISTS ${Tables.DASHBOARD_STATS} (
+      id TEXT PRIMARY KEY,
+      stat_type TEXT NOT NULL,
+      setting_id TEXT,
+      data TEXT,
+      updated_at INTEGER
+    )
+  `,
+
+  // App Settings table - generic JSON cache for complex/nested data
+  // Used for: folders tree, team members, shared accounts, inbox settings, user attributes
+  [Tables.APP_SETTINGS]: `
+    CREATE TABLE IF NOT EXISTS ${Tables.APP_SETTINGS} (
+      id TEXT PRIMARY KEY,
+      key TEXT NOT NULL,
+      setting_id TEXT NOT NULL DEFAULT '_global_',
+      data TEXT,
+      updated_at INTEGER
+    )
+  `,
 };
 
 // Index creation SQL for performance optimization
@@ -236,6 +284,17 @@ export const CREATE_INDEXES_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON ${Tables.SYNC_QUEUE}(status)`,
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_setting_id ON ${Tables.SYNC_QUEUE}(setting_id)`,
 
+  // WA Numbers indexes
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_numbers_server_id ON ${Tables.WA_NUMBERS}(server_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_wa_numbers_status ON ${Tables.WA_NUMBERS}(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_wa_numbers_folder_id ON ${Tables.WA_NUMBERS}(folder_id)`,
+
+  // Dashboard Stats indexes
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_dashboard_stats_type_setting ON ${Tables.DASHBOARD_STATS}(stat_type, setting_id)`,
+
+  // App Settings indexes
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_app_settings_key_setting ON ${Tables.APP_SETTINGS}(key, setting_id)`,
+
   // Message deduplication indexes (partial unique — only where NOT NULL)
   // Prevents duplicate messages with the same server_id or wa_message_id within a chat
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_server_id_unique ON ${Tables.MESSAGES}(chat_id, server_id) WHERE server_id IS NOT NULL`,
@@ -261,6 +320,9 @@ export const CacheExpiry = {
   CONTACTS: Infinity,          // Never expires - contacts stored permanently
   TEMPLATES: 30 * 60 * 1000,   // 30 minutes - templates may change on server
   QUICK_REPLIES: 15 * 60 * 1000, // 15 minutes - quick replies may change
+  WA_NUMBERS: Infinity,        // Never expires - refreshed via pull-to-refresh or explicit refresh
+  DASHBOARD_STATS: 15 * 60 * 1000, // 15 minutes - stats refreshed frequently
+  APP_SETTINGS: 30 * 60 * 1000, // 30 minutes - default for generic settings (folders, team members, etc.)
 };
 
 export default {

@@ -12,7 +12,9 @@
  */
 
 import { databaseManager } from './DatabaseManager';
-import { ChatModel, MessageModel, QuickReplyModel } from './models';
+import { ChatModel, MessageModel, QuickReplyModel, WANumberModel, DashboardStatsModel, AppSettingsModel } from './models';
+import { StatTypes } from './models/DashboardStatsModel';
+import { SettingKeys } from './models/AppSettingsModel';
 import { Tables, CacheKeys } from './schema';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -376,6 +378,117 @@ class CacheManager {
     if (!settingId) return false;
 
     return QuickReplyModel.hasQuickReplies(settingId);
+  }
+
+  // ==========================================
+  // DASHBOARD STATS CACHE OPERATIONS
+  // ==========================================
+
+  /**
+   * Get cached dashboard stats (WANumberCount, totalQuota, quotaUsed)
+   * @returns {Promise<{data: Object|null, fromCache: boolean}>}
+   */
+  async getDashboardStats() {
+    await this.ensureInitialized();
+
+    const data = await DashboardStatsModel.getStats(StatTypes.OVERVIEW);
+    return { data, fromCache: data !== null };
+  }
+
+  /**
+   * Save dashboard stats to cache
+   * @param {Object} stats - Stats object from API (e.g., { WANumberCount, totalQuota, quotaUsed })
+   * @returns {Promise<void>}
+   */
+  async saveDashboardStats(stats) {
+    await this.ensureInitialized();
+    if (!stats) return;
+
+    await DashboardStatsModel.saveStats(StatTypes.OVERVIEW, stats);
+  }
+
+  /**
+   * Get the age of cached dashboard stats (for expiry checks)
+   * @returns {Promise<number>} Age in milliseconds, Infinity if not cached
+   */
+  async getDashboardStatsAge() {
+    await this.ensureInitialized();
+    return DashboardStatsModel.getStatsAge(StatTypes.OVERVIEW);
+  }
+
+  // ==========================================
+  // WA NUMBERS CACHE OPERATIONS
+  // ==========================================
+
+  /**
+   * Get cached WA numbers
+   * @param {Object} [options] - Query options (folderId, status)
+   * @returns {Promise<{waNumbers: Array, fromCache: boolean}>}
+   */
+  async getWANumbers(options = {}) {
+    await this.ensureInitialized();
+
+    const waNumbers = await WANumberModel.getWANumbers(options);
+    return { waNumbers, fromCache: waNumbers.length > 0 };
+  }
+
+  /**
+   * Save WA numbers to cache (replace-all strategy)
+   * @param {Array} waNumbers - Array of WA number objects from API
+   * @returns {Promise<void>}
+   */
+  async saveWANumbers(waNumbers) {
+    await this.ensureInitialized();
+    if (!waNumbers) return;
+
+    await WANumberModel.saveWANumbers(waNumbers);
+  }
+
+  /**
+   * Check if WA numbers are cached
+   * @returns {Promise<boolean>}
+   */
+  async hasWANumbers() {
+    await this.ensureInitialized();
+    return WANumberModel.hasWANumbers();
+  }
+
+  // ==========================================
+  // APP SETTINGS CACHE OPERATIONS (Generic JSON)
+  // ==========================================
+
+  /**
+   * Get a cached app setting by key
+   * @param {string} key - Setting key (e.g., SettingKeys.FOLDERS)
+   * @param {string} [settingId] - Setting ID, defaults to '_global_'
+   * @returns {Promise<any|null>} Parsed data, or null if not found
+   */
+  async getAppSetting(key, settingId) {
+    await this.ensureInitialized();
+    return AppSettingsModel.get(key, settingId);
+  }
+
+  /**
+   * Save an app setting to cache
+   * @param {string} key - Setting key (e.g., SettingKeys.FOLDERS)
+   * @param {any} data - Data to cache
+   * @param {string} [settingId] - Setting ID, defaults to '_global_'
+   * @returns {Promise<void>}
+   */
+  async saveAppSetting(key, data, settingId) {
+    await this.ensureInitialized();
+    await AppSettingsModel.save(key, data, settingId);
+  }
+
+  /**
+   * Get the age of a cached app setting (for expiry checks)
+   * @param {string} key - Setting key
+   * @param {string} [settingId] - Setting ID
+   * @returns {Promise<number>} Age in milliseconds, Infinity if not cached
+   */
+  async getAppSettingAge(key, settingId) {
+    await this.ensureInitialized();
+    return AppSettingsModel.getAge(key, settingId);
   }
 
   // ==========================================

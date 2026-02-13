@@ -163,6 +163,10 @@ class DatabaseManager {
     if (fromVersion < 13 && toVersion >= 13) {
       await this._migrateToV13();
     }
+
+    if (fromVersion < 14 && toVersion >= 14) {
+      await this._migrateToV14();
+    }
   }
 
   /**
@@ -194,6 +198,25 @@ class DatabaseManager {
         await this.db.execAsync(sql);
       } catch (error) {
         // Column may already exist
+      }
+    }
+  }
+
+  /**
+   * Migration to version 14: Add Dashboard offline caching tables.
+   * Creates wa_numbers, dashboard_stats, and app_settings tables for users
+   * upgrading from V13. New installs get these via _createTables() directly.
+   */
+  async _migrateToV14() {
+    // Create new tables — CREATE TABLE IF NOT EXISTS is safe to run even if
+    // _createTables() will also run later. This ensures the tables exist even
+    // if _createTables() encounters an unrelated error and stops early.
+    const newTables = [Tables.WA_NUMBERS, Tables.DASHBOARD_STATS, Tables.APP_SETTINGS];
+    for (const table of newTables) {
+      try {
+        await this.db.execAsync(CREATE_TABLES_SQL[table]);
+      } catch (error) {
+        // Table may already exist — non-fatal
       }
     }
   }
@@ -764,7 +787,15 @@ class DatabaseManager {
    * @returns {Promise<void>}
    */
   async clearSettingData(settingId) {
-    const tables = [Tables.CHATS, Tables.MESSAGES, Tables.CONTACTS, Tables.TEMPLATES, Tables.QUICK_REPLIES];
+    const tables = [
+      Tables.CHATS,
+      Tables.MESSAGES,
+      Tables.CONTACTS,
+      Tables.TEMPLATES,
+      Tables.QUICK_REPLIES,
+      Tables.DASHBOARD_STATS,
+      Tables.APP_SETTINGS,
+    ];
 
     for (const table of tables) {
       await this.delete(table, 'setting_id = ?', [settingId]);
