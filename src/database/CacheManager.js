@@ -385,65 +385,134 @@ class CacheManager {
   // ==========================================
 
   /**
-   * Get contacts from cache with pagination, search, and list filtering.
+   * Get contacts from cache.
+   * On initial load (skip=0, no search), returns ALL cached contacts for the list.
+   * On subsequent calls (skip>0 or search), uses paginated query.
    * @param {Object} [options] - Query options (skip, limit, search, listName)
    * @returns {Promise<{contacts: Array, totalCount: number, fromCache: boolean}>}
    */
   async getContacts(options = {}) {
+    console.log(`[CacheManager] getContacts called with:`, JSON.stringify(options));
     await this.ensureInitialized();
 
     const settingId = this.currentSettingId;
-    if (!settingId) return { contacts: [], totalCount: 0, fromCache: false };
+    if (!settingId) {
+      console.log(`[CacheManager] getContacts: no settingId, returning empty`);
+      return { contacts: [], totalCount: 0, fromCache: false };
+    }
 
-    const result = await ContactModel.getContacts(settingId, options);
-    return {
-      contacts: result.contacts,
-      totalCount: result.totalCount,
-      fromCache: result.contacts.length > 0,
-    };
+    const { skip = 0, search, listName } = options;
+
+    // Initial load: return ALL cached contacts for this list
+    if (skip === 0 && !search) {
+      console.log(`[CacheManager] getContacts: initial load path (getAllContacts)`);
+      try {
+        const result = await ContactModel.getAllContacts(settingId, listName);
+        console.log(`[CacheManager] getContacts: getAllContacts returned ${result.contacts.length} contacts`);
+        return {
+          contacts: result.contacts,
+          totalCount: result.totalCount,
+          fromCache: result.contacts.length > 0,
+        };
+      } catch (error) {
+        console.error(`[CacheManager] getContacts: getAllContacts FAILED:`, error.message, error);
+        throw error;
+      }
+    }
+
+    // Pagination or search: use standard paginated query
+    console.log(`[CacheManager] getContacts: paginated/search path`);
+    try {
+      const result = await ContactModel.getContacts(settingId, options);
+      console.log(`[CacheManager] getContacts: getContacts returned ${result.contacts.length} contacts`);
+      return {
+        contacts: result.contacts,
+        totalCount: result.totalCount,
+        fromCache: result.contacts.length > 0,
+      };
+    } catch (error) {
+      console.error(`[CacheManager] getContacts: getContacts FAILED:`, error.message, error);
+      throw error;
+    }
   }
 
   /**
-   * Save contacts to cache
+   * Save contacts to cache (append mode with sort order).
    * @param {Array} contacts - Array of contact objects from API
    * @param {string} [listName] - The list name filter (null for "All Contacts")
-   * @param {Object} [options] - Save options
-   * @param {boolean} [options.append=false] - If true, append without clearing existing data
+   * @param {number} [startIndex=0] - Starting sort_order index (API skip value)
    * @returns {Promise<void>}
    */
-  async saveContacts(contacts, listName = null, { append = false } = {}) {
+  async saveContacts(contacts, listName = null, startIndex = 0) {
+    console.log(`[CacheManager] saveContacts: ${contacts?.length || 0} contacts, listName=${listName}, startIndex=${startIndex}`);
     await this.ensureInitialized();
 
     const settingId = this.currentSettingId;
-    if (!settingId || !contacts) return;
+    if (!settingId || !contacts) {
+      console.log(`[CacheManager] saveContacts: skipped (no settingId or contacts)`);
+      return;
+    }
 
-    await ContactModel.saveContacts(contacts, settingId, listName, { append });
+    try {
+      await ContactModel.saveContacts(contacts, settingId, listName, startIndex);
+      console.log(`[CacheManager] saveContacts: done`);
+    } catch (error) {
+      console.error(`[CacheManager] saveContacts FAILED:`, error.message, error);
+      throw error;
+    }
   }
 
   /**
-   * Save the server-reported total contacts count for a list.
-   * Stored in app_settings so we know how many contacts exist on the server
-   * even when only a subset is cached locally (incremental page-by-page caching).
-   * @param {number} totalCount - Server-reported total contacts count
-   * @param {string} [listName] - The list name (null for "All Contacts")
+   * Save the server-reported total count for a contact list.
+   * @param {string|null} listName - List name (null for "All Contacts")
+   * @param {number} totalCount - Server total count
    * @returns {Promise<void>}
    */
-  async saveContactServerTotal(totalCount, listName = null) {
+  async saveContactsTotalCount(listName, totalCount) {
     await this.ensureInitialized();
-    const key = listName ? `contactsTotal_${listName}` : 'contactsTotal_all';
-    await AppSettingsModel.save(key, { totalCount }, this.currentSettingId);
+    const key = `contacts_total_${listName || '__all__'}`;
+    await AppSettingsModel.save(key, { totalCount });
   }
 
   /**
-   * Get the server-reported total contacts count for a list.
-   * @param {string} [listName] - The list name (null for "All Contacts")
-   * @returns {Promise<number|null>} The stored total count, or null if not cached
+   * Get the cached server-reported total count for a contact list.
+   * @param {string|null} listName - List name (null for "All Contacts")
+   * @returns {Promise<number|null>} Total count, or null if not cached
    */
-  async getContactServerTotal(listName = null) {
+  async getContactsTotalCount(listName) {
     await this.ensureInitialized();
-    const key = listName ? `contactsTotal_${listName}` : 'contactsTotal_all';
-    const data = await AppSettingsModel.get(key, this.currentSettingId);
+    const key = `contacts_total_${listName || '__all__'}`;
+    const data = await AppSettingsModel.get(key);
     return data?.totalCount ?? null;
+  }
+
+  /**
+   * Get count of cached contacts for a specific list.
+   * @param {string|null} listName - List name (null for "All Contacts")
+   * @returns {Promise<number>}
+   */
+  async getCachedContactCount(listName) {
+    await this.ensureInitialized();
+    const settingId = this.currentSettingId;
+    if (!settingId) return 0;
+    return ContactModel.getContactCount(settingId, listName);
+  }
+
+  /**
+   * Clear cached contacts for a specific list (used by pull-to-refresh).
+   * Only clears the specified list's contacts, not other lists.
+   * Also clears the stored totalCount for this list.
+   * @param {string|null} listName - List name (null for "All Contacts")
+   * @returns {Promise<void>}
+   */
+  async clearContactsForList(listName) {
+    await this.ensureInitialized();
+    const settingId = this.currentSettingId;
+    if (!settingId) return;
+
+    await ContactModel.clearContactsForList(settingId, listName);
+    const key = `contacts_total_${listName || '__all__'}`;
+    await AppSettingsModel.remove(key);
   }
 
   /**

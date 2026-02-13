@@ -50,28 +50,37 @@ class DatabaseManager {
 
   async _doInitialize() {
     try {
-      // Log:('[DatabaseManager] Initializing database...');
+      console.log('[DatabaseManager] Initializing database...');
 
       // Open database connection
       this.db = await SQLite.openDatabaseAsync(DATABASE_NAME);
+      console.log('[DatabaseManager] Database connection opened');
 
       // Enable foreign keys and WAL mode for better performance
       await this.db.execAsync('PRAGMA foreign_keys = ON;');
       await this.db.execAsync('PRAGMA journal_mode = WAL;');
+      console.log('[DatabaseManager] PRAGMAs set');
 
       // Check if migration is needed
       await this._checkAndMigrate();
+      console.log('[DatabaseManager] Migration check complete');
 
       // Create tables
       await this._createTables();
+      console.log('[DatabaseManager] Tables created');
+
+      // Safety check: ensure contacts table has sort_order column
+      // (fixes broken state from failed V16 migration regardless of schema version)
+      await this._ensureContactsSchema();
 
       // Create indexes
       await this._createIndexes();
+      console.log('[DatabaseManager] Indexes created');
 
       this.isInitialized = true;
-      // Log:('[DatabaseManager] Database initialized successfully');
+      console.log('[DatabaseManager] Database initialized successfully');
     } catch (error) {
-      // Error:('[DatabaseManager] Initialization error:', error);
+      console.error('[DatabaseManager] Initialization error:', error.message, error);
       this.initPromise = null;
       throw error;
     }
@@ -91,9 +100,10 @@ class DatabaseManager {
       );
 
       const currentVersion = result ? parseInt(result.value, 10) : 0;
+      console.log(`[DatabaseManager] Current schema version: ${currentVersion}, target: ${SCHEMA_VERSION}`);
 
       if (currentVersion < SCHEMA_VERSION) {
-        // Log:(`[DatabaseManager] Migrating from version ${currentVersion} to ${SCHEMA_VERSION}`);
+        console.log(`[DatabaseManager] Migrating from version ${currentVersion} to ${SCHEMA_VERSION}`);
         await this._runMigrations(currentVersion, SCHEMA_VERSION);
 
         // Update schema version
@@ -101,9 +111,10 @@ class DatabaseManager {
           `INSERT OR REPLACE INTO ${Tables.CACHE_METADATA} (key, value, updated_at) VALUES (?, ?, ?)`,
           [CacheKeys.SCHEMA_VERSION, SCHEMA_VERSION.toString(), Date.now()]
         );
+        console.log(`[DatabaseManager] Schema version updated to ${SCHEMA_VERSION}`);
       }
     } catch (error) {
-      // Error:('[DatabaseManager] Migration check error:', error);
+      console.error('[DatabaseManager] Migration check error:', error.message, error);
       // If error, try to create fresh tables
     }
   }
@@ -170,6 +181,14 @@ class DatabaseManager {
 
     if (fromVersion < 15 && toVersion >= 15) {
       await this._migrateToV15();
+    }
+
+    if (fromVersion < 16 && toVersion >= 16) {
+      await this._migrateToV16();
+    }
+
+    if (fromVersion < 17 && toVersion >= 17) {
+      await this._migrateToV17();
     }
   }
 
@@ -248,6 +267,149 @@ class DatabaseManager {
         await this.db.execAsync(sql);
       } catch (error) {
         // Column may already exist
+      }
+    }
+  }
+
+  /**
+   * Safety check: ensure contacts table has the expected schema (sort_order, list_name, UNIQUE constraint).
+   * Runs on EVERY initialization, regardless of schema version.
+   * Fixes broken state from failed V16 migration where schema version was bumped
+   * but the actual table was restored from backup without the new columns.
+   */
+  async _ensureContactsSchema() {
+    try {
+      const tableInfo = await this.db.getAllAsync(`PRAGMA table_info(${Tables.CONTACTS})`);
+      const columns = tableInfo.map(col => col.name);
+      console.log('[DatabaseManager] Contacts table columns:', columns.join(', '));
+
+      if (columns.length === 0) {
+        console.log('[DatabaseManager] Contacts table does not exist, _createTables will handle it');
+        return;
+      }
+
+      if (columns.includes('sort_order') && columns.includes('list_name') && columns.includes('metadata')) {
+        console.log('[DatabaseManager] Contacts schema OK');
+        return;
+      }
+
+      // Schema is broken — drop and recreate
+      console.log('[DatabaseManager] Contacts schema BROKEN (missing sort_order/list_name/metadata), recreating...');
+      await this.db.execAsync('DROP TABLE IF EXISTS contacts_backup_v15');
+      await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+      console.log('[DatabaseManager] Contacts table recreated successfully');
+    } catch (error) {
+      console.error('[DatabaseManager] _ensureContactsSchema FAILED:', error.message);
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
+        await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+        console.log('[DatabaseManager] Contacts table force-recreated');
+      } catch (finalErr) {
+        console.error('[DatabaseManager] Contacts force-recreate also failed:', finalErr.message);
+      }
+    }
+  }
+
+  /**
+   * Migration to version 16: Incremental contacts caching support.
+   * - Removes column-level UNIQUE on server_id (was blocking list-independent caching)
+   * - Adds sort_order column (maintains API page order)
+   * - Recreates contacts table via rename-copy-drop (SQLite can't ALTER constraints)
+   */
+  async _migrateToV16() {
+    console.log('[Migration V16] Starting...');
+
+    // Step 1: Rename existing table
+    try {
+      await this.db.execAsync(
+        `ALTER TABLE ${Tables.CONTACTS} RENAME TO contacts_backup_v15`
+      );
+      console.log('[Migration V16] Step 1: Renamed contacts → contacts_backup_v15');
+    } catch (error) {
+      // Table might not exist (fresh install) — _createTables will handle it
+      console.log('[Migration V16] Step 1: contacts table does not exist (fresh install), skipping migration');
+      return;
+    }
+
+    try {
+      // Step 2: Create new table with updated schema
+      console.log('[Migration V16] Step 2: Creating new contacts table...');
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+      console.log('[Migration V16] Step 2: New contacts table created');
+
+      // Step 3: Copy existing data (sort_order=0, convert NULL list_name to '__all__')
+      console.log('[Migration V16] Step 3: Copying data from backup...');
+      await this.db.execAsync(`
+        INSERT INTO ${Tables.CONTACTS}
+          (id, server_id, setting_id, name, phone_number, wa_id, email, profile_pic,
+           tags, custom_fields, notes, is_blocked, opt_in_status, list_name, metadata,
+           sort_order, created_at, updated_at, synced_at, is_dirty)
+        SELECT
+          id, server_id, setting_id, name, phone_number, wa_id, email, profile_pic,
+          tags, custom_fields, notes, is_blocked, opt_in_status,
+          COALESCE(list_name, '__all__'), metadata,
+          0, created_at, updated_at, synced_at, is_dirty
+        FROM contacts_backup_v15
+      `);
+      console.log('[Migration V16] Step 3: Data copied successfully');
+
+      // Step 4: Drop backup table
+      await this.db.execAsync('DROP TABLE IF EXISTS contacts_backup_v15');
+      console.log('[Migration V16] Step 4: Backup table dropped. Migration complete!');
+    } catch (error) {
+      console.error('[Migration V16] FAILED at copy/create step:', error.message, error);
+      // If migration fails, try to restore from backup
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
+        await this.db.execAsync(
+          `ALTER TABLE contacts_backup_v15 RENAME TO ${Tables.CONTACTS}`
+        );
+        console.log('[Migration V16] Restored from backup');
+      } catch (restoreErr) {
+        console.error('[Migration V16] Restore also failed:', restoreErr.message);
+        // Last resort — drop backup, let _createTables create fresh
+        await this.db.execAsync('DROP TABLE IF EXISTS contacts_backup_v15');
+        console.log('[Migration V16] Dropped backup, will create fresh table');
+      }
+    }
+  }
+
+  /**
+   * Migration to version 17: Fix contacts table after failed V16 migration.
+   * V16 migration may have failed (e.g., phone_number NOT NULL constraint violation)
+   * but schema version was still set to 16, leaving the old table without sort_order.
+   * This migration simply drops and recreates the contacts table from the current DDL.
+   * Contacts are a cache — they'll be re-fetched from the API on next visit.
+   */
+  async _migrateToV17() {
+    console.log('[Migration V17] Starting (fix contacts table)...');
+    try {
+      // Check if sort_order column exists
+      const tableInfo = await this.db.getAllAsync(`PRAGMA table_info(${Tables.CONTACTS})`);
+      const columns = tableInfo.map(col => col.name);
+      console.log('[Migration V17] Current contacts columns:', columns.join(', '));
+
+      if (columns.includes('sort_order')) {
+        console.log('[Migration V17] sort_order already exists, skipping');
+        return;
+      }
+
+      // sort_order missing — drop and recreate from current DDL
+      console.log('[Migration V17] sort_order missing, dropping and recreating contacts table...');
+      await this.db.execAsync('DROP TABLE IF EXISTS contacts_backup_v15');
+      await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+      console.log('[Migration V17] Contacts table recreated successfully');
+    } catch (error) {
+      console.error('[Migration V17] FAILED:', error.message, error);
+      // Last resort — try to drop and recreate
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
+        await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+        console.log('[Migration V17] Recovered via drop+recreate');
+      } catch (finalErr) {
+        console.error('[Migration V17] Recovery also failed:', finalErr.message);
       }
     }
   }
@@ -474,11 +636,16 @@ class DatabaseManager {
   async _createTables() {
     try {
       for (const [tableName, sql] of Object.entries(CREATE_TABLES_SQL)) {
-        await this.db.execAsync(sql);
-        // Log:(`[DatabaseManager] Created/verified table: ${tableName}`);
+        try {
+          await this.db.execAsync(sql);
+          console.log(`[DatabaseManager] Created/verified table: ${tableName}`);
+        } catch (tableError) {
+          console.error(`[DatabaseManager] FAILED to create table ${tableName}:`, tableError.message);
+          throw tableError;
+        }
       }
     } catch (error) {
-      // Error:('[DatabaseManager] Error creating tables:', error);
+      console.error('[DatabaseManager] Error creating tables:', error.message, error);
       throw error;
     }
   }
@@ -489,11 +656,16 @@ class DatabaseManager {
   async _createIndexes() {
     try {
       for (const sql of CREATE_INDEXES_SQL) {
-        await this.db.execAsync(sql);
+        try {
+          await this.db.execAsync(sql);
+        } catch (indexError) {
+          console.error(`[DatabaseManager] FAILED to create index: ${sql.substring(0, 80)}...`, indexError.message);
+          throw indexError;
+        }
       }
-      // Log:('[DatabaseManager] Indexes created successfully');
+      console.log('[DatabaseManager] All indexes created successfully');
     } catch (error) {
-      // Error:('[DatabaseManager] Error creating indexes:', error);
+      console.error('[DatabaseManager] Error creating indexes:', error.message);
       // Non-fatal, continue without indexes
     }
   }

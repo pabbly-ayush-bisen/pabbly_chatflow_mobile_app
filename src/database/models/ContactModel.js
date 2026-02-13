@@ -10,6 +10,9 @@ import { databaseManager } from '../DatabaseManager';
 import { Tables } from '../schema';
 import { generateUUID } from '../../utils/helpers';
 
+// Sentinel value for "All Contacts" list_name (used instead of NULL for UNIQUE constraint)
+const ALL_CONTACTS_LIST = '__all__';
+
 class ContactModel {
   /**
    * Convert API contact object to database record.
@@ -17,9 +20,10 @@ class ContactModel {
    * @param {Object} contact - Contact object from API
    * @param {string} settingId - The WhatsApp number setting ID
    * @param {string} [listName] - The list name this contact belongs to (null for "All")
+   * @param {number} [sortOrder] - Sort order for maintaining API order
    * @returns {Object} Database record
    */
-  static toDbRecord(contact, settingId, listName = null) {
+  static toDbRecord(contact, settingId, listName = null, sortOrder = 0) {
     const now = Date.now();
 
     let metadataJson = null;
@@ -38,8 +42,9 @@ class ContactModel {
       wa_id: contact.waId || null,
       email: contact.email || null,
       opt_in_status: contact.optIn?.status || null,
-      list_name: listName,
+      list_name: listName || ALL_CONTACTS_LIST,
       metadata: metadataJson,
+      sort_order: sortOrder,
       created_at: contact.createdAt ? new Date(contact.createdAt).getTime() : now,
       updated_at: contact.updatedAt ? new Date(contact.updatedAt).getTime() : now,
       synced_at: now,
@@ -78,44 +83,38 @@ class ContactModel {
   }
 
   /**
-   * Save contacts to SQLite for a given setting.
-   *
-   * By default uses replace-all strategy (clears existing, then inserts).
-   * When `append` is true, inserts without clearing — used for incremental
-   * page-by-page caching where new pages are appended to the existing cache.
-   * INSERT OR REPLACE (from batchInsert) handles dedup via the
-   * UNIQUE(server_id, setting_id) constraint.
-   *
+   * Normalize listName: null/undefined → '__all__' sentinel.
+   * @param {string|null} listName
+   * @returns {string}
+   */
+  static _normalizeListName(listName) {
+    return listName || ALL_CONTACTS_LIST;
+  }
+
+  /**
+   * Save contacts to SQLite for a given setting (append mode).
+   * Uses INSERT OR REPLACE — duplicates are handled by UNIQUE(server_id, setting_id, list_name).
    * @param {Array} contacts - Array of contact objects from API
    * @param {string} settingId - The WhatsApp number setting ID
    * @param {string} [listName] - The list name filter (null for "All Contacts")
-   * @param {Object} [options] - Save options
-   * @param {boolean} [options.append=false] - If true, append without clearing existing data
+   * @param {number} [startIndex=0] - Starting sort_order index (= API skip value)
    * @returns {Promise<void>}
    */
-  static async saveContacts(contacts, settingId, listName = null, { append = false } = {}) {
-    if (!settingId) return;
+  static async saveContacts(contacts, settingId, listName = null, startIndex = 0) {
+    if (!settingId || !contacts || contacts.length === 0) return;
 
-    // Clear existing contacts unless appending (incremental page-by-page caching)
-    if (!append) {
-      if (listName) {
-        await databaseManager.execute(
-          `DELETE FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ?`,
-          [settingId, listName]
-        );
-      } else {
-        // "All Contacts" — clear rows with NULL list_name (i.e., the "all" set)
-        await databaseManager.execute(
-          `DELETE FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name IS NULL`,
-          [settingId]
-        );
-      }
+    console.log(`[ContactModel] saveContacts: ${contacts.length} contacts, settingId=${settingId}, listName=${listName}, startIndex=${startIndex}`);
+    try {
+      const records = contacts.map((c, i) =>
+        this.toDbRecord(c, settingId, listName, startIndex + i)
+      );
+      console.log(`[ContactModel] saveContacts: ${records.length} records prepared, calling batchInsert...`);
+      await databaseManager.batchInsert(Tables.CONTACTS, records);
+      console.log(`[ContactModel] saveContacts: batchInsert complete`);
+    } catch (error) {
+      console.error(`[ContactModel] saveContacts FAILED:`, error.message, error);
+      throw error;
     }
-
-    if (!contacts || contacts.length === 0) return;
-
-    const records = contacts.map((c) => this.toDbRecord(c, settingId, listName));
-    await databaseManager.batchInsert(Tables.CONTACTS, records);
   }
 
   /**
@@ -133,16 +132,9 @@ class ContactModel {
 
     if (!settingId) return { contacts: [], totalCount: 0 };
 
-    const conditions = ['setting_id = ?'];
-    const params = [settingId];
-
-    // List filter
-    if (listName) {
-      conditions.push('list_name = ?');
-      params.push(listName);
-    } else {
-      conditions.push('list_name IS NULL');
-    }
+    const dbListName = this._normalizeListName(listName);
+    const conditions = ['setting_id = ?', 'list_name = ?'];
+    const params = [settingId, dbListName];
 
     // Search filter — match name, phone_number, or email
     if (search && search.trim()) {
@@ -153,23 +145,32 @@ class ContactModel {
 
     const whereClause = conditions.join(' AND ');
 
-    // Get total count for pagination
-    const countRow = await databaseManager.queryFirst(
-      `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE ${whereClause}`,
-      params
-    );
-    const totalCount = countRow?.count || 0;
+    console.log(`[ContactModel] getContacts: settingId=${settingId}, listName=${dbListName}, skip=${skip}, limit=${limit}, search=${search || 'none'}`);
 
-    // Get paginated results
-    const rows = await databaseManager.query(
-      `SELECT * FROM ${Tables.CONTACTS} WHERE ${whereClause} ORDER BY name ASC, updated_at DESC LIMIT ? OFFSET ?`,
-      [...params, limit, skip]
-    );
+    try {
+      // Get total count for pagination
+      const countRow = await databaseManager.queryFirst(
+        `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE ${whereClause}`,
+        params
+      );
+      const totalCount = countRow?.count || 0;
+      console.log(`[ContactModel] getContacts: totalCount=${totalCount}`);
 
-    return {
-      contacts: rows.map((row) => this.fromDbRecord(row)),
-      totalCount,
-    };
+      // Get paginated results
+      const rows = await databaseManager.query(
+        `SELECT * FROM ${Tables.CONTACTS} WHERE ${whereClause} ORDER BY sort_order ASC LIMIT ? OFFSET ?`,
+        [...params, limit, skip]
+      );
+      console.log(`[ContactModel] getContacts: returned ${rows.length} rows`);
+
+      return {
+        contacts: rows.map((row) => this.fromDbRecord(row)),
+        totalCount,
+      };
+    } catch (error) {
+      console.error(`[ContactModel] getContacts FAILED:`, error.message, error);
+      throw error;
+    }
   }
 
   /**
@@ -181,18 +182,20 @@ class ContactModel {
   static async getContactCount(settingId, listName = null) {
     if (!settingId) return 0;
 
-    let sql = `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE setting_id = ?`;
-    const params = [settingId];
-
-    if (listName) {
-      sql += ' AND list_name = ?';
-      params.push(listName);
-    } else {
-      sql += ' AND list_name IS NULL';
+    const dbListName = this._normalizeListName(listName);
+    console.log(`[ContactModel] getContactCount: settingId=${settingId}, listName=${dbListName}`);
+    try {
+      const result = await databaseManager.queryFirst(
+        `SELECT COUNT(*) as count FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ?`,
+        [settingId, dbListName]
+      );
+      const count = result?.count || 0;
+      console.log(`[ContactModel] getContactCount: ${count}`);
+      return count;
+    } catch (error) {
+      console.error(`[ContactModel] getContactCount FAILED:`, error.message, error);
+      throw error;
     }
-
-    const result = await databaseManager.queryFirst(sql, params);
-    return result?.count || 0;
   }
 
   /**
@@ -210,24 +213,69 @@ class ContactModel {
   }
 
   /**
-   * Clear all cached contacts for a setting, optionally filtered by list.
+   * Get ALL cached contacts for a setting + list (no pagination).
+   * Used on initial load to return everything cached at once.
    * @param {string} settingId - The WhatsApp number setting ID
-   * @param {string} [listName] - If provided, only clear contacts in this list
+   * @param {string} [listName] - List name filter (null for "All Contacts")
+   * @returns {Promise<{contacts: Array, totalCount: number}>}
+   */
+  static async getAllContacts(settingId, listName = null) {
+    if (!settingId) return { contacts: [], totalCount: 0 };
+
+    const dbListName = this._normalizeListName(listName);
+    console.log(`[ContactModel] getAllContacts: settingId=${settingId}, listName=${dbListName}`);
+    try {
+      const rows = await databaseManager.query(
+        `SELECT * FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ? ORDER BY sort_order ASC`,
+        [settingId, dbListName]
+      );
+      console.log(`[ContactModel] getAllContacts: returned ${rows.length} rows`);
+
+      return {
+        contacts: rows.map((row) => this.fromDbRecord(row)),
+        totalCount: rows.length,
+      };
+    } catch (error) {
+      console.error(`[ContactModel] getAllContacts FAILED:`, error.message, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear all cached contacts for a setting (all lists).
+   * Used for account switch.
+   * @param {string} settingId - The WhatsApp number setting ID
    * @returns {Promise<void>}
    */
-  static async clearContacts(settingId, listName = null) {
+  static async clearContacts(settingId) {
+    if (!settingId) return;
+    await databaseManager.execute(
+      `DELETE FROM ${Tables.CONTACTS} WHERE setting_id = ?`,
+      [settingId]
+    );
+  }
+
+  /**
+   * Clear cached contacts for a specific list only.
+   * Used for pull-to-refresh on a single list.
+   * @param {string} settingId - The WhatsApp number setting ID
+   * @param {string} [listName] - List name (null clears "All Contacts" rows)
+   * @returns {Promise<void>}
+   */
+  static async clearContactsForList(settingId, listName = null) {
     if (!settingId) return;
 
-    if (listName) {
+    const dbListName = this._normalizeListName(listName);
+    console.log(`[ContactModel] clearContactsForList: settingId=${settingId}, listName=${dbListName}`);
+    try {
       await databaseManager.execute(
         `DELETE FROM ${Tables.CONTACTS} WHERE setting_id = ? AND list_name = ?`,
-        [settingId, listName]
+        [settingId, dbListName]
       );
-    } else {
-      await databaseManager.execute(
-        `DELETE FROM ${Tables.CONTACTS} WHERE setting_id = ?`,
-        [settingId]
-      );
+      console.log(`[ContactModel] clearContactsForList: done`);
+    } catch (error) {
+      console.error(`[ContactModel] clearContactsForList FAILED:`, error.message, error);
+      throw error;
     }
   }
 }

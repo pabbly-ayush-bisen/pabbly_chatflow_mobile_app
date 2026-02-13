@@ -91,8 +91,13 @@ export default function ContactsScreen() {
   };
 
   const handleListPress = (listName) => {
-    setSelectedList(listName);
-    loadContacts(true, listName);
+    if (listName === null) {
+      setSelectedList(null);
+      loadContacts(true, null);
+    } else {
+      setSelectedList(listName);
+      loadContacts(true, listName);
+    }
   };
 
   const getOptInStatus = (status) => {
@@ -350,11 +355,9 @@ export default function ContactsScreen() {
         </View>
         <Text style={styles.emptyTitle}>No contacts yet</Text>
         <Text style={styles.emptySubtitle}>
-          {selectedList === 'Unassigned'
-            ? 'All contacts are assigned to a list'
-            : selectedList
-              ? `No contacts found in "${selectedList}"`
-              : 'Add your first contact to get started'}
+          {selectedList
+            ? `No contacts found in "${selectedList}"`
+            : 'Add your first contact to get started'}
         </Text>
         {!selectedList && (
           <TouchableOpacity style={styles.emptyButton} onPress={handleAddContact} activeOpacity={0.8}>
@@ -399,7 +402,7 @@ export default function ContactsScreen() {
     );
   }
 
-  // Prepare list data: All → Unassigned → custom lists
+  // Prepare list data: All → Unassigned → custom lists (always visible)
   const listDataWithAll = [
     { _id: 'all', isAllItem: true },
     { _id: 'unassigned', isUnassignedItem: true },
@@ -475,7 +478,7 @@ export default function ContactsScreen() {
       {/* Section Header */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>
-          {selectedList === 'Unassigned' ? 'Unassigned Contacts' : selectedList ? selectedList : 'All Contacts'}
+          {selectedList ? selectedList : 'All Contacts'}
         </Text>
         <Text style={styles.sectionCount}>
           {filteredContacts.length} {filteredContacts.length === 1 ? 'contact' : 'contacts'}
