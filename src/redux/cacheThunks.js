@@ -733,12 +733,12 @@ async function fetchDashboardStatsFromServer() {
 /**
  * Fetch WA numbers with cache-first strategy.
  *
- * Stores ALL WA numbers in SQLite (via fetchAll=true), then filters locally by
- * folderId/status. This enables instant folder switching from cache without
- * re-fetching from the server.
+ * WA numbers are cached **per folder** using the app_settings table
+ * (key = 'waNumbers_<folderId>'). This enables instant offline folder switching —
+ * each folder the user visits while online gets its own cached list.
  *
- * Cache hit → return filtered numbers from SQLite, silently re-fetch ALL in background.
- * Cache miss or forceRefresh → fetch ALL from API, save to cache, filter, return.
+ * Cache hit → return cached numbers for THIS folder, silently refresh in background.
+ * Cache miss or forceRefresh → fetch from API, save per-folder cache, return.
  */
 export const fetchWANumbersWithCache = createAsyncThunk(
   'dashboard/fetchWANumbersWithCache',
@@ -746,16 +746,15 @@ export const fetchWANumbersWithCache = createAsyncThunk(
     try {
       const { forceRefresh = false, folderId, status } = params;
 
+      // Per-folder cache key (each folder stores its own WA numbers list)
+      const cacheKey = `waNumbers_${folderId || 'default'}`;
+
       // Try cache first
       if (!forceRefresh) {
-        const hasCache = await cacheManager.hasWANumbers();
+        const cached = await cacheManager.getAppSetting(cacheKey);
 
-        if (hasCache) {
-          // Return ALL cached numbers (server handles folder filtering,
-          // WA number objects don't carry folderId so local filtering isn't possible)
-          const cacheResult = await cacheManager.getWANumbers();
-
-          // Silently refresh from server with folder filter in background
+        if (cached && cached.waNumbers) {
+          // Silently refresh from server in background
           fetchWANumbersFromServer({ folderId, status })
             .then(async (freshNumbers) => {
               const { silentUpdateWANumbers } = require('./slices/dashboardSlice');
@@ -763,12 +762,10 @@ export const fetchWANumbersWithCache = createAsyncThunk(
                 waNumbers: freshNumbers,
               }));
             })
-            .catch(() => {
-              // Silent fail — cached data is already shown
-            });
+            .catch(() => {});
 
           return {
-            data: { waNumbers: cacheResult.waNumbers },
+            data: { waNumbers: cached.waNumbers },
             fromCache: true,
           };
         }
@@ -788,9 +785,9 @@ export const fetchWANumbersWithCache = createAsyncThunk(
 );
 
 /**
- * Fetch WA numbers from API and save to SQLite cache.
+ * Fetch WA numbers from API and save to per-folder cache.
  * Passes folderId/status to the server for filtering (server manages folder membership).
- * Saves the response to cache using replace-all strategy.
+ * Saves the response in app_settings keyed by folder ID for offline folder switching.
  * @param {Object} options - Query options
  * @param {string} [options.folderId] - Folder ID for server-side filtering
  * @param {string} [options.status] - Status filter ('active'|'inactive')
@@ -816,8 +813,9 @@ async function fetchWANumbersFromServer({ folderId, status } = {}) {
   const data = response.data || response;
   const waNumbers = data.waNumbers || [];
 
-  // Save to cache (replace-all strategy — cache reflects current view)
-  await cacheManager.saveWANumbers(waNumbers);
+  // Save per-folder cache (each folder gets its own entry in app_settings)
+  const cacheKey = `waNumbers_${folderId || 'default'}`;
+  await cacheManager.saveAppSetting(cacheKey, { waNumbers });
 
   return waNumbers;
 }
