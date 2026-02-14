@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 // Table Names
 export const Tables = {
@@ -159,6 +159,7 @@ export const CREATE_TABLES_SQL = {
       body_text TEXT,
       footer_text TEXT,
       buttons TEXT,
+      metadata TEXT,
       created_at INTEGER,
       updated_at INTEGER,
       synced_at INTEGER,

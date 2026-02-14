@@ -12,7 +12,7 @@
  */
 
 import { databaseManager } from './DatabaseManager';
-import { ChatModel, MessageModel, QuickReplyModel, WANumberModel, DashboardStatsModel, AppSettingsModel, ContactModel, ContactListModel } from './models';
+import { ChatModel, MessageModel, QuickReplyModel, WANumberModel, DashboardStatsModel, AppSettingsModel, ContactModel, ContactListModel, TemplateModel } from './models';
 import { StatTypes } from './models/DashboardStatsModel';
 import { SettingKeys } from './models/AppSettingsModel';
 import { Tables, CacheKeys } from './schema';
@@ -545,6 +545,99 @@ class CacheManager {
     if (!settingId) return false;
 
     return ContactListModel.hasContactLists(settingId);
+  }
+
+  // ==========================================
+  // TEMPLATES CACHE OPERATIONS
+  // ==========================================
+
+  /**
+   * Get templates from cache with optional filtering.
+   * On initial load (skip=0, no search, no status), returns ALL cached templates.
+   * @param {Object} [options] - Query options (skip, limit, search, status)
+   * @returns {Promise<{templates: Array, totalCount: number, fromCache: boolean}>}
+   */
+  async getTemplates(options = {}) {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) {
+      return { templates: [], totalCount: 0, fromCache: false };
+    }
+
+    const { skip = 0, search, status } = options;
+
+    // Initial load with no filters: return ALL cached templates
+    if (skip === 0 && !search && !status) {
+      const result = await TemplateModel.getAllTemplates(settingId);
+      return {
+        templates: result.templates,
+        totalCount: result.totalCount,
+        fromCache: result.templates.length > 0,
+      };
+    }
+
+    // Filtered/paginated query
+    const result = await TemplateModel.getTemplates(settingId, options);
+    return {
+      templates: result.templates,
+      totalCount: result.totalCount,
+      fromCache: result.templates.length > 0,
+    };
+  }
+
+  /**
+   * Save templates to cache (replace-all strategy).
+   * @param {Array} templates - Array of template objects from API
+   * @returns {Promise<void>}
+   */
+  async saveTemplates(templates) {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId || !templates) return;
+
+    await TemplateModel.saveTemplates(templates, settingId);
+  }
+
+  /**
+   * Check if templates are cached for current setting.
+   * @returns {Promise<boolean>}
+   */
+  async hasTemplates() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return false;
+
+    return TemplateModel.hasTemplates(settingId);
+  }
+
+  /**
+   * Clear all cached templates for current setting.
+   * @returns {Promise<void>}
+   */
+  async clearTemplates() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return;
+
+    await TemplateModel.clearTemplates(settingId);
+  }
+
+  /**
+   * Get template stats from local cache (counts grouped by status).
+   * Used as offline fallback when API is unavailable.
+   * @returns {Promise<{total: number, approved: number, pending: number, draft: number, rejected: number}>}
+   */
+  async getTemplateCacheStats() {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return { total: 0, approved: 0, pending: 0, draft: 0, rejected: 0 };
+
+    return TemplateModel.getTemplateCount(settingId);
   }
 
   // ==========================================
