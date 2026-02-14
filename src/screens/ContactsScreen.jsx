@@ -64,8 +64,11 @@ export default function ContactsScreen() {
       dispatch(clearContactError());
     }
 
-    // Re-fetch contacts if we have none
-    if (contacts.length === 0 && contactsStatus !== 'loading') {
+    // If search bar has a query, re-trigger search so it hits API now
+    if (searchQuery && searchQuery.trim()) {
+      loadContacts(true, selectedList, searchQuery);
+    } else if (contacts.length === 0 && contactsStatus !== 'loading') {
+      // Re-fetch contacts if we have none
       loadContacts(true, null);
     }
 
