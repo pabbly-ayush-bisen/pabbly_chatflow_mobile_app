@@ -149,6 +149,8 @@ export default function ContactsScreen() {
 
   const handleLoadMoreContacts = () => {
     if (isLoadingContacts) return;
+    if (contactsStatus === 'failed') return;
+    if (isOffline) return;
     if (contacts.length >= (totalCount || contacts.length)) return;
     loadContacts(false);
   };

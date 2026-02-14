@@ -1223,8 +1223,22 @@ export const fetchContactsWithCache = createAsyncThunk(
           };
         }
       } catch (cacheErr) {
-        // Cache read also failed — fall through to reject
+        // Cache read also failed — fall through
       }
+
+      // For load-more (skip > 0): return empty instead of rejecting
+      // to prevent FlatList onEndReached from looping indefinitely.
+      // Setting totalCount = skip tells the guard "no more data beyond this point".
+      // A pull-to-refresh or re-visit will reset totalCount from API/cache.
+      if ((params.skip || 0) > 0) {
+        return {
+          contacts: [],
+          totalCount: params.skip,
+          fromCache: true,
+          skip: params.skip,
+        };
+      }
+
       return rejectWithValue(error.message);
     }
   }
