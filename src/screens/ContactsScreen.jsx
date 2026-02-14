@@ -24,6 +24,7 @@ export default function ContactsScreen() {
   const [selectedContact, setSelectedContact] = useState(null);
   const [bottomSheetVisible, setBottomSheetVisible] = useState(false);
   const [addContactVisible, setAddContactVisible] = useState(false);
+  const chipListRef = useRef(null);
   const PAGE_SIZE = 10;
 
   const {
@@ -113,13 +114,22 @@ export default function ContactsScreen() {
     loadContactLists(true);
   };
 
-  const handleListPress = (listName) => {
+  const handleListPress = (listName, index) => {
     if (listName === null) {
       setSelectedList(null);
       loadContacts(true, null);
     } else {
       setSelectedList(listName);
       loadContacts(true, listName);
+    }
+
+    // Scroll the selected chip into view with animation
+    if (chipListRef.current && typeof index === 'number') {
+      chipListRef.current.scrollToIndex({
+        index,
+        animated: true,
+        viewPosition: 0.3,
+      });
     }
   };
 
@@ -172,13 +182,13 @@ export default function ContactsScreen() {
   };
 
   // Contact List Filter Chip
-  const renderListChip = ({ item }) => {
+  const renderListChip = ({ item, index }) => {
     // "All Contacts" pill
     if (item.isAllItem) {
       const isSelected = selectedList === null;
       return (
         <TouchableOpacity
-          onPress={() => handleListPress(null)}
+          onPress={() => handleListPress(null, index)}
           activeOpacity={0.7}
           style={[styles.filterChip, isSelected && styles.filterChipSelected]}
         >
@@ -204,7 +214,7 @@ export default function ContactsScreen() {
       const isSelected = selectedList === 'Unassigned';
       return (
         <TouchableOpacity
-          onPress={() => handleListPress('Unassigned')}
+          onPress={() => handleListPress('Unassigned', index)}
           activeOpacity={0.7}
           style={[styles.filterChip, isSelected && styles.filterChipSelected]}
         >
@@ -232,7 +242,7 @@ export default function ContactsScreen() {
 
     return (
       <TouchableOpacity
-        onPress={() => handleListPress(item.listName || listName)}
+        onPress={() => handleListPress(item.listName || listName, index)}
         activeOpacity={0.7}
         style={[styles.filterChip, isSelected && styles.filterChipSelected]}
       >
@@ -492,12 +502,22 @@ export default function ContactsScreen() {
       {/* Filter Chips — always show All & Unassigned, plus any custom lists */}
       <View style={styles.filtersContainer}>
         <FlatList
+          ref={chipListRef}
           data={listDataWithAll}
           renderItem={renderListChip}
           keyExtractor={(item, index) => item._id || `list-${index}`}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filtersList}
+          onScrollToIndexFailed={(info) => {
+            setTimeout(() => {
+              chipListRef.current?.scrollToIndex({
+                index: info.index,
+                animated: true,
+                viewPosition: 0.3,
+              });
+            }, 100);
+          }}
         />
       </View>
 
