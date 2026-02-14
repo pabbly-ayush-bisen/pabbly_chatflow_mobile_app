@@ -37,6 +37,7 @@ import {
 } from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
 import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
+import { clearContactsData } from '../redux/slices/contactSlice';
 import { useNetwork } from '../contexts/NetworkContext';
 import { cacheManager } from '../database/CacheManager';
 
@@ -424,8 +425,9 @@ export default function DashboardScreen() {
     setAccessingId(numberId);
     try {
       // Clear ALL cache data (SQLite + Redux) BEFORE switching WhatsApp numbers
-      // This prevents showing old account's chats when navigating to inbox
+      // This prevents showing old account's data when navigating to inbox/contacts
       dispatch(clearInboxData());
+      dispatch(clearContactsData());
       await cacheManager.clearAllCache();
 
       const result = await dispatch(accessBusinessAccount(numberId)).unwrap();
@@ -481,8 +483,9 @@ export default function DashboardScreen() {
     setAccessingSharedId(id || `${row?.email}-${row?.settingId}`);
     try {
       // Clear ALL cache data (SQLite + Redux) BEFORE switching accounts
-      // This prevents showing old account's chats when navigating to inbox
+      // This prevents showing old account's data when navigating to inbox/contacts
       dispatch(clearInboxData());
+      dispatch(clearContactsData());
       await cacheManager.clearAllCache();
 
       const payload = {
@@ -525,8 +528,9 @@ export default function DashboardScreen() {
     setExitingTeamMember(true);
     try {
       // Clear ALL cache data (SQLite + Redux) BEFORE switching back to admin
-      // This prevents showing team member's chats when navigating to inbox
+      // This prevents showing team member's data when navigating to inbox/contacts
       dispatch(clearInboxData());
+      dispatch(clearContactsData());
       await cacheManager.clearAllCache();
 
       await dispatch(logoutFromTeammember()).unwrap();
