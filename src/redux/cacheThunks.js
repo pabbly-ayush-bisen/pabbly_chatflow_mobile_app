@@ -1106,9 +1106,9 @@ export const fetchContactsWithCache = createAsyncThunk(
         return { contacts, totalCount, fromCache: false, skip: 0 };
       }
 
-      // ── SEARCH (cache first, then API fallback) ──
+      // ── SEARCH (cache first, then API if not found) ──
       if (search && search.trim()) {
-        // Step 1: Search local cache
+        // Step 1: Search local cache first
         const cacheResult = await cacheManager.getContacts({
           skip,
           limit,
