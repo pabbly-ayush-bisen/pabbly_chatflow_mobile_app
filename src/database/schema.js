@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 17;
 
 // Table Names
 export const Tables = {
@@ -115,10 +115,12 @@ export const CREATE_TABLES_SQL = {
   `,
 
   // Contacts table - stores contact information
+  // list_name uses '__all__' sentinel instead of NULL for "All Contacts"
+  // This allows a plain UNIQUE constraint to work (SQLite treats NULLs as distinct)
   [Tables.CONTACTS]: `
     CREATE TABLE IF NOT EXISTS ${Tables.CONTACTS} (
       id TEXT PRIMARY KEY,
-      server_id TEXT UNIQUE NOT NULL,
+      server_id TEXT NOT NULL,
       setting_id TEXT NOT NULL,
       name TEXT,
       phone_number TEXT NOT NULL,
@@ -130,13 +132,14 @@ export const CREATE_TABLES_SQL = {
       notes TEXT,
       is_blocked INTEGER DEFAULT 0,
       opt_in_status TEXT,
-      list_name TEXT,
+      list_name TEXT NOT NULL DEFAULT '__all__',
       metadata TEXT,
+      sort_order INTEGER DEFAULT 0,
       created_at INTEGER,
       updated_at INTEGER,
       synced_at INTEGER,
       is_dirty INTEGER DEFAULT 0,
-      UNIQUE(server_id, setting_id)
+      UNIQUE(server_id, setting_id, list_name)
     )
   `,
 
@@ -295,6 +298,7 @@ export const CREATE_INDEXES_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_contacts_phone_number ON ${Tables.CONTACTS}(phone_number)`,
   `CREATE INDEX IF NOT EXISTS idx_contacts_name ON ${Tables.CONTACTS}(name)`,
   `CREATE INDEX IF NOT EXISTS idx_contacts_list_name ON ${Tables.CONTACTS}(list_name)`,
+  `CREATE INDEX IF NOT EXISTS idx_contacts_sort_order ON ${Tables.CONTACTS}(setting_id, list_name, sort_order ASC)`,
 
   // Template indexes
   `CREATE INDEX IF NOT EXISTS idx_templates_setting_id ON ${Tables.TEMPLATES}(setting_id)`,
