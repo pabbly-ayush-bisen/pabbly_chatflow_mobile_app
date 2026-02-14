@@ -378,8 +378,9 @@ export default function ContactsScreen() {
     );
   };
 
-  // Error State
+  // Error State (hidden when offline — cached data is already shown)
   const renderError = () => {
+    if (isOffline) return null;
     const error = contactListError || contactsError;
     if (!error) return null;
 
