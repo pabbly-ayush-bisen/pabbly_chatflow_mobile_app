@@ -173,6 +173,7 @@ const initialState = {
   contacts: [],
   totalCount: 0,
   shouldFetchContacts: false,
+  currentContactsRequestId: null,
 
   contactStatsStatus: 'idle',
   statsError: null,
@@ -366,12 +367,16 @@ const contactSlice = createSlice({
       });
 
     // Fetch Contacts with Cache
+    // Tracks currentContactsRequestId so stale responses (e.g., a slow API search
+    // resolving after the user cleared the search bar) are ignored.
     builder
-      .addCase(fetchContactsWithCache.pending, (state) => {
+      .addCase(fetchContactsWithCache.pending, (state, action) => {
         state.contactsStatus = 'loading';
         state.contactsError = null;
+        state.currentContactsRequestId = action.meta.requestId;
       })
       .addCase(fetchContactsWithCache.fulfilled, (state, action) => {
+        if (state.currentContactsRequestId !== action.meta.requestId) return;
         state.contactsStatus = 'succeeded';
         const { contacts, totalCount, skip } = action.payload;
 
@@ -386,6 +391,7 @@ const contactSlice = createSlice({
         }
       })
       .addCase(fetchContactsWithCache.rejected, (state, action) => {
+        if (state.currentContactsRequestId !== action.meta.requestId) return;
         state.contactsStatus = 'failed';
         state.contactsError = action.payload;
       });
