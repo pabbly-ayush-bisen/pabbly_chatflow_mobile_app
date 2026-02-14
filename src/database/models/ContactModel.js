@@ -128,11 +128,16 @@ class ContactModel {
     const conditions = ['setting_id = ?', 'list_name = ?'];
     const params = [settingId, dbListName];
 
-    // Search filter — match name, phone_number, or email
+    // Search filter — word-prefix match on name, substring on phone/email
+    // "Aditya" matches "Aditya Kumar" (first name) or "Kumar Aditya" (word start)
+    // but NOT "Shreshtha Upadhayay" (no word starts with "Aditya")
     if (search && search.trim()) {
-      const term = `%${search.trim()}%`;
-      conditions.push('(name LIKE ? OR phone_number LIKE ? OR email LIKE ?)');
-      params.push(term, term, term);
+      const trimmed = search.trim();
+      const prefixTerm = `${trimmed}%`;       // matches start of name
+      const wordTerm = `% ${trimmed}%`;        // matches start of any word in name
+      const substringTerm = `%${trimmed}%`;    // substring for phone/email
+      conditions.push('(name LIKE ? OR name LIKE ? OR phone_number LIKE ? OR email LIKE ?)');
+      params.push(prefixTerm, wordTerm, substringTerm, substringTerm);
     }
 
     const whereClause = conditions.join(' AND ');
