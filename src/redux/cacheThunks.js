@@ -1278,17 +1278,19 @@ export const fetchContactListsWithCache = createAsyncThunk(
               // Silent fail — cached data is already shown
             });
 
-          // Derive counts from cached list objects if metadata is missing
+          // Build counts from multiple fallback sources
           const lists = cacheResult.contactLists;
           const derivedTotal = lists.reduce(
             (sum, l) => sum + (l.count ?? l.contactsCount ?? 0), 0
           );
+          // contacts_total___all__ is saved by fetchContactsWithCache — most reliable
+          const contactsTotal = await cacheManager.getContactsTotalCount(null);
 
           return {
             contactsCount: lists,
             totalLists: cachedMeta?.totalLists || lists.length,
-            totalContactsCount: cachedMeta?.totalContactsCount ?? derivedTotal,
-            unassignedCount: cachedMeta?.unassignedCount ?? 0,
+            totalContactsCount: cachedMeta?.totalContactsCount || contactsTotal || derivedTotal || 0,
+            unassignedCount: cachedMeta?.unassignedCount || 0,
             fromCache: true,
           };
         }
@@ -1312,12 +1314,13 @@ export const fetchContactListsWithCache = createAsyncThunk(
           const derivedTotal = lists.reduce(
             (sum, l) => sum + (l.count ?? l.contactsCount ?? 0), 0
           );
+          const contactsTotal = await cacheManager.getContactsTotalCount(null);
 
           return {
             contactsCount: lists,
             totalLists: fallbackMeta?.totalLists || lists.length,
-            totalContactsCount: fallbackMeta?.totalContactsCount ?? derivedTotal,
-            unassignedCount: fallbackMeta?.unassignedCount ?? 0,
+            totalContactsCount: fallbackMeta?.totalContactsCount || contactsTotal || derivedTotal || 0,
+            unassignedCount: fallbackMeta?.unassignedCount || 0,
             fromCache: true,
           };
         }
@@ -1346,8 +1349,8 @@ async function fetchContactListsFromServer() {
   const data = response.data || response;
   const contactsCount = data.contactsCount || [];
   const totalLists = data.totalLists || contactsCount.length;
-  const totalContactsCount = data.totalContactsCount || 0;
-  const unassignedCount = data.unassignedCount || 0;
+  const totalContactsCount = data.totalContactsCount ?? 0;
+  const unassignedCount = data.unassignedCount ?? 0;
 
   // Save lists array to contact_lists table
   await cacheManager.saveContactLists(contactsCount);
