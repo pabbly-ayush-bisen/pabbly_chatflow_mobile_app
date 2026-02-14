@@ -1352,15 +1352,16 @@ async function fetchContactListsFromServer() {
   const totalContactsCount = data.totalContactsCount ?? 0;
   const unassignedCount = data.unassignedCount ?? 0;
 
-  // Save lists array to contact_lists table
-  await cacheManager.saveContactLists(contactsCount);
-
-  // Save aggregate metadata to app_settings
+  // Save aggregate metadata FIRST — it's a safe upsert and provides counts
+  // even if the lists save below is interrupted by app close
   await cacheManager.saveAppSetting('contactListMeta', {
     totalLists,
     totalContactsCount,
     unassignedCount,
   });
+
+  // Save lists array to contact_lists table (atomic transaction)
+  await cacheManager.saveContactLists(contactsCount);
 
   return { contactsCount, totalLists, totalContactsCount, unassignedCount };
 }

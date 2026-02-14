@@ -72,24 +72,43 @@ class ContactListModel {
 
   /**
    * Save contact lists to SQLite (replace-all strategy per setting).
-   * Clears existing records first so that deleted lists don't persist.
+   * Uses a single transaction so DELETE + INSERT is atomic — if the app
+   * is killed mid-save, the old data is preserved instead of being lost.
    * @param {Array} lists - Array of contact list objects from API
    * @param {string} settingId - The WhatsApp number setting ID
    * @returns {Promise<void>}
    */
   static async saveContactLists(lists, settingId) {
     if (!settingId) return;
-
-    // Clear existing lists for this setting
-    await databaseManager.execute(
-      `DELETE FROM ${Tables.CONTACT_LISTS} WHERE setting_id = ?`,
-      [settingId]
-    );
-
     if (!lists || lists.length === 0) return;
 
     const records = lists.map((list) => this.toDbRecord(list, settingId));
-    await databaseManager.batchInsert(Tables.CONTACT_LISTS, records);
+
+    try {
+      // Atomic: DELETE old + INSERT new in one transaction
+      await databaseManager.transaction(async () => {
+        const db = await databaseManager.getDatabase();
+        await db.runAsync(
+          `DELETE FROM ${Tables.CONTACT_LISTS} WHERE setting_id = ?`,
+          [settingId]
+        );
+        for (const record of records) {
+          const columns = Object.keys(record);
+          const placeholders = columns.map(() => '?').join(', ');
+          await db.runAsync(
+            `INSERT INTO ${Tables.CONTACT_LISTS} (${columns.join(', ')}) VALUES (${placeholders})`,
+            columns.map((col) => record[col] ?? null)
+          );
+        }
+      });
+    } catch (txError) {
+      // Transaction failed — fall back to non-atomic save (better than no save)
+      await databaseManager.execute(
+        `DELETE FROM ${Tables.CONTACT_LISTS} WHERE setting_id = ?`,
+        [settingId]
+      );
+      await databaseManager.batchInsert(Tables.CONTACT_LISTS, records);
+    }
   }
 
   /**
