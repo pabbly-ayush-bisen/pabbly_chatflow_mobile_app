@@ -1079,9 +1079,8 @@ export const fetchContactsWithCache = createAsyncThunk(
       } = params;
 
       // ── FORCE REFRESH (pull-to-refresh) ──
+      // Fetch FIRST, then clear+replace cache. If API fails, old cache survives.
       if (forceRefresh) {
-        await cacheManager.clearContactsForList(listName);
-
         let url = `${endpoints.contacts.getContacts}?skip=0&limit=${limit}`;
         if (listName) {
           url += `&list=${encodeURIComponent(listName)}`;
@@ -1096,6 +1095,9 @@ export const fetchContactsWithCache = createAsyncThunk(
         const contacts = data.contacts || [];
         const totalCount = data.totalCount || 0;
 
+        // Clear old cache ONLY after successful API response
+        await cacheManager.clearContactsForList(listName);
+
         if (contacts.length > 0) {
           await cacheManager.saveContacts(contacts, listName, 0);
         }
@@ -1104,8 +1106,9 @@ export const fetchContactsWithCache = createAsyncThunk(
         return { contacts, totalCount, fromCache: false, skip: 0 };
       }
 
-      // ── SEARCH (always local, no API) ──
+      // ── SEARCH (cache first, then API fallback) ──
       if (search && search.trim()) {
+        // Step 1: Search local cache
         const cacheResult = await cacheManager.getContacts({
           skip,
           limit,
@@ -1113,12 +1116,32 @@ export const fetchContactsWithCache = createAsyncThunk(
           listName,
         });
 
-        return {
-          contacts: cacheResult.contacts,
-          totalCount: cacheResult.totalCount,
-          fromCache: true,
-          skip,
-        };
+        if (cacheResult.contacts.length > 0) {
+          return {
+            contacts: cacheResult.contacts,
+            totalCount: cacheResult.totalCount,
+            fromCache: true,
+            skip,
+          };
+        }
+
+        // Step 2: Cache had no results — try API (will throw if offline)
+        let url = `${endpoints.contacts.getContacts}?skip=${skip}&limit=${limit}&search=${encodeURIComponent(search.trim())}`;
+        if (listName) {
+          url += `&list=${encodeURIComponent(listName)}`;
+        }
+
+        const response = await callApi(url, httpMethods.GET);
+        if (response.status === 'error') {
+          throw new Error(response.message || 'Failed to search contacts');
+        }
+
+        const data = response.data || response;
+        const contacts = data.contacts || [];
+        const totalCount = data.totalCount || 0;
+
+        // Do NOT save search results to cache — they are transient
+        return { contacts, totalCount, fromCache: false, skip };
       }
 
       // ── INITIAL LOAD (skip=0) ──
