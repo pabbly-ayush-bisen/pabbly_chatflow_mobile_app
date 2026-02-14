@@ -206,6 +206,19 @@ const contactSlice = createSlice({
       state.statsError = null;
       state.gotoChatError = null;
     },
+    // Clear all contact data (used when switching accounts/team members)
+    clearContactsData: (state) => {
+      state.contacts = [];
+      state.totalCount = 0;
+      state.contactsStatus = 'idle';
+      state.contactsError = null;
+      state.contactListData = [];
+      state.totalContactsCount = 0;
+      state.unassignedCount = 0;
+      state.totalListCount = 0;
+      state.contactListStatus = 'idle';
+      state.contactListError = null;
+    },
     // Silent update from background refresh — updates data without loading states
     silentUpdateContacts: (state, action) => {
       const { contacts, totalCount } = action.payload;
@@ -403,6 +416,7 @@ export const {
   setShouldFetchContacts,
   setShouldFetchStats,
   clearContactError,
+  clearContactsData,
   silentUpdateContacts,
   silentUpdateContactLists,
 } = contactSlice.actions;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
 import { Text, ActivityIndicator, Searchbar, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
@@ -38,15 +38,22 @@ export default function ContactsScreen() {
     totalCount,
   } = useSelector((state) => state.contact);
 
+  const { settingId } = useSelector((state) => state.user);
+  const prevSettingIdRef = useRef(settingId);
+
   const isLoadingLists = contactListStatus === 'loading';
   const isLoadingContacts = contactsStatus === 'loading';
   const isRefreshing = isLoadingLists && contactListData.length > 0;
   const isInitialContactsLoading = isLoadingContacts && contacts.length === 0;
 
+  // Fetch contacts on mount + re-fetch with forceRefresh when account switches
   useEffect(() => {
-    loadContactLists();
-    loadContacts(true, null);
-  }, []);
+    const isAccountSwitch = prevSettingIdRef.current !== settingId;
+    prevSettingIdRef.current = settingId;
+
+    loadContactLists(isAccountSwitch);
+    loadContacts(true, null, '', isAccountSwitch);
+  }, [settingId]);
 
   // Retry when network comes back and we have no data
   useEffect(() => {
