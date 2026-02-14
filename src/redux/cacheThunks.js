@@ -1278,11 +1278,17 @@ export const fetchContactListsWithCache = createAsyncThunk(
               // Silent fail — cached data is already shown
             });
 
+          // Derive counts from cached list objects if metadata is missing
+          const lists = cacheResult.contactLists;
+          const derivedTotal = lists.reduce(
+            (sum, l) => sum + (l.count ?? l.contactsCount ?? 0), 0
+          );
+
           return {
-            contactsCount: cacheResult.contactLists,
-            totalLists: cachedMeta?.totalLists || cacheResult.contactLists.length,
-            totalContactsCount: cachedMeta?.totalContactsCount || 0,
-            unassignedCount: cachedMeta?.unassignedCount || 0,
+            contactsCount: lists,
+            totalLists: cachedMeta?.totalLists || lists.length,
+            totalContactsCount: cachedMeta?.totalContactsCount ?? derivedTotal,
+            unassignedCount: cachedMeta?.unassignedCount ?? 0,
             fromCache: true,
           };
         }
@@ -1302,11 +1308,16 @@ export const fetchContactListsWithCache = createAsyncThunk(
         const fallbackMeta = await cacheManager.getAppSetting('contactListMeta');
 
         if (fallback.fromCache) {
+          const lists = fallback.contactLists;
+          const derivedTotal = lists.reduce(
+            (sum, l) => sum + (l.count ?? l.contactsCount ?? 0), 0
+          );
+
           return {
-            contactsCount: fallback.contactLists,
-            totalLists: fallbackMeta?.totalLists || fallback.contactLists.length,
-            totalContactsCount: fallbackMeta?.totalContactsCount || 0,
-            unassignedCount: fallbackMeta?.unassignedCount || 0,
+            contactsCount: lists,
+            totalLists: fallbackMeta?.totalLists || lists.length,
+            totalContactsCount: fallbackMeta?.totalContactsCount ?? derivedTotal,
+            unassignedCount: fallbackMeta?.unassignedCount ?? 0,
             fromCache: true,
           };
         }

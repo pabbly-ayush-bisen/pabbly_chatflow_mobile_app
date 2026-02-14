@@ -3,7 +3,7 @@ import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 're
 import { Text, ActivityIndicator, Searchbar, FAB } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
-import { gotoChat } from '../redux/slices/contactSlice';
+import { gotoChat, clearContactError } from '../redux/slices/contactSlice';
 import { fetchContactsWithCache, fetchContactListsWithCache } from '../redux/cacheThunks';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors, getAvatarColor } from '../theme/colors';
@@ -55,11 +55,23 @@ export default function ContactsScreen() {
     loadContacts(true, null, '', isAccountSwitch);
   }, [settingId]);
 
-  // Retry when network comes back and we have no data
+  // Network recovery: clear stale errors and re-fetch failed data
   useEffect(() => {
-    if (isNetworkAvailable && contacts.length === 0 && contactsStatus !== 'loading') {
-      loadContactLists();
+    if (!isNetworkAvailable) return;
+
+    // Clear stale offline errors so the error banner disappears
+    if (contactsError || contactListError) {
+      dispatch(clearContactError());
+    }
+
+    // Re-fetch contacts if we have none
+    if (contacts.length === 0 && contactsStatus !== 'loading') {
       loadContacts(true, null);
+    }
+
+    // Re-fetch contact lists if they failed (e.g., offline startup)
+    if (contactListStatus === 'failed' || contactListData.length === 0) {
+      loadContactLists();
     }
   }, [isNetworkAvailable]);
 
