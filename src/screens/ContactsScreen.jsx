@@ -91,6 +91,7 @@ export default function ContactsScreen() {
   };
 
   const onRefresh = () => {
+    if (isOffline) return;
     loadContactLists(true);
     loadContacts(true, selectedList, searchQuery, true);
   };
