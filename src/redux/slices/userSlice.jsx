@@ -680,6 +680,13 @@ export const logoutFromTeammember = createAsyncThunk(
         return rejectWithValue(response.data?.message || 'Team member logout failed');
       }
 
+      // Clear cached data to prevent stale team member data persisting
+      try {
+        await cacheManager.clearAllCache();
+      } catch (cacheError) {
+        // Ignore cache clear errors
+      }
+
       return response;
     } catch (error) {
       return rejectWithValue(error.response?.data || error.message);

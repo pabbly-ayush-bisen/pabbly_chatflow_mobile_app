@@ -225,6 +225,11 @@ const dashboardSlice = createSlice({
       state.teamMembersError = null;
       state.sharedAccountsError = null;
     },
+    resetDashboardData: (state) => {
+      state.stats = initialState.stats;
+      state.statsStatus = 'idle';
+      state.statsError = null;
+    },
 
     // Silent update reducers — update data without triggering loading states.
     // Used by cache thunks when background API refresh completes after a cache hit.
@@ -496,6 +501,7 @@ export const {
   setShouldFetchFolders,
   setFolderFilter,
   clearDashboardError,
+  resetDashboardData,
   silentUpdateDashboardStats,
   silentUpdateWANumbers,
   silentUpdateFolders,

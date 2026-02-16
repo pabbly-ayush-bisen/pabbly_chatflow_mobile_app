@@ -11,6 +11,9 @@ import { AppState } from 'react-native';
 import { cacheManager } from '../database/CacheManager';
 import { initializeCache } from '../redux/cacheThunks';
 import { clearInboxData } from '../redux/slices/inboxSlice';
+import { resetTemplates } from '../redux/slices/templateSlice';
+import { resetSettingsData } from '../redux/slices/settingsSlice';
+import { resetDashboardData } from '../redux/slices/dashboardSlice';
 
 // Create the context
 const CacheContext = createContext(null);
@@ -75,6 +78,9 @@ export function CacheProvider({ children }) {
       // Clear Redux state if switching accounts
       if (previousSettingId && previousSettingId !== settingId) {
         dispatch(clearInboxData());
+        dispatch(resetTemplates());
+        dispatch(resetSettingsData());
+        dispatch(resetDashboardData());
       }
 
       previousSettingIdRef.current = settingId;

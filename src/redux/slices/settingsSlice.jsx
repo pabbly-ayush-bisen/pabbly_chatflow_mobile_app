@@ -274,6 +274,11 @@ const settingsSlice = createSlice({
     silentUpdateOptInManagement: (state, action) => {
       state.settings.optInManagement = action.payload;
     },
+    resetSettingsData: (state) => {
+      state.settings = initialState.settings;
+      state.getSettingsStatus = 'idle';
+      state.getSettingsError = null;
+    },
   },
   extraReducers: (builder) => {
     // Get Settings
@@ -426,5 +431,5 @@ const settingsSlice = createSlice({
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;
