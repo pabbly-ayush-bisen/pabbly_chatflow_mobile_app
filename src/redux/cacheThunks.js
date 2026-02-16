@@ -1394,16 +1394,18 @@ async function fetchContactListsFromServer() {
 // ==========================================
 
 /**
- * Fetch templates with incremental page-by-page caching.
+ * Fetch templates with per-status-pill independent caching.
  *
- * Strategy (mirrors fetchContactsWithCache):
- * - forceRefresh: Fetch page 1 from API → clear old cache → save → return.
- * - search: Search cached data (SQL LIKE) → API fallback (transient, NOT saved).
- * - status filter: Query cache with status WHERE → API fallback.
- * - initial load (skip=0): Return ALL cached templates. If empty, fetch page 1 from API.
- * - load more (skip>0): If skip < cachedCount → serve from cache.
- *                        If skip >= cachedCount → fetch from API → append to cache → return.
- * - Offline + cache miss: reject (show skeleton/error).
+ * Each pill ('all', 'approved', 'pending', 'draft', 'rejected') has its own
+ * cache bucket via cache_key. Fetching or refreshing one pill does not
+ * affect another pill's cache.
+ *
+ * Strategy:
+ * - cacheKey derived from status param: 'APPROVED' → 'approved', null → 'all'
+ * - forceRefresh: Clear this pill's bucket → fetch API → save → return.
+ * - search: Search this pill's cache → API fallback (transient, NOT saved).
+ * - initial load (skip=0): Return ALL cached from this bucket. Miss → API → save.
+ * - load more (skip>0): If skip < cachedCount[bucket] → cache. Else → API → append.
  */
 export const fetchTemplatesWithCache = createAsyncThunk(
   'template/fetchTemplatesWithCache',
@@ -1417,30 +1419,26 @@ export const fetchTemplatesWithCache = createAsyncThunk(
         status = null,
       } = params;
 
+      // Derive cache bucket from status param
+      const cacheKey = status && status.trim() ? status.trim().toLowerCase() : 'all';
+
       // ── FORCE REFRESH (pull-to-refresh) ──
       if (forceRefresh) {
         const freshData = await fetchTemplatesFromServer({ skip: 0, limit, search, status });
 
-        if (status && status.trim()) {
-          // Status-filtered refresh (Approved, Pending, etc.):
-          // Return fresh API data to Redux but do NOT touch the cache.
-          // This preserves cached templates for other pills.
-          return { templates: freshData.templates, totalCount: freshData.totalCount, fromCache: false, skip: 0 };
-        }
-
-        // "All" pill refresh: save fresh page via INSERT OR REPLACE (no full clear).
-        // Existing cached templates beyond page 1 remain intact.
+        // Clear ONLY this pill's cache bucket, then save fresh data
+        await cacheManager.clearTemplatesForCacheKey(cacheKey);
         if (freshData.templates.length > 0) {
-          await cacheManager.saveTemplates(freshData.templates, 0);
+          await cacheManager.saveTemplates(freshData.templates, cacheKey, 0);
         }
-        await cacheManager.saveTemplatesTotalCount(freshData.totalCount);
+        await cacheManager.saveTemplatesTotalCount(cacheKey, freshData.totalCount);
 
         return { templates: freshData.templates, totalCount: freshData.totalCount, fromCache: false, skip: 0 };
       }
 
-      // ── SEARCH (cache-first → API fallback) ──
+      // ── SEARCH (cache-first → API fallback, transient) ──
       if (search && search.trim()) {
-        const cacheResult = await cacheManager.getTemplates({ skip, limit, search, status });
+        const cacheResult = await cacheManager.getTemplates({ skip, limit, search, cacheKey });
 
         if (cacheResult.templates.length > 0) {
           return { templates: cacheResult.templates, totalCount: cacheResult.totalCount, fromCache: true, skip };
@@ -1453,39 +1451,12 @@ export const fetchTemplatesWithCache = createAsyncThunk(
         return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip };
       }
 
-      // ── STATUS FILTER (no search) ──
-      if (status && status.trim()) {
-        // Initial status filter load (skip=0): return ALL cached templates for this status
-        if (skip === 0) {
-          const cacheResult = await cacheManager.getTemplates({ status, skip: 0 });
-
-          if (cacheResult.fromCache && cacheResult.templates.length > 0) {
-            return { templates: cacheResult.templates, totalCount: cacheResult.totalCount, fromCache: true, skip: 0 };
-          }
-
-          // Cache empty for this status — fetch from API
-          const apiData = await fetchTemplatesFromServer({ skip: 0, limit, status });
-          return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip: 0 };
-        }
-
-        // Load more for status filter (skip > 0)
-        const cacheResult = await cacheManager.getTemplates({ status, skip, limit });
-
-        if (cacheResult.templates.length > 0) {
-          return { templates: cacheResult.templates, totalCount: cacheResult.totalCount, fromCache: true, skip };
-        }
-
-        // Cache exhausted — fetch from API
-        const apiData = await fetchTemplatesFromServer({ skip, limit, status });
-        return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip };
-      }
-
-      // ── INITIAL LOAD (skip=0, no search, no status) ──
+      // ── INITIAL LOAD (skip=0, no search) ──
       if (skip === 0) {
-        const cacheResult = await cacheManager.getTemplates({ skip: 0 });
+        const cacheResult = await cacheManager.getTemplates({ skip: 0, cacheKey });
 
         if (cacheResult.fromCache && cacheResult.templates.length > 0) {
-          const storedTotal = await cacheManager.getTemplatesTotalCount();
+          const storedTotal = await cacheManager.getTemplatesTotalCount(cacheKey);
           return {
             templates: cacheResult.templates,
             totalCount: storedTotal ?? cacheResult.templates.length,
@@ -1495,23 +1466,23 @@ export const fetchTemplatesWithCache = createAsyncThunk(
         }
 
         // Cache miss — fetch first page from API
-        const apiData = await fetchTemplatesFromServer({ skip: 0, limit });
+        const apiData = await fetchTemplatesFromServer({ skip: 0, limit, status });
 
         if (apiData.templates.length > 0) {
-          await cacheManager.saveTemplates(apiData.templates, 0);
+          await cacheManager.saveTemplates(apiData.templates, cacheKey, 0);
         }
-        await cacheManager.saveTemplatesTotalCount(apiData.totalCount);
+        await cacheManager.saveTemplatesTotalCount(cacheKey, apiData.totalCount);
 
         return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip: 0 };
       }
 
       // ── LOAD MORE (skip > 0) ──
-      const cachedCount = await cacheManager.getCachedTemplateCount();
+      const cachedCount = await cacheManager.getCachedTemplateCount(cacheKey);
 
       if (skip < cachedCount) {
-        // Enough cached data — serve from cache
-        const cacheResult = await cacheManager.getTemplates({ skip, limit });
-        const storedTotal = await cacheManager.getTemplatesTotalCount();
+        // Enough cached data in this bucket — serve from cache
+        const cacheResult = await cacheManager.getTemplates({ skip, limit, cacheKey });
+        const storedTotal = await cacheManager.getTemplatesTotalCount(cacheKey);
 
         return {
           templates: cacheResult.templates,
@@ -1521,26 +1492,27 @@ export const fetchTemplatesWithCache = createAsyncThunk(
         };
       }
 
-      // Need more data — fetch next page from API and append to cache
-      const apiData = await fetchTemplatesFromServer({ skip, limit });
+      // Need more data — fetch next page from API and append to this bucket
+      const apiData = await fetchTemplatesFromServer({ skip, limit, status });
 
       if (apiData.templates.length > 0) {
-        await cacheManager.saveTemplates(apiData.templates, skip);
+        await cacheManager.saveTemplates(apiData.templates, cacheKey, skip);
       }
-      await cacheManager.saveTemplatesTotalCount(apiData.totalCount);
+      await cacheManager.saveTemplatesTotalCount(cacheKey, apiData.totalCount);
 
       return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip };
     } catch (error) {
-      // Offline fallback — try to return cached data
+      // Offline fallback — try to return cached data from this bucket
+      const cacheKey = params.status && params.status.trim() ? params.status.trim().toLowerCase() : 'all';
       try {
         const fallback = await cacheManager.getTemplates({
           skip: params.skip || 0,
           limit: params.limit || 10,
           search: params.search,
-          status: params.status,
+          cacheKey,
         });
         if (fallback.fromCache && fallback.templates.length > 0) {
-          const storedTotal = await cacheManager.getTemplatesTotalCount();
+          const storedTotal = await cacheManager.getTemplatesTotalCount(cacheKey);
           return {
             templates: fallback.templates,
             totalCount: storedTotal ?? fallback.templates.length,
