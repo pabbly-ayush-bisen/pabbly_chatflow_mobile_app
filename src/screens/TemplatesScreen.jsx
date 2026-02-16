@@ -73,18 +73,31 @@ export default function TemplatesScreen() {
     hasMoreTemplates,
   } = useSelector((state) => state.template);
 
+  const { settingId } = useSelector((state) => state.user);
+  const prevSettingIdRef = useRef(settingId);
+
   const isLoading = templatesStatus === 'loading' || statsStatus === 'loading';
   const isRefreshing = templatesStatus === 'loading' && templates.length > 0;
 
-  // Initial load — cache-first (works offline too)
+  // Initial load + re-fetch with forceRefresh on account switch
   useEffect(() => {
-    loadTemplates({ reset: true });
+    const isAccountSwitch = prevSettingIdRef.current !== settingId;
+    prevSettingIdRef.current = settingId;
+
+    if (isAccountSwitch) {
+      // Account changed — reset filters and force fresh fetch
+      setSearchQuery('');
+      setSelectedStatus('all');
+    }
+
+    loadTemplates({ reset: true, search: '', status: 'all', forceRefresh: isAccountSwitch });
+
     return () => {
       if (searchDebounceRef.current) {
         clearTimeout(searchDebounceRef.current);
       }
     };
-  }, []);
+  }, [settingId]);
 
   // Network recovery — re-fetch when connectivity is restored
   useEffect(() => {
