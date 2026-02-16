@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import { fetchTemplatesWithCache, fetchTemplateStatsWithCache } from '../cacheThunks';
 
 // Async thunks
 export const fetchAllTemplates = createAsyncThunk(
@@ -89,6 +90,7 @@ const initialState = {
   totalTemplates: 0,
   totalSearchResult: 0,
   hasMoreTemplates: true,
+  currentTemplatesRequestId: null,
 };
 
 // Slice
@@ -107,6 +109,22 @@ const templateSlice = createSlice({
     resetTemplates: (state) => {
       state.templates = [];
       state.hasMoreTemplates = true;
+    },
+    // Silent update from background refresh — updates data without loading states
+    silentUpdateTemplates: (state, action) => {
+      const { templates, totalCount } = action.payload;
+      state.templates = templates;
+      if (typeof totalCount === 'number') {
+        state.totalSearchResult = totalCount;
+      }
+    },
+    silentUpdateTemplateStats: (state, action) => {
+      const data = action.payload;
+      state.totalTemplates = String(data.total || 0);
+      state.approvedTemplates = String(data.approved || 0);
+      state.pendingTemplates = String(data.pending || 0);
+      state.draftTemplates = String(data.draft || 0);
+      state.rejectedTemplates = String(data.rejected || 0);
     },
     // Update template status from socket event (for real-time template approval updates)
     setUpdatedTemplate: (state, action) => {
@@ -186,8 +204,56 @@ const templateSlice = createSlice({
         state.statsStatus = 'failed';
         state.statsError = action.payload;
       });
+
+    // Fetch Templates with Cache
+    builder
+      .addCase(fetchTemplatesWithCache.pending, (state, action) => {
+        state.templatesStatus = 'loading';
+        state.templatesError = null;
+        state.currentTemplatesRequestId = action.meta.requestId;
+      })
+      .addCase(fetchTemplatesWithCache.fulfilled, (state, action) => {
+        if (state.currentTemplatesRequestId !== action.meta.requestId) return;
+        state.templatesStatus = 'succeeded';
+        const { templates, totalCount, skip, append } = action.payload;
+        const limit = action.meta.arg?.limit || 10;
+
+        if (append && skip > 0) {
+          state.templates = [...state.templates, ...templates];
+        } else {
+          state.templates = templates;
+        }
+
+        state.totalSearchResult = totalCount;
+        state.hasMoreTemplates = templates.length === limit;
+      })
+      .addCase(fetchTemplatesWithCache.rejected, (state, action) => {
+        if (state.currentTemplatesRequestId !== action.meta.requestId) return;
+        state.templatesStatus = 'failed';
+        state.templatesError = action.payload;
+      });
+
+    // Fetch Template Stats with Cache
+    builder
+      .addCase(fetchTemplateStatsWithCache.pending, (state) => {
+        state.statsStatus = 'loading';
+        state.statsError = null;
+      })
+      .addCase(fetchTemplateStatsWithCache.fulfilled, (state, action) => {
+        state.statsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.totalTemplates = String(data.total || 0);
+        state.approvedTemplates = String(data.approved || 0);
+        state.pendingTemplates = String(data.pending || 0);
+        state.draftTemplates = String(data.draft || 0);
+        state.rejectedTemplates = String(data.rejected || 0);
+      })
+      .addCase(fetchTemplateStatsWithCache.rejected, (state, action) => {
+        state.statsStatus = 'failed';
+        state.statsError = action.payload;
+      });
   },
 });
 
-export const { setSelectedTemplate, clearTemplateError, setUpdatedTemplate, resetTemplates } = templateSlice.actions;
+export const { setSelectedTemplate, clearTemplateError, setUpdatedTemplate, resetTemplates, silentUpdateTemplates, silentUpdateTemplateStats } = templateSlice.actions;
 export default templateSlice.reducer;

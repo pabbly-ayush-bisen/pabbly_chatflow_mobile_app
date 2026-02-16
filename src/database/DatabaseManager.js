@@ -177,6 +177,10 @@ class DatabaseManager {
     if (fromVersion < 17 && toVersion >= 17) {
       await this._migrateToV17();
     }
+
+    if (fromVersion < 18 && toVersion >= 18) {
+      await this._migrateToV18();
+    }
   }
 
   /**
@@ -368,6 +372,32 @@ class DatabaseManager {
       try {
         await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
         await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+      } catch (finalErr) {
+        // Recovery also failed
+      }
+    }
+  }
+
+  /**
+   * Migration to version 18: Add metadata column to templates table.
+   * Stores the full API JSON blob for zero data loss on cache reads.
+   * Templates are a cache — if ALTER fails, drop and recreate (data re-fetched on next visit).
+   */
+  async _migrateToV18() {
+    try {
+      const tableInfo = await this.db.getAllAsync(`PRAGMA table_info(${Tables.TEMPLATES})`);
+      const columns = tableInfo.map(col => col.name);
+
+      if (columns.includes('metadata')) {
+        return; // Already has metadata column
+      }
+
+      await this.db.execAsync(`ALTER TABLE ${Tables.TEMPLATES} ADD COLUMN metadata TEXT`);
+    } catch (error) {
+      // ALTER failed — drop and recreate from current DDL
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.TEMPLATES}`);
+        await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
       } catch (finalErr) {
         // Recovery also failed
       }

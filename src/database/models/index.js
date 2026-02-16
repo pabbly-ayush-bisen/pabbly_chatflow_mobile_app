@@ -12,3 +12,4 @@ export { default as DashboardStatsModel, StatTypes } from './DashboardStatsModel
 export { default as AppSettingsModel, SettingKeys } from './AppSettingsModel';
 export { default as ContactModel } from './ContactModel';
 export { default as ContactListModel } from './ContactListModel';
+export { default as TemplateModel } from './TemplateModel';

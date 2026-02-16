@@ -16,7 +16,8 @@ import {
 } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { fetchAllTemplates, fetchTemplateStats, resetTemplates } from '../redux/slices/templateSlice';
+import { resetTemplates } from '../redux/slices/templateSlice';
+import { fetchTemplatesWithCache, fetchTemplateStatsWithCache } from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
 import { EmptyState, TemplatesListSkeleton, MessagePreviewBubble } from '../components/common';
 import { getTemplateHeader, getCarouselCards, getLimitedTimeOffer } from '../components/common/MessagePreview';
@@ -56,8 +57,6 @@ export default function TemplatesScreen() {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [previewTemplate, setPreviewTemplate] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [page, setPage] = useState(0);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const PAGE_SIZE = 10;
   const searchDebounceRef = useRef(null);
 
@@ -74,16 +73,12 @@ export default function TemplatesScreen() {
     hasMoreTemplates,
   } = useSelector((state) => state.template);
 
-  // Only show loading if online and actually loading, OR if never loaded before and online
-  const isLoading = isNetworkAvailable && (templatesStatus === 'loading' || statsStatus === 'loading');
-  const isRefreshing = isNetworkAvailable && templatesStatus === 'loading' && templates.length > 0;
+  const isLoading = templatesStatus === 'loading' || statsStatus === 'loading';
+  const isRefreshing = templatesStatus === 'loading' && templates.length > 0;
 
+  // Initial load — cache-first (works offline too)
   useEffect(() => {
-    // Only fetch if online
-    if (isNetworkAvailable) {
-      loadTemplates({ reset: true });
-    }
-    // Cleanup debounce timer on unmount
+    loadTemplates({ reset: true });
     return () => {
       if (searchDebounceRef.current) {
         clearTimeout(searchDebounceRef.current);
@@ -91,55 +86,43 @@ export default function TemplatesScreen() {
     };
   }, []);
 
-  // Fetch when network becomes available (if we haven't loaded yet)
+  // Network recovery — re-fetch when connectivity is restored
   useEffect(() => {
-    if (isNetworkAvailable && !hasLoadedOnce && templates.length === 0) {
+    if (isNetworkAvailable && templates.length === 0 && templatesStatus !== 'loading') {
+      loadTemplates({ reset: true });
+    } else if (isNetworkAvailable && templatesStatus === 'failed') {
       loadTemplates({ reset: true });
     }
-  }, [isNetworkAvailable, hasLoadedOnce, templates.length]);
+  }, [isNetworkAvailable]);
 
-  const loadTemplates = useCallback(({ reset = true, append = false, search = '', status = 'all' } = {}) => {
-    // Don't fetch if offline
-    if (isOffline) {
-      return;
-    }
-
-    // Build API params
-    const apiParams = {
+  const loadTemplates = useCallback(({ reset = true, append = false, search = '', status = 'all', forceRefresh = false } = {}) => {
+    const params = {
       limit: PAGE_SIZE,
-      append,
     };
 
-    // Add search param if provided
     if (search && search.trim()) {
-      apiParams.search = search.trim();
+      params.search = search.trim();
     }
 
-    // Add status param if not 'all' (API expects uppercase: APPROVED, PENDING, DRAFT, REJECTED)
     if (status && status !== 'all') {
-      apiParams.status = status.toUpperCase();
+      params.status = status.toUpperCase();
     }
 
     if (reset) {
       dispatch(resetTemplates());
-      setPage(0);
-      dispatch(fetchTemplateStats());
-      dispatch(fetchAllTemplates({ ...apiParams, page: 0, append: false }))
-        .then(() => setHasLoadedOnce(true));
-      setPage(1);
+      dispatch(fetchTemplateStatsWithCache({ forceRefresh }));
+      dispatch(fetchTemplatesWithCache({ ...params, skip: 0, append: false, forceRefresh }));
     } else if (append) {
-      dispatch(fetchAllTemplates({ ...apiParams, page, append: true }));
-      setPage(prev => prev + 1);
+      dispatch(fetchTemplatesWithCache({ ...params, skip: templates.length, append: true }));
     }
-  }, [dispatch, page, PAGE_SIZE, isOffline]);
+  }, [dispatch, PAGE_SIZE, templates.length]);
 
   const onRefresh = () => {
-    // Don't refresh if offline
     if (isOffline) return;
 
     setSearchQuery('');
     setSelectedStatus('all');
-    loadTemplates({ reset: true, search: '', status: 'all' });
+    loadTemplates({ reset: true, search: '', status: 'all', forceRefresh: true });
   };
 
   // Debounced search handler
@@ -164,17 +147,13 @@ export default function TemplatesScreen() {
   }, [loadTemplates, searchQuery]);
 
   const handleLoadMore = useCallback(() => {
-    // Don't load more if:
-    // - Already loading
-    // - No more templates from server
-    // - Offline
     if (
       templatesStatus === 'loading' ||
       !hasMoreTemplates ||
       isOffline
     ) return;
     loadTemplates({ reset: false, append: true, search: searchQuery, status: selectedStatus });
-  }, [templatesStatus, hasMoreTemplates, loadTemplates, searchQuery, selectedStatus]);
+  }, [templatesStatus, hasMoreTemplates, loadTemplates, searchQuery, selectedStatus, isOffline]);
 
   // Templates are now filtered by API, so just use templates directly
   const filteredTemplates = templates;
@@ -374,8 +353,8 @@ export default function TemplatesScreen() {
     );
   };
 
-  // Loading - show skeleton (only if online and loading)
-  if (isLoading && templates.length === 0 && isNetworkAvailable) {
+  // Loading - show skeleton only when no data at all (cache miss + API loading)
+  if (isLoading && templates.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.skeletonContainer}>
