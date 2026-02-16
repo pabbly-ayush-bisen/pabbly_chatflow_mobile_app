@@ -16,7 +16,7 @@ import {
 } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { updateSettings, deleteSettings, silentUpdateOptInManagement } from '../../redux/slices/settingsSlice';
+import { updateSettings, deleteSettings } from '../../redux/slices/settingsSlice';
 import { fetchOptInManagementWithCache } from '../../redux/cacheThunks';
 import { fetchAllTemplates } from '../../redux/slices/templateSlice';
 import { useNetwork } from '../../contexts/NetworkContext';
@@ -303,19 +303,19 @@ export default function OptInManagementScreen() {
     setSnackbarVisible(true);
   }, []);
 
-  // Silent background cache sync — updates Redux + SQLite without triggering loading state
+  // Silent background cache sync — saves fresh data to SQLite only (no Redux update)
+  // so the local state isn't overwritten and keywords don't flicker/jump
   const syncCacheInBackground = useCallback(() => {
     callApi(`${endpoints.settings.getSettings}?keys=optInManagement`, httpMethods.GET)
       .then(async (response) => {
         if (response.status !== 'error') {
           const data = response.data || response;
           const optInManagement = data.optInManagement || {};
-          dispatch(silentUpdateOptInManagement(optInManagement));
           await cacheManager.saveAppSetting('optInManagement', optInManagement);
         }
       })
       .catch(() => {});
-  }, [dispatch]);
+  }, []);
 
   const handleAddKeyword = async (type) => {
     const input = type === 'optIn' ? optInKeywordInput.trim() : optOutKeywordInput.trim();
