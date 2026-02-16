@@ -565,22 +565,11 @@ class CacheManager {
       return { templates: [], totalCount: 0, fromCache: false };
     }
 
-    const { skip = 0, search, status } = options;
+    const { skip = 0, search, cacheKey = 'all' } = options;
 
-    // Initial load (skip=0, no search): return ALL cached templates
-    // Works for both "All" tab and individual status filters (Approved, Pending, etc.)
+    // Initial load (skip=0, no search): return ALL cached templates for this bucket
     if (skip === 0 && !search) {
-      if (!status) {
-        // No status filter — return everything
-        const result = await TemplateModel.getAllTemplates(settingId);
-        return {
-          templates: result.templates,
-          totalCount: result.totalCount,
-          fromCache: result.templates.length > 0,
-        };
-      }
-      // Status filter — return all cached templates matching this status (no limit)
-      const result = await TemplateModel.getTemplates(settingId, { status, skip: 0, limit: 10000 });
+      const result = await TemplateModel.getAllTemplates(settingId, cacheKey);
       return {
         templates: result.templates,
         totalCount: result.totalCount,
@@ -598,22 +587,23 @@ class CacheManager {
   }
 
   /**
-   * Save templates to cache (append mode with sort order).
+   * Save templates to a specific cache bucket (append mode with sort order).
    * @param {Array} templates - Array of template objects from API
+   * @param {string} [cacheKey='all'] - Cache bucket key
    * @param {number} [startIndex=0] - Starting sort_order index (API skip value)
    * @returns {Promise<void>}
    */
-  async saveTemplates(templates, startIndex = 0) {
+  async saveTemplates(templates, cacheKey = 'all', startIndex = 0) {
     await this.ensureInitialized();
 
     const settingId = this.currentSettingId;
     if (!settingId || !templates) return;
 
-    await TemplateModel.saveTemplates(templates, settingId, startIndex);
+    await TemplateModel.saveTemplates(templates, settingId, cacheKey, startIndex);
   }
 
   /**
-   * Check if templates are cached for current setting.
+   * Check if templates are cached for current setting (any bucket).
    * @returns {Promise<boolean>}
    */
   async hasTemplates() {
@@ -626,19 +616,36 @@ class CacheManager {
   }
 
   /**
-   * Get count of cached templates for current setting.
+   * Get count of cached templates for a specific cache bucket.
+   * @param {string} [cacheKey='all'] - Cache bucket key
    * @returns {Promise<number>}
    */
-  async getCachedTemplateCount() {
+  async getCachedTemplateCount(cacheKey = 'all') {
     await this.ensureInitialized();
     const settingId = this.currentSettingId;
     if (!settingId) return 0;
-    return TemplateModel.getCachedCount(settingId);
+    return TemplateModel.getCachedCount(settingId, cacheKey);
   }
 
   /**
-   * Clear all cached templates for current setting.
-   * Also clears the stored totalCount.
+   * Clear cached templates for a specific cache bucket.
+   * Used for pull-to-refresh on a single pill.
+   * @param {string} [cacheKey='all'] - Cache bucket key
+   * @returns {Promise<void>}
+   */
+  async clearTemplatesForCacheKey(cacheKey = 'all') {
+    await this.ensureInitialized();
+
+    const settingId = this.currentSettingId;
+    if (!settingId) return;
+
+    await TemplateModel.clearTemplatesForCacheKey(settingId, cacheKey);
+    await AppSettingsModel.remove(`templates_total_${cacheKey}`);
+  }
+
+  /**
+   * Clear ALL cached templates (all buckets). Used for account switch.
+   * Also clears all per-bucket totalCounts.
    * @returns {Promise<void>}
    */
   async clearTemplates() {
@@ -648,31 +655,36 @@ class CacheManager {
     if (!settingId) return;
 
     await TemplateModel.clearTemplates(settingId);
-    await AppSettingsModel.remove('templates_total');
+    for (const key of ['all', 'approved', 'pending', 'draft', 'rejected']) {
+      await AppSettingsModel.remove(`templates_total_${key}`);
+    }
   }
 
   /**
-   * Save the server-reported total count for templates.
+   * Save the server-reported total count for a cache bucket.
+   * @param {string} cacheKey - Cache bucket key
    * @param {number} totalCount - Server total count
    * @returns {Promise<void>}
    */
-  async saveTemplatesTotalCount(totalCount) {
+  async saveTemplatesTotalCount(cacheKey, totalCount) {
     await this.ensureInitialized();
-    await AppSettingsModel.save('templates_total', { totalCount });
+    await AppSettingsModel.save(`templates_total_${cacheKey || 'all'}`, { totalCount });
   }
 
   /**
-   * Get the cached server-reported total count for templates.
+   * Get the cached server-reported total count for a cache bucket.
+   * @param {string} cacheKey - Cache bucket key
    * @returns {Promise<number|null>} Total count, or null if not cached
    */
-  async getTemplatesTotalCount() {
+  async getTemplatesTotalCount(cacheKey) {
     await this.ensureInitialized();
-    const data = await AppSettingsModel.get('templates_total');
+    const data = await AppSettingsModel.get(`templates_total_${cacheKey || 'all'}`);
     return data?.totalCount ?? null;
   }
 
   /**
    * Get template stats from local cache (counts grouped by status).
+   * Uses the 'all' cache bucket for accurate counts.
    * Used as offline fallback when API is unavailable.
    * @returns {Promise<{total: number, approved: number, pending: number, draft: number, rejected: number}>}
    */

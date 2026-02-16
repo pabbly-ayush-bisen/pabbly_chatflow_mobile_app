@@ -7,7 +7,7 @@
  * Schema Version: 1
  */
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 // Table Names
 export const Tables = {
@@ -147,7 +147,7 @@ export const CREATE_TABLES_SQL = {
   [Tables.TEMPLATES]: `
     CREATE TABLE IF NOT EXISTS ${Tables.TEMPLATES} (
       id TEXT PRIMARY KEY,
-      server_id TEXT UNIQUE NOT NULL,
+      server_id TEXT NOT NULL,
       setting_id TEXT NOT NULL,
       name TEXT NOT NULL,
       language TEXT,
@@ -160,11 +160,12 @@ export const CREATE_TABLES_SQL = {
       footer_text TEXT,
       buttons TEXT,
       metadata TEXT,
+      cache_key TEXT NOT NULL DEFAULT 'all',
       sort_order INTEGER DEFAULT 0,
       created_at INTEGER,
       updated_at INTEGER,
       synced_at INTEGER,
-      UNIQUE(server_id, setting_id)
+      UNIQUE(server_id, setting_id, cache_key)
     )
   `,
 
@@ -305,6 +306,7 @@ export const CREATE_INDEXES_SQL = [
   // Template indexes
   `CREATE INDEX IF NOT EXISTS idx_templates_setting_id ON ${Tables.TEMPLATES}(setting_id)`,
   `CREATE INDEX IF NOT EXISTS idx_templates_status ON ${Tables.TEMPLATES}(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_templates_cache_key ON ${Tables.TEMPLATES}(setting_id, cache_key, sort_order ASC)`,
 
   // Sync queue indexes
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON ${Tables.SYNC_QUEUE}(status)`,

@@ -67,6 +67,10 @@ class DatabaseManager {
       // (fixes broken state from failed V16 migration regardless of schema version)
       await this._ensureContactsSchema();
 
+      // Safety check: ensure templates table has cache_key column
+      // (fixes broken state from failed V20 migration regardless of schema version)
+      await this._ensureTemplatesSchema();
+
       // Create indexes
       await this._createIndexes();
 
@@ -185,6 +189,10 @@ class DatabaseManager {
     if (fromVersion < 19 && toVersion >= 19) {
       await this._migrateToV19();
     }
+
+    if (fromVersion < 20 && toVersion >= 20) {
+      await this._migrateToV20();
+    }
   }
 
   /**
@@ -293,6 +301,38 @@ class DatabaseManager {
       try {
         await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
         await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+      } catch (finalErr) {
+        // Force-recreate also failed
+      }
+    }
+  }
+
+  /**
+   * Safety check: ensure templates table has cache_key column.
+   * If missing (failed V20 migration), drop and recreate.
+   * Templates are a cache — safe to recreate.
+   */
+  async _ensureTemplatesSchema() {
+    try {
+      const tableInfo = await this.db.getAllAsync(`PRAGMA table_info(${Tables.TEMPLATES})`);
+      const columns = tableInfo.map(col => col.name);
+
+      if (columns.length === 0) {
+        return;
+      }
+
+      if (columns.includes('cache_key')) {
+        return;
+      }
+
+      // cache_key column missing — drop and recreate
+      await this.db.execAsync('DROP TABLE IF EXISTS templates_backup_v19');
+      await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.TEMPLATES}`);
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
+    } catch (error) {
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.TEMPLATES}`);
+        await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
       } catch (finalErr) {
         // Force-recreate also failed
       }
@@ -431,6 +471,55 @@ class DatabaseManager {
       } catch (finalErr) {
         // Recovery also failed
       }
+    }
+  }
+
+  /**
+   * Migration to version 20: Per-status-pill caching for templates.
+   * Adds cache_key column and changes UNIQUE constraint from
+   * (server_id, setting_id) to (server_id, setting_id, cache_key).
+   * Uses rename-copy-drop strategy since SQLite can't alter constraints.
+   * Templates are a cache — if migration fails, drop and recreate.
+   */
+  async _migrateToV20() {
+    // Step 1: Rename existing table
+    try {
+      await this.db.execAsync(
+        `ALTER TABLE ${Tables.TEMPLATES} RENAME TO templates_backup_v19`
+      );
+    } catch (error) {
+      // Table might not exist (fresh install) — _createTables will handle it
+      return;
+    }
+
+    try {
+      // Step 2: Create new table with updated schema
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
+
+      // Step 3: Copy existing data (all rows get cache_key='all')
+      await this.db.execAsync(`
+        INSERT INTO ${Tables.TEMPLATES}
+          (id, server_id, setting_id, name, language, category, status,
+           components, header_type, header_content, body_text, footer_text,
+           buttons, metadata, cache_key, sort_order, created_at, updated_at, synced_at)
+        SELECT
+          id, server_id, setting_id, name, language, category, status,
+          components, header_type, header_content, body_text, footer_text,
+          buttons, metadata, 'all', sort_order, created_at, updated_at, synced_at
+        FROM templates_backup_v19
+      `);
+
+      // Step 4: Drop backup table
+      await this.db.execAsync('DROP TABLE IF EXISTS templates_backup_v19');
+    } catch (error) {
+      // Migration failed — templates are a cache, safe to drop and recreate
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.TEMPLATES}`);
+        await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
+      } catch (e) {
+        // ignore
+      }
+      await this.db.execAsync('DROP TABLE IF EXISTS templates_backup_v19');
     }
   }
 
