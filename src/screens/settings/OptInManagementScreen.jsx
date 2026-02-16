@@ -415,7 +415,7 @@ export default function OptInManagementScreen() {
     }
 
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+      <View style={styles.chipsWrap}>
         {keywords.map((keyword, index) => {
           const isDeleting = updatingKey?.includes(keyword);
           return (
@@ -437,7 +437,7 @@ export default function OptInManagementScreen() {
             </View>
           );
         })}
-      </ScrollView>
+      </View>
     );
   };
 
@@ -633,14 +633,18 @@ export default function OptInManagementScreen() {
         <View style={styles.bottomSpace} />
       </ScrollView>
 
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={2000}
-        style={styles.snackbar}
-      >
-        {snackbarMessage}
-      </Snackbar>
+      {snackbarVisible && (
+        <View style={styles.snackbarContainer}>
+          <Snackbar
+            visible={snackbarVisible}
+            onDismiss={() => setSnackbarVisible(false)}
+            duration={2000}
+            style={styles.snackbar}
+          >
+            {snackbarMessage}
+          </Snackbar>
+        </View>
+      )}
     </View>
   );
 }
@@ -822,7 +826,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.tertiary,
   },
-  chipsRow: {
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     paddingVertical: 2,
   },
@@ -908,9 +914,14 @@ const styles = StyleSheet.create({
   bottomSpace: {
     height: 16,
   },
-  snackbar: {
+  snackbarContainer: {
     position: 'absolute',
     top: 0,
-    bottom: undefined,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+  },
+  snackbar: {
+    backgroundColor: '#323232',
   },
 });
