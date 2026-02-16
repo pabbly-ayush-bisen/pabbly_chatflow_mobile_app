@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
 import {
   Text,
@@ -21,6 +22,148 @@ import { useNetwork } from '../../contexts/NetworkContext';
 import { colors, chatColors } from '../../theme/colors';
 import { MessagePreviewBubble } from '../../components/common';
 import { getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
+
+const SkeletonPulse = ({ style }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+  return <Animated.View style={[{ backgroundColor: colors.grey[200], borderRadius: 6 }, style, { opacity }]} />;
+};
+
+const SkeletonSection = ({ accentColor }) => (
+  <View style={skeletonStyles.card}>
+    {/* Header */}
+    <View style={skeletonStyles.cardHeader}>
+      <View style={[skeletonStyles.iconBox, { backgroundColor: accentColor + '20' }]}>
+        <SkeletonPulse style={{ width: 18, height: 18, borderRadius: 4 }} />
+      </View>
+      <View style={{ flex: 1, gap: 6 }}>
+        <SkeletonPulse style={{ width: 120, height: 14 }} />
+        <SkeletonPulse style={{ width: 160, height: 10 }} />
+      </View>
+    </View>
+
+    {/* Keywords */}
+    <View style={skeletonStyles.sectionBlock}>
+      <View style={skeletonStyles.sectionHead}>
+        <SkeletonPulse style={{ width: 70, height: 12 }} />
+        <SkeletonPulse style={{ width: 28, height: 20, borderRadius: 10 }} />
+      </View>
+      <View style={skeletonStyles.chipsRow}>
+        <SkeletonPulse style={{ width: 72, height: 30, borderRadius: 16 }} />
+        <SkeletonPulse style={{ width: 56, height: 30, borderRadius: 16 }} />
+        <SkeletonPulse style={{ width: 84, height: 30, borderRadius: 16 }} />
+      </View>
+      <View style={skeletonStyles.inputRow}>
+        <SkeletonPulse style={{ flex: 1, height: 40, borderRadius: 10 }} />
+        <SkeletonPulse style={{ width: 40, height: 40, borderRadius: 10 }} />
+      </View>
+    </View>
+
+    <View style={skeletonStyles.divider} />
+
+    {/* Response */}
+    <View style={skeletonStyles.sectionBlock}>
+      <View style={skeletonStyles.sectionHead}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <SkeletonPulse style={{ width: 95, height: 12 }} />
+          <SkeletonPulse style={{ width: 50, height: 18, borderRadius: 4 }} />
+        </View>
+        <SkeletonPulse style={{ width: 48, height: 26, borderRadius: 14 }} />
+      </View>
+      <SkeletonPulse style={{ width: '100%', height: 80, borderRadius: 12 }} />
+    </View>
+  </View>
+);
+
+const OptInManagementSkeleton = () => (
+  <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {/* Info box */}
+      <View style={skeletonStyles.infoBox}>
+        <SkeletonPulse style={{ width: 28, height: 28, borderRadius: 8 }} />
+        <SkeletonPulse style={{ flex: 1, height: 14 }} />
+      </View>
+
+      <SkeletonSection accentColor="#16A34A" />
+      <SkeletonSection accentColor="#DC2626" />
+    </ScrollView>
+  </View>
+);
+
+const skeletonStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  iconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionBlock: {
+    padding: 14,
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginHorizontal: 14,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+});
 
 export default function OptInManagementScreen() {
   const dispatch = useDispatch();
@@ -430,14 +573,7 @@ export default function OptInManagementScreen() {
   }
 
   if (isLoading && hasNoData) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading settings...</Text>
-        </View>
-      </View>
-    );
+    return <OptInManagementSkeleton />;
   }
 
   return (
@@ -480,16 +616,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 80,
-  },
-  loadingBox: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: colors.text.secondary,
   },
   offlineBox: {
     flex: 1,
