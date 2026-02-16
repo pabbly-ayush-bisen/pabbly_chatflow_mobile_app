@@ -438,6 +438,16 @@ export default function TemplatesScreen() {
         {renderFilters()}
       </View>
 
+      {/* Section Header with count */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {selectedStatus === 'all' ? 'All Templates' : STATUS_CONFIG[selectedStatus]?.label || 'Templates'}
+        </Text>
+        <Text style={styles.sectionCount}>
+          {filteredTemplates.length} {filteredTemplates.length === 1 ? 'template' : 'templates'}
+        </Text>
+      </View>
+
       <FlatList
         data={filteredTemplates}
         renderItem={renderTemplateItem}
@@ -542,6 +552,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text.primary,
     marginBottom: 10,
+  },
+
+  // Section Header
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: colors.background.default,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  sectionCount: {
+    fontSize: 13,
+    color: colors.text.tertiary,
   },
 
   // Filters
