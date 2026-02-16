@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import { fetchOptInManagementWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getSettings = createAsyncThunk(
@@ -268,6 +269,11 @@ const settingsSlice = createSlice({
       state.activityLogsError = null;
       state.generateApiTokenError = null;
     },
+    // Silent update — updates data without triggering loading state.
+    // Used by cache thunks when background API refresh completes after a cache hit.
+    silentUpdateOptInManagement: (state, action) => {
+      state.settings.optInManagement = action.payload;
+    },
   },
   extraReducers: (builder) => {
     // Get Settings
@@ -398,8 +404,27 @@ const settingsSlice = createSlice({
         state.generateApiTokenStatus = 'failed';
         state.generateApiTokenError = action.payload;
       });
+
+    // Fetch Opt-In Management with Cache
+    builder
+      .addCase(fetchOptInManagementWithCache.pending, (state) => {
+        state.getSettingsStatus = 'loading';
+        state.getSettingsError = null;
+      })
+      .addCase(fetchOptInManagementWithCache.fulfilled, (state, action) => {
+        state.getSettingsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.settings = {
+          ...state.settings,
+          ...data,
+        };
+      })
+      .addCase(fetchOptInManagementWithCache.rejected, (state, action) => {
+        state.getSettingsStatus = 'failed';
+        state.getSettingsError = action.payload;
+      });
   },
 });
 
-export const { clearSettingsError } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement } = settingsSlice.actions;
 export default settingsSlice.reducer;

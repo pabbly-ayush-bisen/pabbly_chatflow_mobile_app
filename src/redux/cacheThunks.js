@@ -1649,6 +1649,83 @@ async function fetchTemplateStatsFromServer() {
   return stats;
 }
 
+// ==========================================
+// OPT-IN MANAGEMENT CACHE OPERATIONS
+// ==========================================
+
+/**
+ * Fetch opt-in management settings with cache-first strategy.
+ * Cache hit → return instantly + silent background refresh.
+ * Cache miss / forceRefresh → fetch from API, save to cache.
+ * Offline fallback → return cached data if available.
+ */
+export const fetchOptInManagementWithCache = createAsyncThunk(
+  'settings/fetchOptInManagementWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      // Try cache first
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('optInManagement');
+
+        if (cached) {
+          // Return cached data immediately, then silently refresh in background
+          fetchOptInManagementFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateOptInManagement } = require('./slices/settingsSlice');
+                dispatch(silentUpdateOptInManagement(freshData));
+              }
+            })
+            .catch(() => {});
+
+          return { data: { optInManagement: cached }, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchOptInManagementFromServer();
+      return { data: { optInManagement: freshData }, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('optInManagement');
+        if (cached) {
+          return { data: { optInManagement: cached }, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch opt-in management settings from API and save to cache.
+ * @returns {Promise<Object>} optInManagement object
+ */
+async function fetchOptInManagementFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=optInManagement`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch opt-in management settings');
+  }
+
+  const data = response.data || response;
+  const optInManagement = data.optInManagement || {};
+
+  // Save to cache
+  await cacheManager.saveAppSetting('optInManagement', optInManagement);
+
+  return optInManagement;
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -1673,4 +1750,5 @@ export default {
   fetchContactListsWithCache,
   fetchTemplatesWithCache,
   fetchTemplateStatsWithCache,
+  fetchOptInManagementWithCache,
 };

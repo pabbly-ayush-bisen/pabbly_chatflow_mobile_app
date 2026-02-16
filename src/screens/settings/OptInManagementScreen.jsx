@@ -14,14 +14,17 @@ import {
 } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { getSettings, updateSettings, deleteSettings } from '../../redux/slices/settingsSlice';
+import { updateSettings, deleteSettings } from '../../redux/slices/settingsSlice';
+import { fetchOptInManagementWithCache } from '../../redux/cacheThunks';
 import { fetchAllTemplates } from '../../redux/slices/templateSlice';
+import { useNetwork } from '../../contexts/NetworkContext';
 import { colors, chatColors } from '../../theme/colors';
 import { MessagePreviewBubble } from '../../components/common';
 import { getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
 
 export default function OptInManagementScreen() {
   const dispatch = useDispatch();
+  const { isOffline, isNetworkAvailable } = useNetwork();
 
   const { settings, getSettingsStatus } = useSelector((state) => state.settings);
   const { templates } = useSelector((state) => state.template);
@@ -63,7 +66,7 @@ export default function OptInManagementScreen() {
   const isRefreshing = getSettingsStatus === 'loading' && (optInKeywords.length > 0 || optOutKeywords.length > 0);
 
   useEffect(() => {
-    dispatch(getSettings('optInManagement'));
+    dispatch(fetchOptInManagementWithCache());
     // Fetch all templates to get full template data
     dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
   }, [dispatch]);
@@ -120,9 +123,19 @@ export default function OptInManagementScreen() {
     }
   }, [templates, optInTemplateName, optOutTemplateName]);
 
+  // Network recovery — re-fetch when connectivity is restored
+  useEffect(() => {
+    if (isNetworkAvailable && optInKeywords.length === 0 && optOutKeywords.length === 0 && getSettingsStatus !== 'loading') {
+      dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
+    } else if (isNetworkAvailable && getSettingsStatus === 'failed') {
+      dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
+    }
+  }, [isNetworkAvailable]);
+
   const onRefresh = useCallback(() => {
-    dispatch(getSettings('optInManagement'));
-  }, [dispatch]);
+    if (isOffline) return;
+    dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
+  }, [dispatch, isOffline]);
 
   const showSnackbar = useCallback((message) => {
     setSnackbarMessage(message);
@@ -134,7 +147,7 @@ export default function OptInManagementScreen() {
     const currentKeywords = type === 'optIn' ? optInKeywords : optOutKeywords;
     const otherKeywords = type === 'optIn' ? optOutKeywords : optInKeywords;
 
-    if (!input) return;
+    if (!input || isOffline) return;
 
     if (currentKeywords.includes(input)) {
       showSnackbar('Keyword already exists');
@@ -156,7 +169,7 @@ export default function OptInManagementScreen() {
       if (result.status === 'success') {
         showSnackbar('Keyword added');
         type === 'optIn' ? setOptInKeywordInput('') : setOptOutKeywordInput('');
-        dispatch(getSettings('optInManagement'));
+        dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
       } else {
         showSnackbar(result.message || 'Failed to add');
       }
@@ -168,6 +181,8 @@ export default function OptInManagementScreen() {
   };
 
   const handleDeleteKeyword = async (type, keyword) => {
+    if (isOffline) return;
+
     const key = type === 'optIn'
       ? 'optInManagement.optInSettings.kewords'
       : 'optInManagement.optOutSettings.kewords';
@@ -177,7 +192,7 @@ export default function OptInManagementScreen() {
       const result = await dispatch(deleteSettings({ key, names: [keyword] })).unwrap();
       if (result.status === 'success') {
         showSnackbar('Keyword removed');
-        dispatch(getSettings('optInManagement'));
+        dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
       } else {
         showSnackbar(result.message || 'Failed to remove');
       }
@@ -189,6 +204,8 @@ export default function OptInManagementScreen() {
   };
 
   const handleToggleResponse = async (type, enabled) => {
+    if (isOffline) return;
+
     const key = type === 'optIn'
       ? 'optInManagement.optInSettings.response.enabled'
       : 'optInManagement.optOutSettings.response.enabled';
@@ -199,6 +216,7 @@ export default function OptInManagementScreen() {
       if (result.status === 'success') {
         showSnackbar(`Response ${enabled ? 'enabled' : 'disabled'}`);
         type === 'optIn' ? setOptInResponseEnabled(enabled) : setOptOutResponseEnabled(enabled);
+        dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
       } else {
         showSnackbar(result.message || 'Failed to update');
       }
@@ -230,7 +248,7 @@ export default function OptInManagementScreen() {
               <Text style={styles.chipText}>{keyword}</Text>
               <TouchableOpacity
                 onPress={() => handleDeleteKeyword(type, keyword)}
-                disabled={isDeleting}
+                disabled={isDeleting || isOffline}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 {isDeleting ? (
@@ -263,12 +281,12 @@ export default function OptInManagementScreen() {
           outlineStyle={styles.inputOutline}
           dense
           onSubmitEditing={() => handleAddKeyword(type)}
-          disabled={isAdding}
+          disabled={isAdding || isOffline}
         />
         <TouchableOpacity
-          style={[styles.addBtn, (!value.trim() || isAdding) && styles.addBtnDisabled]}
+          style={[styles.addBtn, (!value.trim() || isAdding || isOffline) && styles.addBtnDisabled]}
           onPress={() => handleAddKeyword(type)}
-          disabled={!value.trim() || isAdding}
+          disabled={!value.trim() || isAdding || isOffline}
         >
           {isAdding ? (
             <ActivityIndicator size={16} color="#FFF" />
@@ -371,9 +389,9 @@ export default function OptInManagementScreen() {
               </View>
             </View>
             <TouchableOpacity
-              style={[styles.togglePill, enabled && styles.togglePillActive]}
+              style={[styles.togglePill, enabled && styles.togglePillActive, isOffline && { opacity: 0.5 }]}
               onPress={() => handleToggleResponse(type, !enabled)}
-              disabled={updatingKey === toggleKey}
+              disabled={updatingKey === toggleKey || isOffline}
             >
               {updatingKey === toggleKey ? (
                 <ActivityIndicator size={12} color={enabled ? '#FFF' : colors.grey[400]} />
@@ -393,7 +411,25 @@ export default function OptInManagementScreen() {
     );
   };
 
-  if (isLoading && optInKeywords.length === 0 && optOutKeywords.length === 0) {
+  // Offline with no cached data
+  const hasNoData = optInKeywords.length === 0 && optOutKeywords.length === 0;
+  if (isOffline && hasNoData && getSettingsStatus !== 'succeeded') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.offlineBox}>
+          <View style={styles.offlineIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.offlineTitle}>You're Offline</Text>
+          <Text style={styles.offlineSubtitle}>
+            Connect to the internet to load settings.{'\n'}Previously loaded data will appear here.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (isLoading && hasNoData) {
     return (
       <View style={styles.container}>
         <View style={styles.loadingBox}>
@@ -454,6 +490,34 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     color: colors.text.secondary,
+  },
+  offlineBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  offlineIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 
   // Info Box
