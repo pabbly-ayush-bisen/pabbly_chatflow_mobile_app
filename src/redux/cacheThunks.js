@@ -1418,12 +1418,18 @@ export const fetchTemplatesWithCache = createAsyncThunk(
       } = params;
 
       // ── FORCE REFRESH (pull-to-refresh) ──
-      // Fetch FIRST, then clear+replace cache. If API fails, old cache survives.
       if (forceRefresh) {
         const freshData = await fetchTemplatesFromServer({ skip: 0, limit, search, status });
 
-        // Clear old cache ONLY after successful API response
-        await cacheManager.clearTemplates();
+        if (status && status.trim()) {
+          // Status-filtered refresh (Approved, Pending, etc.):
+          // Return fresh API data to Redux but do NOT touch the cache.
+          // This preserves cached templates for other pills.
+          return { templates: freshData.templates, totalCount: freshData.totalCount, fromCache: false, skip: 0 };
+        }
+
+        // "All" pill refresh: save fresh page via INSERT OR REPLACE (no full clear).
+        // Existing cached templates beyond page 1 remain intact.
         if (freshData.templates.length > 0) {
           await cacheManager.saveTemplates(freshData.templates, 0);
         }

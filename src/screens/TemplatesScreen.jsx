@@ -142,8 +142,7 @@ export default function TemplatesScreen() {
     if (isOffline) return;
 
     setSearchQuery('');
-    setSelectedStatus('all');
-    loadTemplates({ reset: true, search: '', status: 'all', forceRefresh: true });
+    loadTemplates({ reset: true, search: '', status: selectedStatus, forceRefresh: true });
   };
 
   // Debounced search handler
