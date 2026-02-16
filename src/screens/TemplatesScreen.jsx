@@ -405,23 +405,6 @@ export default function TemplatesScreen() {
     );
   }
 
-  // Offline with no data
-  if (isOffline && templates.length === 0) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.emptyContainer}>
-          <View style={styles.emptyIconContainer}>
-            <Icon name="cloud-off-outline" size={64} color={colors.grey[300]} />
-          </View>
-          <Text style={styles.emptyTitle}>You're Offline</Text>
-          <Text style={styles.emptySubtitle}>
-            Connect to the internet to load templates.{'\n'}Previously loaded templates will appear here.
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
   // Empty state — custom design matching ContactsScreen/InboxScreen
   const renderEmptyState = () => {
     // Loading after pill switch or search — show inline skeleton (not full-screen)
@@ -429,6 +412,21 @@ export default function TemplatesScreen() {
       return (
         <View style={styles.skeletonInListContainer}>
           <TemplatesListSkeleton count={6} />
+        </View>
+      );
+    }
+
+    // Offline with no cached data
+    if (isOffline) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={[styles.emptyIconContainer, { backgroundColor: '#FEF2F2' }]}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.emptyTitle}>You're Offline</Text>
+          <Text style={styles.emptySubtitle}>
+            Connect to the internet to load templates.{'\n'}Previously loaded templates will appear here.
+          </Text>
         </View>
       );
     }
