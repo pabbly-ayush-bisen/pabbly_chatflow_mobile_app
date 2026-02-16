@@ -16,10 +16,12 @@ import {
 } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { updateSettings, deleteSettings } from '../../redux/slices/settingsSlice';
+import { updateSettings, deleteSettings, silentUpdateOptInManagement } from '../../redux/slices/settingsSlice';
 import { fetchOptInManagementWithCache } from '../../redux/cacheThunks';
 import { fetchAllTemplates } from '../../redux/slices/templateSlice';
 import { useNetwork } from '../../contexts/NetworkContext';
+import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import { cacheManager } from '../../database/CacheManager';
 import { colors, chatColors } from '../../theme/colors';
 import { MessagePreviewBubble } from '../../components/common';
 import { getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
@@ -301,6 +303,20 @@ export default function OptInManagementScreen() {
     setSnackbarVisible(true);
   }, []);
 
+  // Silent background cache sync — updates Redux + SQLite without triggering loading state
+  const syncCacheInBackground = useCallback(() => {
+    callApi(`${endpoints.settings.getSettings}?keys=optInManagement`, httpMethods.GET)
+      .then(async (response) => {
+        if (response.status !== 'error') {
+          const data = response.data || response;
+          const optInManagement = data.optInManagement || {};
+          dispatch(silentUpdateOptInManagement(optInManagement));
+          await cacheManager.saveAppSetting('optInManagement', optInManagement);
+        }
+      })
+      .catch(() => {});
+  }, [dispatch]);
+
   const handleAddKeyword = async (type) => {
     const input = type === 'optIn' ? optInKeywordInput.trim() : optOutKeywordInput.trim();
     const currentKeywords = type === 'optIn' ? optInKeywords : optOutKeywords;
@@ -324,14 +340,14 @@ export default function OptInManagementScreen() {
 
     setUpdatingKey(key);
     try {
-      const result = await dispatch(updateSettings({ key, data: [input] })).unwrap();
-      if (result.status === 'success') {
-        showSnackbar('Keyword added');
-        type === 'optIn' ? setOptInKeywordInput('') : setOptOutKeywordInput('');
-        dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
-      } else {
-        showSnackbar(result.message || 'Failed to add');
-      }
+      await dispatch(updateSettings({ key, data: [input] })).unwrap();
+      showSnackbar('Keyword added');
+      type === 'optIn' ? setOptInKeywordInput('') : setOptOutKeywordInput('');
+      // Add keyword to local state immediately
+      const setKeywords = type === 'optIn' ? setOptInKeywords : setOptOutKeywords;
+      setKeywords(prev => [...prev, input]);
+      // Sync cache in background without triggering loading state
+      syncCacheInBackground();
     } catch (error) {
       showSnackbar(error || 'Failed to add');
     } finally {
@@ -346,21 +362,19 @@ export default function OptInManagementScreen() {
       ? 'optInManagement.optInSettings.kewords'
       : 'optInManagement.optOutSettings.kewords';
 
-    // Optimistic update — remove keyword from UI immediately
-    const setKeywords = type === 'optIn' ? setOptInKeywords : setOptOutKeywords;
-    const previousKeywords = type === 'optIn' ? [...optInKeywords] : [...optOutKeywords];
-    setKeywords(prev => prev.filter(k => k !== keyword));
-
+    setUpdatingKey(`${key}-${keyword}`);
     try {
-      // .unwrap() throws on rejection, so reaching next line means API succeeded
       await dispatch(deleteSettings({ key, names: [keyword] })).unwrap();
       showSnackbar('Keyword removed');
-      // Sync cache in background
-      dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
+      // Remove keyword from local state after API success
+      const setKeywords = type === 'optIn' ? setOptInKeywords : setOptOutKeywords;
+      setKeywords(prev => prev.filter(k => k !== keyword));
+      // Sync cache in background without triggering loading state
+      syncCacheInBackground();
     } catch (error) {
-      // Revert on error
-      setKeywords(previousKeywords);
       showSnackbar(error || 'Failed to remove');
+    } finally {
+      setUpdatingKey(null);
     }
   };
 
@@ -403,16 +417,21 @@ export default function OptInManagementScreen() {
     return (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
         {keywords.map((keyword, index) => {
+          const isDeleting = updatingKey?.includes(keyword);
           return (
             <View key={`${keyword}-${index}`} style={[styles.chip, { backgroundColor: CHIP_COLORS[index % CHIP_COLORS.length].bg, borderColor: CHIP_COLORS[index % CHIP_COLORS.length].border }]}>
               <Text style={[styles.chipText, { color: CHIP_COLORS[index % CHIP_COLORS.length].text }]}>{keyword}</Text>
               {!isTeamMemberLoggedIn && (
                 <TouchableOpacity
                   onPress={() => handleDeleteKeyword(type, keyword)}
-                  disabled={isOffline}
+                  disabled={isDeleting || isOffline}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Icon name="close" size={14} color={colors.grey[500]} />
+                  {isDeleting ? (
+                    <ActivityIndicator size={12} color={colors.grey[400]} />
+                  ) : (
+                    <Icon name="close" size={14} color={colors.grey[500]} />
+                  )}
                 </TouchableOpacity>
               )}
             </View>
