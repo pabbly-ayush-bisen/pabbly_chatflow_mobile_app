@@ -3,6 +3,7 @@
  *
  * Handles saving, retrieving, searching, and filtering templates in the local SQLite cache.
  * Templates are setting-specific (tied to a WhatsApp number via setting_id).
+ * Uses incremental page-by-page caching (append mode) — same pattern as ContactModel.
  * Stores full API response in metadata column for zero data loss.
  */
 
@@ -16,9 +17,10 @@ class TemplateModel {
    * Extracts indexable fields for SQL queries and stores the full JSON in metadata.
    * @param {Object} template - Template object from API
    * @param {string} settingId - The WhatsApp number setting ID
+   * @param {number} [sortOrder=0] - Sort order for maintaining API order
    * @returns {Object} Database record
    */
-  static toDbRecord(template, settingId) {
+  static toDbRecord(template, settingId, sortOrder = 0) {
     const now = Date.now();
 
     let metadataJson = null;
@@ -61,6 +63,7 @@ class TemplateModel {
       footer_text: template.footerText || template.footer_text || null,
       buttons: buttonsJson,
       metadata: metadataJson,
+      sort_order: sortOrder,
       created_at: template.createdAt ? new Date(template.createdAt).getTime() : now,
       updated_at: template.updatedAt ? new Date(template.updatedAt).getTime() : now,
       synced_at: now,
@@ -115,43 +118,21 @@ class TemplateModel {
   }
 
   /**
-   * Save templates to SQLite (replace-all strategy per setting).
-   * Uses a single transaction so DELETE + INSERT is atomic.
+   * Save templates to SQLite (append mode with sort order).
+   * Uses INSERT OR REPLACE — duplicates are handled by UNIQUE(server_id, setting_id).
+   * Each page of templates is appended; existing templates are updated in place.
    * @param {Array} templates - Array of template objects from API
    * @param {string} settingId - The WhatsApp number setting ID
+   * @param {number} [startIndex=0] - Starting sort_order index (= API skip value)
    * @returns {Promise<void>}
    */
-  static async saveTemplates(templates, settingId) {
-    if (!settingId) return;
-    if (!templates || templates.length === 0) return;
+  static async saveTemplates(templates, settingId, startIndex = 0) {
+    if (!settingId || !templates || templates.length === 0) return;
 
-    const records = templates.map((t) => this.toDbRecord(t, settingId));
-
-    try {
-      // Atomic: DELETE old + INSERT new in one transaction
-      await databaseManager.transaction(async () => {
-        const db = await databaseManager.getDatabase();
-        await db.runAsync(
-          `DELETE FROM ${Tables.TEMPLATES} WHERE setting_id = ?`,
-          [settingId]
-        );
-        for (const record of records) {
-          const columns = Object.keys(record);
-          const placeholders = columns.map(() => '?').join(', ');
-          await db.runAsync(
-            `INSERT INTO ${Tables.TEMPLATES} (${columns.join(', ')}) VALUES (${placeholders})`,
-            columns.map((col) => record[col] ?? null)
-          );
-        }
-      });
-    } catch (txError) {
-      // Transaction failed — fall back to non-atomic save (better than no save)
-      await databaseManager.execute(
-        `DELETE FROM ${Tables.TEMPLATES} WHERE setting_id = ?`,
-        [settingId]
-      );
-      await databaseManager.batchInsert(Tables.TEMPLATES, records);
-    }
+    const records = templates.map((t, i) =>
+      this.toDbRecord(t, settingId, startIndex + i)
+    );
+    await databaseManager.batchInsert(Tables.TEMPLATES, records);
   }
 
   /**
@@ -197,9 +178,9 @@ class TemplateModel {
     );
     const totalCount = countRow?.count || 0;
 
-    // Get paginated results
+    // Get paginated results ordered by sort_order (preserves API order)
     const rows = await databaseManager.query(
-      `SELECT * FROM ${Tables.TEMPLATES} WHERE ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM ${Tables.TEMPLATES} WHERE ${whereClause} ORDER BY sort_order ASC LIMIT ? OFFSET ?`,
       [...params, limit, skip]
     );
 
@@ -219,7 +200,7 @@ class TemplateModel {
     if (!settingId) return { templates: [], totalCount: 0 };
 
     const rows = await databaseManager.query(
-      `SELECT * FROM ${Tables.TEMPLATES} WHERE setting_id = ? ORDER BY created_at DESC`,
+      `SELECT * FROM ${Tables.TEMPLATES} WHERE setting_id = ? ORDER BY sort_order ASC`,
       [settingId]
     );
 
@@ -252,6 +233,20 @@ class TemplateModel {
       [settingId]
     );
     return result !== null;
+  }
+
+  /**
+   * Get total count of cached templates for a setting.
+   * @param {string} settingId - The WhatsApp number setting ID
+   * @returns {Promise<number>}
+   */
+  static async getCachedCount(settingId) {
+    if (!settingId) return 0;
+    const result = await databaseManager.queryFirst(
+      `SELECT COUNT(*) as count FROM ${Tables.TEMPLATES} WHERE setting_id = ?`,
+      [settingId]
+    );
+    return result?.count || 0;
   }
 
   /**

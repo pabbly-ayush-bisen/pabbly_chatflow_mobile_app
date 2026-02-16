@@ -108,7 +108,7 @@ export default function TemplatesScreen() {
     }
   }, [isNetworkAvailable]);
 
-  const loadTemplates = useCallback(({ reset = true, append = false, search = '', status = 'all', forceRefresh = false } = {}) => {
+  const loadTemplates = useCallback(({ reset = true, loadMore = false, search = '', status = 'all', forceRefresh = false } = {}) => {
     const params = {
       limit: PAGE_SIZE,
     };
@@ -124,9 +124,9 @@ export default function TemplatesScreen() {
     if (reset) {
       dispatch(resetTemplates());
       dispatch(fetchTemplateStatsWithCache({ forceRefresh }));
-      dispatch(fetchTemplatesWithCache({ ...params, skip: 0, append: false, forceRefresh }));
-    } else if (append) {
-      dispatch(fetchTemplatesWithCache({ ...params, skip: templates.length, append: true }));
+      dispatch(fetchTemplatesWithCache({ ...params, skip: 0, forceRefresh }));
+    } else if (loadMore) {
+      dispatch(fetchTemplatesWithCache({ ...params, skip: templates.length }));
     }
   }, [dispatch, PAGE_SIZE, templates.length]);
 
@@ -165,7 +165,7 @@ export default function TemplatesScreen() {
       !hasMoreTemplates ||
       isOffline
     ) return;
-    loadTemplates({ reset: false, append: true, search: searchQuery, status: selectedStatus });
+    loadTemplates({ reset: false, loadMore: true, search: searchQuery, status: selectedStatus });
   }, [templatesStatus, hasMoreTemplates, loadTemplates, searchQuery, selectedStatus, isOffline]);
 
   // Templates are now filtered by API, so just use templates directly

@@ -181,6 +181,10 @@ class DatabaseManager {
     if (fromVersion < 18 && toVersion >= 18) {
       await this._migrateToV18();
     }
+
+    if (fromVersion < 19 && toVersion >= 19) {
+      await this._migrateToV19();
+    }
   }
 
   /**
@@ -393,6 +397,32 @@ class DatabaseManager {
       }
 
       await this.db.execAsync(`ALTER TABLE ${Tables.TEMPLATES} ADD COLUMN metadata TEXT`);
+    } catch (error) {
+      // ALTER failed — drop and recreate from current DDL
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.TEMPLATES}`);
+        await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
+      } catch (finalErr) {
+        // Recovery also failed
+      }
+    }
+  }
+
+  /**
+   * Migration to version 19: Add sort_order column to templates table.
+   * Enables incremental page-by-page caching with API ordering preserved.
+   * Templates are a cache — if ALTER fails, drop and recreate.
+   */
+  async _migrateToV19() {
+    try {
+      const tableInfo = await this.db.getAllAsync(`PRAGMA table_info(${Tables.TEMPLATES})`);
+      const columns = tableInfo.map(col => col.name);
+
+      if (columns.includes('sort_order')) {
+        return; // Already has sort_order column
+      }
+
+      await this.db.execAsync(`ALTER TABLE ${Tables.TEMPLATES} ADD COLUMN sort_order INTEGER DEFAULT 0`);
     } catch (error) {
       // ALTER failed — drop and recreate from current DDL
       try {

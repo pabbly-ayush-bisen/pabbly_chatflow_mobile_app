@@ -1394,18 +1394,20 @@ async function fetchContactListsFromServer() {
 // ==========================================
 
 /**
- * Fetch templates with cache-first strategy.
+ * Fetch templates with incremental page-by-page caching.
  *
- * Strategy:
- * - forceRefresh: Fetch from API → clear+replace cache → return.
- * - search: Search cache first → API fallback (transient, NOT saved to cache).
- * - status filter: Query cache with status WHERE. Cache hit → return + background refresh.
- * - initial load (skip=0, no search/status): Cache hit → return ALL cached + background refresh.
- * - load more (skip>0): Always API → append to Redux (templates are replace-all in cache).
+ * Strategy (mirrors fetchContactsWithCache):
+ * - forceRefresh: Fetch page 1 from API → clear old cache → save → return.
+ * - search: Search cached data (SQL LIKE) → API fallback (transient, NOT saved).
+ * - status filter: Query cache with status WHERE → API fallback.
+ * - initial load (skip=0): Return ALL cached templates. If empty, fetch page 1 from API.
+ * - load more (skip>0): If skip < cachedCount → serve from cache.
+ *                        If skip >= cachedCount → fetch from API → append to cache → return.
+ * - Offline + cache miss: reject (show skeleton/error).
  */
 export const fetchTemplatesWithCache = createAsyncThunk(
   'template/fetchTemplatesWithCache',
-  async (params = {}, { dispatch, rejectWithValue }) => {
+  async (params = {}, { rejectWithValue }) => {
     try {
       const {
         forceRefresh = false,
@@ -1413,54 +1415,36 @@ export const fetchTemplatesWithCache = createAsyncThunk(
         limit = 10,
         search = null,
         status = null,
-        append = false,
       } = params;
 
       // ── FORCE REFRESH (pull-to-refresh) ──
+      // Fetch FIRST, then clear+replace cache. If API fails, old cache survives.
       if (forceRefresh) {
         const freshData = await fetchTemplatesFromServer({ skip: 0, limit, search, status });
 
-        // Clear old cache and save fresh data
+        // Clear old cache ONLY after successful API response
         await cacheManager.clearTemplates();
         if (freshData.templates.length > 0) {
-          await cacheManager.saveTemplates(freshData.templates);
+          await cacheManager.saveTemplates(freshData.templates, 0);
         }
+        await cacheManager.saveTemplatesTotalCount(freshData.totalCount);
 
-        return {
-          templates: freshData.templates,
-          totalCount: freshData.totalCount,
-          fromCache: false,
-          skip: 0,
-          append: false,
-        };
+        return { templates: freshData.templates, totalCount: freshData.totalCount, fromCache: false, skip: 0 };
       }
 
       // ── SEARCH (cache-first → API fallback) ──
       if (search && search.trim()) {
-        // Step 1: Search local cache
-        const cacheResult = await cacheManager.getTemplates({ search, status, skip, limit });
+        const cacheResult = await cacheManager.getTemplates({ skip, limit, search, status });
 
         if (cacheResult.templates.length > 0) {
-          return {
-            templates: cacheResult.templates,
-            totalCount: cacheResult.totalCount,
-            fromCache: true,
-            skip,
-            append,
-          };
+          return { templates: cacheResult.templates, totalCount: cacheResult.totalCount, fromCache: true, skip };
         }
 
-        // Step 2: Cache miss — try API (throws if offline)
+        // Cache miss — try API (throws if offline)
         const apiData = await fetchTemplatesFromServer({ skip, limit, search, status });
 
         // Do NOT save search results to cache — they are transient
-        return {
-          templates: apiData.templates,
-          totalCount: apiData.totalCount,
-          fromCache: false,
-          skip,
-          append,
-        };
+        return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip };
       }
 
       // ── STATUS FILTER (no search) ──
@@ -1468,126 +1452,93 @@ export const fetchTemplatesWithCache = createAsyncThunk(
         const cacheResult = await cacheManager.getTemplates({ status, skip, limit });
 
         if (cacheResult.templates.length > 0) {
-          // Return cached data + silently refresh in background
-          fetchTemplatesFromServer({ skip: 0, limit: 1000, status })
-            .then(async (freshData) => {
-              // Save full result to cache (replaces all)
-              if (freshData.templates.length > 0) {
-                await cacheManager.saveTemplates(freshData.templates);
-              }
-              const { silentUpdateTemplates } = require('./slices/templateSlice');
-              dispatch(silentUpdateTemplates({
-                templates: freshData.templates,
-                totalCount: freshData.totalCount,
-              }));
-            })
-            .catch(() => {});
-
-          return {
-            templates: cacheResult.templates,
-            totalCount: cacheResult.totalCount,
-            fromCache: true,
-            skip,
-            append,
-          };
+          return { templates: cacheResult.templates, totalCount: cacheResult.totalCount, fromCache: true, skip };
         }
 
         // Cache empty for this status — fetch from API
         const apiData = await fetchTemplatesFromServer({ skip, limit, status });
-
-        return {
-          templates: apiData.templates,
-          totalCount: apiData.totalCount,
-          fromCache: false,
-          skip,
-          append,
-        };
-      }
-
-      // ── LOAD MORE (skip > 0, append mode) ──
-      if (skip > 0) {
-        const apiData = await fetchTemplatesFromServer({ skip, limit });
-
-        return {
-          templates: apiData.templates,
-          totalCount: apiData.totalCount,
-          fromCache: false,
-          skip,
-          append: true,
-        };
+        return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip };
       }
 
       // ── INITIAL LOAD (skip=0, no search, no status) ──
-      const cacheResult = await cacheManager.getTemplates({});
+      if (skip === 0) {
+        const cacheResult = await cacheManager.getTemplates({ skip: 0 });
 
-      if (cacheResult.fromCache && cacheResult.templates.length > 0) {
-        // Return cached data instantly + silently refresh in background
-        fetchTemplatesFromServer({ skip: 0, limit: 1000 })
-          .then(async (freshData) => {
-            if (freshData.templates.length > 0) {
-              await cacheManager.saveTemplates(freshData.templates);
-              const { silentUpdateTemplates } = require('./slices/templateSlice');
-              dispatch(silentUpdateTemplates({
-                templates: freshData.templates,
-                totalCount: freshData.totalCount,
-              }));
-            }
-          })
-          .catch(() => {});
+        if (cacheResult.fromCache && cacheResult.templates.length > 0) {
+          const storedTotal = await cacheManager.getTemplatesTotalCount();
+          return {
+            templates: cacheResult.templates,
+            totalCount: storedTotal ?? cacheResult.templates.length,
+            fromCache: true,
+            skip: 0,
+          };
+        }
+
+        // Cache miss — fetch first page from API
+        const apiData = await fetchTemplatesFromServer({ skip: 0, limit });
+
+        if (apiData.templates.length > 0) {
+          await cacheManager.saveTemplates(apiData.templates, 0);
+        }
+        await cacheManager.saveTemplatesTotalCount(apiData.totalCount);
+
+        return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip: 0 };
+      }
+
+      // ── LOAD MORE (skip > 0) ──
+      const cachedCount = await cacheManager.getCachedTemplateCount();
+
+      if (skip < cachedCount) {
+        // Enough cached data — serve from cache
+        const cacheResult = await cacheManager.getTemplates({ skip, limit });
+        const storedTotal = await cacheManager.getTemplatesTotalCount();
 
         return {
           templates: cacheResult.templates,
-          totalCount: cacheResult.totalCount,
+          totalCount: storedTotal ?? cachedCount,
           fromCache: true,
-          skip: 0,
-          append: false,
+          skip,
         };
       }
 
-      // Cache miss — fetch from API
-      const apiData = await fetchTemplatesFromServer({ skip: 0, limit });
+      // Need more data — fetch next page from API and append to cache
+      const apiData = await fetchTemplatesFromServer({ skip, limit });
 
       if (apiData.templates.length > 0) {
-        await cacheManager.saveTemplates(apiData.templates);
+        await cacheManager.saveTemplates(apiData.templates, skip);
       }
+      await cacheManager.saveTemplatesTotalCount(apiData.totalCount);
 
-      return {
-        templates: apiData.templates,
-        totalCount: apiData.totalCount,
-        fromCache: false,
-        skip: 0,
-        append: false,
-      };
+      return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip };
     } catch (error) {
       // Offline fallback — try to return cached data
       try {
         const fallback = await cacheManager.getTemplates({
-          search: params.search,
-          status: params.status,
           skip: params.skip || 0,
           limit: params.limit || 10,
+          search: params.search,
+          status: params.status,
         });
         if (fallback.fromCache && fallback.templates.length > 0) {
+          const storedTotal = await cacheManager.getTemplatesTotalCount();
           return {
             templates: fallback.templates,
-            totalCount: fallback.totalCount,
+            totalCount: storedTotal ?? fallback.templates.length,
             fromCache: true,
             skip: params.skip || 0,
-            append: params.append || false,
           };
         }
       } catch (cacheErr) {
         // Cache read also failed — fall through
       }
 
-      // For load-more: return empty instead of rejecting
+      // For load-more (skip > 0): return empty instead of rejecting
       if ((params.skip || 0) > 0) {
         return {
           templates: [],
           totalCount: params.skip,
           fromCache: true,
           skip: params.skip,
-          append: true,
         };
       }
 

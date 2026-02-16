@@ -587,17 +587,18 @@ class CacheManager {
   }
 
   /**
-   * Save templates to cache (replace-all strategy).
+   * Save templates to cache (append mode with sort order).
    * @param {Array} templates - Array of template objects from API
+   * @param {number} [startIndex=0] - Starting sort_order index (API skip value)
    * @returns {Promise<void>}
    */
-  async saveTemplates(templates) {
+  async saveTemplates(templates, startIndex = 0) {
     await this.ensureInitialized();
 
     const settingId = this.currentSettingId;
     if (!settingId || !templates) return;
 
-    await TemplateModel.saveTemplates(templates, settingId);
+    await TemplateModel.saveTemplates(templates, settingId, startIndex);
   }
 
   /**
@@ -614,7 +615,19 @@ class CacheManager {
   }
 
   /**
+   * Get count of cached templates for current setting.
+   * @returns {Promise<number>}
+   */
+  async getCachedTemplateCount() {
+    await this.ensureInitialized();
+    const settingId = this.currentSettingId;
+    if (!settingId) return 0;
+    return TemplateModel.getCachedCount(settingId);
+  }
+
+  /**
    * Clear all cached templates for current setting.
+   * Also clears the stored totalCount.
    * @returns {Promise<void>}
    */
   async clearTemplates() {
@@ -624,6 +637,27 @@ class CacheManager {
     if (!settingId) return;
 
     await TemplateModel.clearTemplates(settingId);
+    await AppSettingsModel.remove('templates_total');
+  }
+
+  /**
+   * Save the server-reported total count for templates.
+   * @param {number} totalCount - Server total count
+   * @returns {Promise<void>}
+   */
+  async saveTemplatesTotalCount(totalCount) {
+    await this.ensureInitialized();
+    await AppSettingsModel.save('templates_total', { totalCount });
+  }
+
+  /**
+   * Get the cached server-reported total count for templates.
+   * @returns {Promise<number|null>} Total count, or null if not cached
+   */
+  async getTemplatesTotalCount() {
+    await this.ensureInitialized();
+    const data = await AppSettingsModel.get('templates_total');
+    return data?.totalCount ?? null;
   }
 
   /**
