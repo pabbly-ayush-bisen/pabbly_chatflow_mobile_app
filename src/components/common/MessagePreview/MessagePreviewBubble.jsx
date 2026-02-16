@@ -26,6 +26,9 @@ const MessagePreviewBubble = ({
   enabled = true,
   disabledTitle = 'Message Disabled',
   disabledHint = 'Enable in web app to activate',
+  disabledIcon = 'message-off-outline',
+  disabledIconColor = colors.grey[400],
+  disabledIconBg,
   showTypeBadge = true,
   emptyTitle = 'No Message Configured',
   emptyHint = 'Set up message in web app',
@@ -78,8 +81,8 @@ const MessagePreviewBubble = ({
   if (!enabled) {
     return (
       <View style={styles.previewDisabled}>
-        <View style={styles.previewDisabledIcon}>
-          <Icon name="message-off-outline" size={24} color={colors.grey[400]} />
+        <View style={[styles.previewDisabledIcon, disabledIconBg && { width: 56, height: 56, borderRadius: 14, backgroundColor: disabledIconBg }]}>
+          <Icon name={disabledIcon} size={disabledIconBg ? 28 : 24} color={disabledIconColor} />
         </View>
         <Text style={styles.previewDisabledTitle}>{disabledTitle}</Text>
         <Text style={styles.previewDisabledHint}>{disabledHint}</Text>

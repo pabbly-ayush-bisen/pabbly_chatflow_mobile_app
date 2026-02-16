@@ -6,6 +6,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   Animated,
+  Switch,
 } from 'react-native';
 import {
   Text,
@@ -22,6 +23,19 @@ import { useNetwork } from '../../contexts/NetworkContext';
 import { colors, chatColors } from '../../theme/colors';
 import { MessagePreviewBubble } from '../../components/common';
 import { getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
+
+const CHIP_COLORS = [
+  { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8' },   // Blue
+  { bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D' },   // Green
+  { bg: '#FDF4FF', border: '#F0ABFC', text: '#A21CAF' },   // Purple
+  { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C' },   // Orange
+  { bg: '#F0FDFA', border: '#99F6E4', text: '#0F766E' },   // Teal
+  { bg: '#FEF2F2', border: '#FECACA', text: '#DC2626' },   // Red
+  { bg: '#FFFBEB', border: '#FDE68A', text: '#B45309' },   // Amber
+  { bg: '#F5F3FF', border: '#C4B5FD', text: '#6D28D9' },   // Violet
+  { bg: '#ECFDF5', border: '#A7F3D0', text: '#047857' },   // Emerald
+  { bg: '#FDF2F8', border: '#FBCFE8', text: '#BE185D' },   // Pink
+];
 
 const SkeletonPulse = ({ style }) => {
   const opacity = useRef(new Animated.Value(0.3)).current;
@@ -171,6 +185,8 @@ export default function OptInManagementScreen() {
 
   const { settings, getSettingsStatus } = useSelector((state) => state.settings);
   const { templates } = useSelector((state) => state.template);
+  const { teamMemberStatus } = useSelector((state) => state.user);
+  const isTeamMemberLoggedIn = !!teamMemberStatus?.loggedIn;
 
   // Opt-in state
   const [optInKeywords, setOptInKeywords] = useState([]);
@@ -387,19 +403,21 @@ export default function OptInManagementScreen() {
         {keywords.map((keyword, index) => {
           const isDeleting = updatingKey?.includes(keyword);
           return (
-            <View key={`${keyword}-${index}`} style={styles.chip}>
-              <Text style={styles.chipText}>{keyword}</Text>
-              <TouchableOpacity
-                onPress={() => handleDeleteKeyword(type, keyword)}
-                disabled={isDeleting || isOffline}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                {isDeleting ? (
-                  <ActivityIndicator size={12} color={colors.grey[400]} />
-                ) : (
-                  <Icon name="close" size={14} color={colors.grey[500]} />
-                )}
-              </TouchableOpacity>
+            <View key={`${keyword}-${index}`} style={[styles.chip, { backgroundColor: CHIP_COLORS[index % CHIP_COLORS.length].bg, borderColor: CHIP_COLORS[index % CHIP_COLORS.length].border }]}>
+              <Text style={[styles.chipText, { color: CHIP_COLORS[index % CHIP_COLORS.length].text }]}>{keyword}</Text>
+              {!isTeamMemberLoggedIn && (
+                <TouchableOpacity
+                  onPress={() => handleDeleteKeyword(type, keyword)}
+                  disabled={isDeleting || isOffline}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator size={12} color={colors.grey[400]} />
+                  ) : (
+                    <Icon name="close" size={14} color={colors.grey[500]} />
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           );
         })}
@@ -465,6 +483,9 @@ export default function OptInManagementScreen() {
         enabled={enabled}
         disabledTitle="Response Disabled"
         disabledHint="Toggle on to send auto-reply"
+        disabledIcon={isOptIn ? 'account-check' : 'account-cancel'}
+        disabledIconColor={isOptIn ? '#16A34A' : '#DC2626'}
+        disabledIconBg={isOptIn ? '#DCFCE7' : '#FEE2E2'}
         emptyHint="Set up response in web app"
         messageType={msgType}
         // Template props
@@ -531,22 +552,17 @@ export default function OptInManagementScreen() {
                 <Text style={styles.readOnlyText}>Preview</Text>
               </View>
             </View>
-            <TouchableOpacity
-              style={[styles.togglePill, enabled && styles.togglePillActive, isOffline && { opacity: 0.5 }]}
-              onPress={() => handleToggleResponse(type, !enabled)}
-              disabled={updatingKey === toggleKey || isOffline}
-            >
-              {updatingKey === toggleKey ? (
-                <ActivityIndicator size={12} color={enabled ? '#FFF' : colors.grey[400]} />
-              ) : (
-                <>
-                  <Icon name={enabled ? 'check' : 'close'} size={12} color={enabled ? '#FFF' : colors.grey[500]} />
-                  <Text style={[styles.toggleText, enabled && styles.toggleTextActive]}>
-                    {enabled ? 'On' : 'Off'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {updatingKey === toggleKey ? (
+              <ActivityIndicator size={16} color={colors.primary.main} />
+            ) : (
+              <Switch
+                value={enabled}
+                onValueChange={(val) => handleToggleResponse(type, val)}
+                disabled={isOffline}
+                trackColor={{ false: colors.grey[300], true: '#16A34A' }}
+                thumbColor="#FFF"
+              />
+            )}
           </View>
           {renderMessagePreview(type)}
         </View>
@@ -792,17 +808,16 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary.main + '12',
     paddingLeft: 10,
-    paddingRight: 6,
+    paddingRight: 10,
     paddingVertical: 6,
     borderRadius: 16,
+    borderWidth: 1,
     gap: 6,
   },
   chipText: {
     fontSize: 12,
     fontWeight: '500',
-    color: colors.primary.dark,
   },
   inputRow: {
     flexDirection: 'row',
@@ -830,28 +845,6 @@ const styles = StyleSheet.create({
   },
   addBtnDisabled: {
     backgroundColor: colors.grey[300],
-  },
-
-  // Toggle
-  togglePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.grey[100],
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    gap: 4,
-  },
-  togglePillActive: {
-    backgroundColor: '#16A34A',
-  },
-  toggleText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.grey[500],
-  },
-  toggleTextActive: {
-    color: '#FFF',
   },
 
   // Template Card
