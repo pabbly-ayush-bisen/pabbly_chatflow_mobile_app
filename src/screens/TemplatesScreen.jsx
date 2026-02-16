@@ -107,12 +107,12 @@ export default function TemplatesScreen() {
     };
   }, [settingId]);
 
-  // Network recovery — re-fetch when connectivity is restored
+  // Network recovery — re-fetch current pill when connectivity is restored
   useEffect(() => {
     if (isNetworkAvailable && templates.length === 0 && templatesStatus !== 'loading') {
-      loadTemplates({ reset: true });
+      loadTemplates({ reset: true, status: selectedStatus });
     } else if (isNetworkAvailable && templatesStatus === 'failed') {
-      loadTemplates({ reset: true });
+      loadTemplates({ reset: true, status: selectedStatus });
     }
   }, [isNetworkAvailable]);
 
