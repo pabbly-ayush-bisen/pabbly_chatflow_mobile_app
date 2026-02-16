@@ -567,9 +567,20 @@ class CacheManager {
 
     const { skip = 0, search, status } = options;
 
-    // Initial load with no filters: return ALL cached templates
-    if (skip === 0 && !search && !status) {
-      const result = await TemplateModel.getAllTemplates(settingId);
+    // Initial load (skip=0, no search): return ALL cached templates
+    // Works for both "All" tab and individual status filters (Approved, Pending, etc.)
+    if (skip === 0 && !search) {
+      if (!status) {
+        // No status filter — return everything
+        const result = await TemplateModel.getAllTemplates(settingId);
+        return {
+          templates: result.templates,
+          totalCount: result.totalCount,
+          fromCache: result.templates.length > 0,
+        };
+      }
+      // Status filter — return all cached templates matching this status (no limit)
+      const result = await TemplateModel.getTemplates(settingId, { status, skip: 0, limit: 10000 });
       return {
         templates: result.templates,
         totalCount: result.totalCount,

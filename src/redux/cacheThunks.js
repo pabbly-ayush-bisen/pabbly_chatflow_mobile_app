@@ -1449,13 +1449,27 @@ export const fetchTemplatesWithCache = createAsyncThunk(
 
       // ── STATUS FILTER (no search) ──
       if (status && status.trim()) {
+        // Initial status filter load (skip=0): return ALL cached templates for this status
+        if (skip === 0) {
+          const cacheResult = await cacheManager.getTemplates({ status, skip: 0 });
+
+          if (cacheResult.fromCache && cacheResult.templates.length > 0) {
+            return { templates: cacheResult.templates, totalCount: cacheResult.totalCount, fromCache: true, skip: 0 };
+          }
+
+          // Cache empty for this status — fetch from API
+          const apiData = await fetchTemplatesFromServer({ skip: 0, limit, status });
+          return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip: 0 };
+        }
+
+        // Load more for status filter (skip > 0)
         const cacheResult = await cacheManager.getTemplates({ status, skip, limit });
 
         if (cacheResult.templates.length > 0) {
           return { templates: cacheResult.templates, totalCount: cacheResult.totalCount, fromCache: true, skip };
         }
 
-        // Cache empty for this status — fetch from API
+        // Cache exhausted — fetch from API
         const apiData = await fetchTemplatesFromServer({ skip, limit, status });
         return { templates: apiData.templates, totalCount: apiData.totalCount, fromCache: false, skip };
       }
