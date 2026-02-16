@@ -215,12 +215,14 @@ const templateSlice = createSlice({
       .addCase(fetchTemplatesWithCache.fulfilled, (state, action) => {
         if (state.currentTemplatesRequestId !== action.meta.requestId) return;
         state.templatesStatus = 'succeeded';
-        const { templates, totalCount, skip, append } = action.payload;
+        const { templates, totalCount, skip } = action.payload;
         const limit = action.meta.arg?.limit || 10;
 
-        if (append && skip > 0) {
+        if (skip > 0) {
+          // Load more — append to existing list
           state.templates = [...state.templates, ...templates];
         } else {
+          // Initial load or refresh — replace
           state.templates = templates;
         }
 
