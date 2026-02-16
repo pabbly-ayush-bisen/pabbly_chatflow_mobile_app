@@ -227,7 +227,7 @@ const templateSlice = createSlice({
         }
 
         state.totalSearchResult = totalCount;
-        state.hasMoreTemplates = templates.length === limit;
+        state.hasMoreTemplates = state.templates.length < totalCount;
       })
       .addCase(fetchTemplatesWithCache.rejected, (state, action) => {
         if (state.currentTemplatesRequestId !== action.meta.requestId) return;
