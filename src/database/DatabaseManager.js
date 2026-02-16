@@ -67,6 +67,10 @@ class DatabaseManager {
       // (fixes broken state from failed V16 migration regardless of schema version)
       await this._ensureContactsSchema();
 
+      // Safety check: ensure templates table has cache_key column
+      // (fixes broken state from failed V20 migration regardless of schema version)
+      await this._ensureTemplatesSchema();
+
       // Create indexes
       await this._createIndexes();
 
@@ -297,6 +301,38 @@ class DatabaseManager {
       try {
         await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.CONTACTS}`);
         await this.db.execAsync(CREATE_TABLES_SQL[Tables.CONTACTS]);
+      } catch (finalErr) {
+        // Force-recreate also failed
+      }
+    }
+  }
+
+  /**
+   * Safety check: ensure templates table has cache_key column.
+   * If missing (failed V20 migration), drop and recreate.
+   * Templates are a cache — safe to recreate.
+   */
+  async _ensureTemplatesSchema() {
+    try {
+      const tableInfo = await this.db.getAllAsync(`PRAGMA table_info(${Tables.TEMPLATES})`);
+      const columns = tableInfo.map(col => col.name);
+
+      if (columns.length === 0) {
+        return;
+      }
+
+      if (columns.includes('cache_key')) {
+        return;
+      }
+
+      // cache_key column missing — drop and recreate
+      await this.db.execAsync('DROP TABLE IF EXISTS templates_backup_v19');
+      await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.TEMPLATES}`);
+      await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
+    } catch (error) {
+      try {
+        await this.db.execAsync(`DROP TABLE IF EXISTS ${Tables.TEMPLATES}`);
+        await this.db.execAsync(CREATE_TABLES_SQL[Tables.TEMPLATES]);
       } catch (finalErr) {
         // Force-recreate also failed
       }
