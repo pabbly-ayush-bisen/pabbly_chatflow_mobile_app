@@ -16,7 +16,7 @@ import {
 } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { updateSettings, deleteSettings } from '../../redux/slices/settingsSlice';
+import { updateSettings, deleteSettings, silentUpdateOptInManagement } from '../../redux/slices/settingsSlice';
 import { fetchOptInManagementWithCache } from '../../redux/cacheThunks';
 import { fetchAllTemplates } from '../../redux/slices/templateSlice';
 import { useNetwork } from '../../contexts/NetworkContext';
@@ -238,7 +238,11 @@ export default function OptInManagementScreen() {
 
       if (optInMgmt.optInSettings) {
         const { response } = optInMgmt.optInSettings;
-        setOptInKeywords(optInMgmt.optInSettings.kewords || optInMgmt.optInSettings.keywords || []);
+        // Only sync keywords when no add/delete is in progress — prevents partial
+        // data from updateSettings/deleteSettings reducers from overwriting local state
+        if (!updatingKey) {
+          setOptInKeywords(optInMgmt.optInSettings.kewords || optInMgmt.optInSettings.keywords || []);
+        }
         setOptInResponseEnabled(response?.enabled || false);
         setOptInMessageType(response?.messageType || '');
         setOptInRegularMessageType(response?.regularMessageType || '');
@@ -252,7 +256,9 @@ export default function OptInManagementScreen() {
 
       if (optInMgmt.optOutSettings) {
         const { response } = optInMgmt.optOutSettings;
-        setOptOutKeywords(optInMgmt.optOutSettings.kewords || optInMgmt.optOutSettings.keywords || []);
+        if (!updatingKey) {
+          setOptOutKeywords(optInMgmt.optOutSettings.kewords || optInMgmt.optOutSettings.keywords || []);
+        }
         setOptOutResponseEnabled(response?.enabled || false);
         setOptOutMessageType(response?.messageType || '');
         setOptOutRegularMessageType(response?.regularMessageType || '');
@@ -264,6 +270,7 @@ export default function OptInManagementScreen() {
         setOptOutHeaderParams(response?.headerParams || {});
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.optInManagement]);
 
   // Find full template data when templates are loaded
@@ -303,8 +310,8 @@ export default function OptInManagementScreen() {
     setSnackbarVisible(true);
   }, []);
 
-  // Silent background cache sync — saves fresh data to SQLite only (no Redux update)
-  // so the local state isn't overwritten and keywords don't flicker/jump
+  // Silent background cache sync — fetches full data from server, updates SQLite cache
+  // and Redux state with the complete list (corrects any partial data from add/delete reducers)
   const syncCacheInBackground = useCallback(() => {
     callApi(`${endpoints.settings.getSettings}?keys=optInManagement`, httpMethods.GET)
       .then(async (response) => {
@@ -312,10 +319,11 @@ export default function OptInManagementScreen() {
           const data = response.data || response;
           const optInManagement = data.optInManagement || {};
           await cacheManager.saveAppSetting('optInManagement', optInManagement);
+          dispatch(silentUpdateOptInManagement(optInManagement));
         }
       })
       .catch(() => {});
-  }, []);
+  }, [dispatch]);
 
   const handleAddKeyword = async (type) => {
     const input = type === 'optIn' ? optInKeywordInput.trim() : optOutKeywordInput.trim();
@@ -346,7 +354,7 @@ export default function OptInManagementScreen() {
       // Add keyword to local state immediately
       const setKeywords = type === 'optIn' ? setOptInKeywords : setOptOutKeywords;
       setKeywords(prev => [...prev, input]);
-      // Sync cache in background without triggering loading state
+      // Sync full data from server to SQLite cache + Redux (corrects partial reducer data)
       syncCacheInBackground();
     } catch (error) {
       showSnackbar(error || 'Failed to add');
@@ -457,6 +465,8 @@ export default function OptInManagementScreen() {
           style={styles.input}
           outlineStyle={styles.inputOutline}
           dense
+          returnKeyType="done"
+          submitBehavior="submit"
           onSubmitEditing={() => handleAddKeyword(type)}
           disabled={isAdding || isOffline}
         />
