@@ -346,19 +346,21 @@ export default function OptInManagementScreen() {
       ? 'optInManagement.optInSettings.kewords'
       : 'optInManagement.optOutSettings.kewords';
 
-    setUpdatingKey(`${key}-${keyword}`);
+    // Optimistic update — remove keyword from UI immediately
+    const setKeywords = type === 'optIn' ? setOptInKeywords : setOptOutKeywords;
+    const previousKeywords = type === 'optIn' ? [...optInKeywords] : [...optOutKeywords];
+    setKeywords(prev => prev.filter(k => k !== keyword));
+
     try {
-      const result = await dispatch(deleteSettings({ key, names: [keyword] })).unwrap();
-      if (result.status === 'success') {
-        showSnackbar('Keyword removed');
-        dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
-      } else {
-        showSnackbar(result.message || 'Failed to remove');
-      }
+      // .unwrap() throws on rejection, so reaching next line means API succeeded
+      await dispatch(deleteSettings({ key, names: [keyword] })).unwrap();
+      showSnackbar('Keyword removed');
+      // Sync cache in background
+      dispatch(fetchOptInManagementWithCache({ forceRefresh: true }));
     } catch (error) {
+      // Revert on error
+      setKeywords(previousKeywords);
       showSnackbar(error || 'Failed to remove');
-    } finally {
-      setUpdatingKey(null);
     }
   };
 
@@ -401,21 +403,16 @@ export default function OptInManagementScreen() {
     return (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
         {keywords.map((keyword, index) => {
-          const isDeleting = updatingKey?.includes(keyword);
           return (
             <View key={`${keyword}-${index}`} style={[styles.chip, { backgroundColor: CHIP_COLORS[index % CHIP_COLORS.length].bg, borderColor: CHIP_COLORS[index % CHIP_COLORS.length].border }]}>
               <Text style={[styles.chipText, { color: CHIP_COLORS[index % CHIP_COLORS.length].text }]}>{keyword}</Text>
               {!isTeamMemberLoggedIn && (
                 <TouchableOpacity
                   onPress={() => handleDeleteKeyword(type, keyword)}
-                  disabled={isDeleting || isOffline}
+                  disabled={isOffline}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  {isDeleting ? (
-                    <ActivityIndicator size={12} color={colors.grey[400]} />
-                  ) : (
-                    <Icon name="close" size={14} color={colors.grey[500]} />
-                  )}
+                  <Icon name="close" size={14} color={colors.grey[500]} />
                 </TouchableOpacity>
               )}
             </View>
@@ -617,7 +614,12 @@ export default function OptInManagementScreen() {
         <View style={styles.bottomSpace} />
       </ScrollView>
 
-      <Snackbar visible={snackbarVisible} onDismiss={() => setSnackbarVisible(false)} duration={2000}>
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={2000}
+        style={styles.snackbar}
+      >
         {snackbarMessage}
       </Snackbar>
     </View>
@@ -886,5 +888,10 @@ const styles = StyleSheet.create({
 
   bottomSpace: {
     height: 16,
+  },
+  snackbar: {
+    position: 'absolute',
+    top: 0,
+    bottom: undefined,
   },
 });
