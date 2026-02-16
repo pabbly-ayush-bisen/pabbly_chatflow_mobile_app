@@ -19,7 +19,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { resetTemplates } from '../redux/slices/templateSlice';
 import { fetchTemplatesWithCache, fetchTemplateStatsWithCache } from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
-import { EmptyState, TemplatesListSkeleton, MessagePreviewBubble } from '../components/common';
+import { TemplatesListSkeleton, MessagePreviewBubble } from '../components/common';
 import { getTemplateHeader, getCarouselCards, getLimitedTimeOffer } from '../components/common/MessagePreview';
 import { useNetwork } from '../contexts/NetworkContext';
 
@@ -59,6 +59,8 @@ export default function TemplatesScreen() {
   const [showPreview, setShowPreview] = useState(false);
   const PAGE_SIZE = 10;
   const searchDebounceRef = useRef(null);
+  const filterChipListRef = useRef(null);
+  const hasInitialLoadRef = useRef(false);
 
   const {
     templates,
@@ -79,6 +81,11 @@ export default function TemplatesScreen() {
   const isLoading = templatesStatus === 'loading' || statsStatus === 'loading';
   const isRefreshing = templatesStatus === 'loading' && templates.length > 0;
 
+  // Track first successful load — after this, full-screen skeleton is never shown again
+  if (templatesStatus === 'succeeded' && !hasInitialLoadRef.current) {
+    hasInitialLoadRef.current = true;
+  }
+
   // Initial load + re-fetch with forceRefresh on account switch
   useEffect(() => {
     const isAccountSwitch = prevSettingIdRef.current !== settingId;
@@ -88,6 +95,7 @@ export default function TemplatesScreen() {
       // Account changed — reset filters and force fresh fetch
       setSearchQuery('');
       setSelectedStatus('all');
+      hasInitialLoadRef.current = false;
     }
 
     loadTemplates({ reset: true, search: '', status: 'all', forceRefresh: isAccountSwitch });
@@ -154,9 +162,18 @@ export default function TemplatesScreen() {
   }, [loadTemplates, selectedStatus]);
 
   // Handle status filter change
-  const handleStatusChange = useCallback((status) => {
+  const handleStatusChange = useCallback((status, index) => {
     setSelectedStatus(status);
     loadTemplates({ reset: true, search: searchQuery, status });
+
+    // Auto-scroll the selected chip into view
+    if (filterChipListRef.current && typeof index === 'number') {
+      filterChipListRef.current.scrollToIndex({
+        index,
+        animated: true,
+        viewPosition: 0.3,
+      });
+    }
   }, [loadTemplates, searchQuery]);
 
   const handleLoadMore = useCallback(() => {
@@ -176,45 +193,57 @@ export default function TemplatesScreen() {
     setShowPreview(true);
   };
 
-  // Filter Tabs
-  const renderFilters = () => (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.filtersContainer}
-    >
-      {Object.entries(STATUS_CONFIG).map(([key, config]) => {
-        const isSelected = selectedStatus === key;
-        const count = key === 'all' ? totalTemplates :
-          key === 'approved' ? approvedTemplates :
-          key === 'pending' ? pendingTemplates :
-          key === 'draft' ? draftTemplates : rejectedTemplates;
+  // Filter chip data for FlatList
+  const filterChipData = Object.entries(STATUS_CONFIG).map(([key, config]) => ({
+    key,
+    config,
+    count: key === 'all' ? totalTemplates :
+      key === 'approved' ? approvedTemplates :
+      key === 'pending' ? pendingTemplates :
+      key === 'draft' ? draftTemplates : rejectedTemplates,
+  }));
 
-        return (
-          <TouchableOpacity
-            key={key}
-            style={[styles.filterChip, isSelected && styles.filterChipActive]}
-            onPress={() => handleStatusChange(key)}
-            activeOpacity={0.7}
-          >
-            <Icon
-              name={config.icon}
-              size={16}
-              color={isSelected ? '#FFFFFF' : colors.text.secondary}
-            />
-            <Text style={[styles.filterText, isSelected && styles.filterTextActive]}>
-              {config.label}
-            </Text>
-            <View style={[styles.filterBadge, isSelected && styles.filterBadgeActive]}>
-              <Text style={[styles.filterBadgeText, isSelected && styles.filterBadgeTextActive]}>
-                {count}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
+  // Render individual filter chip
+  const renderFilterChip = ({ item, index }) => {
+    const { key, config, count } = item;
+    const isSelected = selectedStatus === key;
+    const chipColor = config.color;
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.filterChip,
+          isSelected
+            ? styles.filterChipActive
+            : { backgroundColor: chipColor + '10', borderColor: chipColor + '30' },
+        ]}
+        onPress={() => handleStatusChange(key, index)}
+        activeOpacity={0.7}
+      >
+        <Icon
+          name={config.icon}
+          size={16}
+          color={isSelected ? '#FFFFFF' : chipColor}
+        />
+        <Text style={[styles.filterText, isSelected ? styles.filterTextActive : { color: chipColor }]}>
+          {config.label}
+        </Text>
+        <View style={[
+          styles.filterBadge,
+          isSelected
+            ? styles.filterBadgeActive
+            : { backgroundColor: chipColor + '18' },
+        ]}>
+          <Text style={[
+            styles.filterBadgeText,
+            isSelected ? styles.filterBadgeTextActive : { color: chipColor },
+          ]}>
+            {count}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   // Template Card - Modern Design
   const renderTemplateItem = ({ item }) => {
@@ -366,8 +395,8 @@ export default function TemplatesScreen() {
     );
   };
 
-  // Loading - show skeleton only when no data at all (cache miss + API loading)
-  if (isLoading && templates.length === 0) {
+  // Full-screen skeleton — only on very first load (before any templates have ever loaded)
+  if (isLoading && templates.length === 0 && !hasInitialLoadRef.current) {
     return (
       <View style={styles.container}>
         <View style={styles.skeletonContainer}>
@@ -381,14 +410,90 @@ export default function TemplatesScreen() {
   if (isOffline && templates.length === 0) {
     return (
       <View style={styles.container}>
-        <EmptyState
-          icon="cloud-off-outline"
-          title="You're Offline"
-          message="Connect to the internet to load templates. Previously loaded templates will appear here."
-        />
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconContainer}>
+            <Icon name="cloud-off-outline" size={64} color={colors.grey[300]} />
+          </View>
+          <Text style={styles.emptyTitle}>You're Offline</Text>
+          <Text style={styles.emptySubtitle}>
+            Connect to the internet to load templates.{'\n'}Previously loaded templates will appear here.
+          </Text>
+        </View>
       </View>
     );
   }
+
+  // Empty state — custom design matching ContactsScreen/InboxScreen
+  const renderEmptyState = () => {
+    // Loading after pill switch or search — show inline skeleton (not full-screen)
+    if (templatesStatus === 'loading') {
+      return (
+        <View style={styles.skeletonInListContainer}>
+          <TemplatesListSkeleton count={6} />
+        </View>
+      );
+    }
+
+    // Search with no results
+    if (searchQuery && searchQuery.trim()) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconContainer}>
+            <Icon name="file-search-outline" size={64} color={colors.grey[300]} />
+          </View>
+          <Text style={styles.emptyTitle}>No results found</Text>
+          <Text style={styles.emptySubtitle}>
+            No templates matching "{searchQuery}".{'\n'}Try a different search term.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyActionButton}
+            onPress={() => { setSearchQuery(''); loadTemplates({ reset: true, search: '', status: selectedStatus }); }}
+            activeOpacity={0.8}
+          >
+            <Icon name="close" size={18} color="#FFFFFF" />
+            <Text style={styles.emptyActionButtonText}>Clear Search</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Status filter with no results
+    if (selectedStatus && selectedStatus !== 'all') {
+      const statusConf = STATUS_CONFIG[selectedStatus] || STATUS_CONFIG.draft;
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={[styles.emptyIconContainer, { backgroundColor: statusConf.color + '12' }]}>
+            <Icon name={statusConf.icon} size={64} color={statusConf.color} />
+          </View>
+          <Text style={styles.emptyTitle}>No {statusConf.label} Templates</Text>
+          <Text style={styles.emptySubtitle}>
+            There are no templates with "{statusConf.label}" status.{'\n'}Try selecting a different filter.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyActionButton}
+            onPress={() => handleStatusChange('all', 0)}
+            activeOpacity={0.8}
+          >
+            <Icon name="filter-remove-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.emptyActionButtonText}>Show All</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Default — no templates at all
+    return (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconContainer}>
+          <Icon name="file-document-outline" size={64} color={colors.grey[300]} />
+        </View>
+        <Text style={styles.emptyTitle}>No Templates Yet</Text>
+        <Text style={styles.emptySubtitle}>
+          Your message templates will appear here.{'\n'}Create templates from the WhatsApp Business Manager.
+        </Text>
+      </View>
+    );
+  };
 
   // List Header Component
   const renderListHeader = () => (
@@ -435,7 +540,24 @@ export default function TemplatesScreen() {
       {/* Filter by Status - Outside scroll area */}
       <View style={styles.filterSection}>
         <Text style={styles.filterSectionTitle}>Filter by Status</Text>
-        {renderFilters()}
+        <FlatList
+          ref={filterChipListRef}
+          data={filterChipData}
+          renderItem={renderFilterChip}
+          keyExtractor={(item) => item.key}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersContainer}
+          onScrollToIndexFailed={(info) => {
+            setTimeout(() => {
+              filterChipListRef.current?.scrollToIndex({
+                index: info.index,
+                animated: true,
+                viewPosition: 0.3,
+              });
+            }, 100);
+          }}
+        />
       </View>
 
       {/* Section Header with count */}
@@ -455,13 +577,7 @@ export default function TemplatesScreen() {
         contentContainerStyle={styles.scrollContent}
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}
-        ListEmptyComponent={
-          <EmptyState
-            icon="file-document-outline"
-            title="No templates"
-            message={searchQuery ? `No results for "${searchQuery}"` : 'No templates found'}
-          />
-        }
+        ListEmptyComponent={renderEmptyState}
         ItemSeparatorComponent={() => <View style={styles.divider} />}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
@@ -492,6 +608,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 80,
   },
+
+  // Empty State
+  emptyContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    paddingTop: 60,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.grey[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  emptyActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.main,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    gap: 8,
+  },
+  emptyActionButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+
   loadingBox: {
     flex: 1,
     justifyContent: 'center',
@@ -505,6 +665,9 @@ const styles = StyleSheet.create({
   skeletonContainer: {
     flex: 1,
     paddingTop: 16,
+  },
+  skeletonInListContainer: {
+    paddingTop: 8,
   },
   errorBox: {
     flexDirection: 'row',
