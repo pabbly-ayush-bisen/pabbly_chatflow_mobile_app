@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Modal,
   Platform,
+  Animated,
 } from 'react-native';
 import {
   Text,
@@ -17,9 +18,13 @@ import {
 } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { getSettings, updateSettings } from '../../redux/slices/settingsSlice';
+import { updateSettings, silentUpdateInboxSettings } from '../../redux/slices/settingsSlice';
+import { fetchInboxSettingsWithCache } from '../../redux/cacheThunks';
 import { fetchAllTemplates } from '../../redux/slices/templateSlice';
 import { colors, chatColors } from '../../theme/colors';
+import { useNetwork } from '../../contexts/NetworkContext';
+import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import { cacheManager } from '../../database/CacheManager';
 import { MessagePreviewBubble } from '../../components/common';
 import { getEffectiveMessageType, getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
 
@@ -40,8 +45,302 @@ const defaultWorkingHours = {
   sunday: { enabled: false, from: null, to: null },
 };
 
+// Skeleton Pulse Component
+const SkeletonPulse = ({ style }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+  return <Animated.View style={[{ backgroundColor: colors.grey[200], borderRadius: 6 }, style, { opacity }]} />;
+};
+
+// Skeleton for Read Receipt Section
+const ReadReceiptSkeleton = () => (
+  <View style={skeletonStyles.readReceiptCard}>
+    {/* Header with centered icon */}
+    <View style={skeletonStyles.readReceiptHeader}>
+      <SkeletonPulse style={{ width: 64, height: 64, borderRadius: 32, marginBottom: 12 }} />
+      <SkeletonPulse style={{ width: 180, height: 18, borderRadius: 4 }} />
+      <SkeletonPulse style={{ width: 240, height: 13, borderRadius: 4, marginTop: 6 }} />
+    </View>
+    {/* Tick preview area */}
+    <View style={skeletonStyles.tickPreviewArea}>
+      <SkeletonPulse style={{ width: 100, height: 11, borderRadius: 4, alignSelf: 'center', marginBottom: 12 }} />
+      <View style={skeletonStyles.tickRow}>
+        <SkeletonPulse style={{ width: 44, height: 44, borderRadius: 10 }} />
+        <SkeletonPulse style={{ width: 16, height: 16, borderRadius: 3 }} />
+        <SkeletonPulse style={{ width: 44, height: 44, borderRadius: 10 }} />
+        <SkeletonPulse style={{ width: 16, height: 16, borderRadius: 3 }} />
+        <SkeletonPulse style={{ width: 44, height: 44, borderRadius: 10 }} />
+      </View>
+    </View>
+    {/* Toggle row */}
+    <View style={skeletonStyles.toggleSection}>
+      <View style={{ flex: 1 }}>
+        <SkeletonPulse style={{ width: 120, height: 14, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 180, height: 12, borderRadius: 4, marginTop: 6 }} />
+      </View>
+      <SkeletonPulse style={{ width: 56, height: 28, borderRadius: 14 }} />
+    </View>
+    {/* Info box */}
+    <View style={skeletonStyles.infoRow}>
+      <SkeletonPulse style={{ width: 20, height: 20, borderRadius: 10 }} />
+      <SkeletonPulse style={{ flex: 1, height: 12, borderRadius: 4 }} />
+    </View>
+  </View>
+);
+
+// Skeleton for Message Settings Section
+const MessageSettingsSkeleton = () => (
+  <View style={skeletonStyles.card}>
+    {/* Card Header */}
+    <View style={skeletonStyles.cardHeader}>
+      <SkeletonPulse style={{ width: 40, height: 40, borderRadius: 10 }} />
+      <View style={{ flex: 1 }}>
+        <SkeletonPulse style={{ width: 130, height: 15, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 180, height: 12, borderRadius: 4, marginTop: 4 }} />
+      </View>
+    </View>
+    {/* Welcome Message Sub-section */}
+    <View style={skeletonStyles.sectionBlock}>
+      <View style={skeletonStyles.sectionHead}>
+        <SkeletonPulse style={{ width: 120, height: 13, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 50, height: 24, borderRadius: 14 }} />
+      </View>
+      <SkeletonPulse style={{ width: '100%', height: 80, borderRadius: 10 }} />
+    </View>
+    <View style={skeletonStyles.divider} />
+    {/* Off-Hours Message Sub-section */}
+    <View style={skeletonStyles.sectionBlock}>
+      <View style={skeletonStyles.sectionHead}>
+        <SkeletonPulse style={{ width: 130, height: 13, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 50, height: 24, borderRadius: 14 }} />
+      </View>
+      <SkeletonPulse style={{ width: '100%', height: 80, borderRadius: 10 }} />
+    </View>
+  </View>
+);
+
+// Skeleton for Working Hours Section
+const WorkingHoursSkeleton = () => (
+  <View style={skeletonStyles.card}>
+    {/* Card Header */}
+    <View style={skeletonStyles.cardHeader}>
+      <SkeletonPulse style={{ width: 40, height: 40, borderRadius: 10 }} />
+      <View style={{ flex: 1 }}>
+        <SkeletonPulse style={{ width: 120, height: 15, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 190, height: 12, borderRadius: 4, marginTop: 4 }} />
+      </View>
+    </View>
+    <View style={skeletonStyles.sectionBlock}>
+      {/* Instructions */}
+      <View style={skeletonStyles.instructionsBox}>
+        <View style={skeletonStyles.instructionRow}>
+          <SkeletonPulse style={{ width: 20, height: 20, borderRadius: 10 }} />
+          <SkeletonPulse style={{ width: 180, height: 12, borderRadius: 4 }} />
+        </View>
+        <View style={skeletonStyles.instructionRow}>
+          <SkeletonPulse style={{ width: 20, height: 20, borderRadius: 10 }} />
+          <SkeletonPulse style={{ width: 160, height: 12, borderRadius: 4 }} />
+        </View>
+      </View>
+      {/* Summary */}
+      <View style={skeletonStyles.summaryRow}>
+        <SkeletonPulse style={{ width: 14, height: 14, borderRadius: 3 }} />
+        <SkeletonPulse style={{ width: 100, height: 12, borderRadius: 4 }} />
+      </View>
+      {/* 7 Day Rows */}
+      {Array.from({ length: 7 }).map((_, i) => (
+        <View key={i} style={skeletonStyles.dayRow}>
+          <SkeletonPulse style={{ width: 48, height: 28, borderRadius: 8 }} />
+          <SkeletonPulse style={{ width: 140, height: 28, borderRadius: 8 }} />
+        </View>
+      ))}
+      {/* Save Button */}
+      <SkeletonPulse style={{ width: '100%', height: 42, borderRadius: 10, marginTop: 14 }} />
+    </View>
+  </View>
+);
+
+// Skeleton for AI Auto Reply Section
+const AutoReplySkeleton = () => (
+  <View style={skeletonStyles.card}>
+    {/* Card Header */}
+    <View style={skeletonStyles.cardHeader}>
+      <SkeletonPulse style={{ width: 40, height: 40, borderRadius: 10 }} />
+      <View style={{ flex: 1 }}>
+        <SkeletonPulse style={{ width: 110, height: 15, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 160, height: 12, borderRadius: 4, marginTop: 4 }} />
+      </View>
+    </View>
+    <View style={skeletonStyles.sectionBlock}>
+      {/* Toggle Row */}
+      <View style={skeletonStyles.sectionHead}>
+        <View style={{ flex: 1 }}>
+          <SkeletonPulse style={{ width: 120, height: 14, borderRadius: 4 }} />
+          <SkeletonPulse style={{ width: 180, height: 12, borderRadius: 4, marginTop: 6 }} />
+        </View>
+        <SkeletonPulse style={{ width: 50, height: 24, borderRadius: 14 }} />
+      </View>
+      {/* Divider */}
+      <View style={skeletonStyles.divider} />
+      {/* Rules placeholder */}
+      <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+        <SkeletonPulse style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 10 }} />
+        <SkeletonPulse style={{ width: 140, height: 14, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 200, height: 12, borderRadius: 4, marginTop: 6 }} />
+      </View>
+    </View>
+  </View>
+);
+
+// Full Inbox Settings Skeleton
+const InboxSettingsSkeleton = () => (
+  <View style={skeletonStyles.container}>
+    <ScrollView contentContainerStyle={skeletonStyles.scrollContent} showsVerticalScrollIndicator={false}>
+      {/* Info Box Skeleton */}
+      <View style={skeletonStyles.infoBox}>
+        <SkeletonPulse style={{ width: 28, height: 28, borderRadius: 8 }} />
+        <SkeletonPulse style={{ flex: 1, height: 12, borderRadius: 4 }} />
+      </View>
+      <ReadReceiptSkeleton />
+      <MessageSettingsSkeleton />
+      <WorkingHoursSkeleton />
+      <AutoReplySkeleton />
+    </ScrollView>
+  </View>
+);
+
+const skeletonStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 80,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  readReceiptCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+    overflow: 'hidden',
+  },
+  readReceiptHeader: {
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#F0F9FF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0F2FE',
+  },
+  tickPreviewArea: {
+    padding: 16,
+    backgroundColor: '#FAFAFA',
+  },
+  tickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  toggleSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    marginHorizontal: 14,
+    marginBottom: 14,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 10,
+    gap: 8,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  sectionBlock: {
+    padding: 14,
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 12,
+  },
+  instructionsBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  instructionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+});
+
 export default function InboxSettingsScreen() {
   const dispatch = useDispatch();
+  const { isOffline, isNetworkAvailable } = useNetwork();
 
   const { settings, getSettingsStatus } = useSelector((state) => state.settings);
   const { templates } = useSelector((state) => state.template);
@@ -98,9 +397,19 @@ export default function InboxSettingsScreen() {
   const isRefreshing = getSettingsStatus === 'loading' && readReceiptsEnabled !== undefined;
 
   useEffect(() => {
-    dispatch(getSettings('inboxSettings'));
+    dispatch(fetchInboxSettingsWithCache());
     dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
   }, [dispatch]);
+
+  // Network recovery — re-fetch when connectivity is restored
+  useEffect(() => {
+    const hasNoData = !settings?.inboxSettings || Object.keys(settings.inboxSettings).length === 0;
+    if (isNetworkAvailable && hasNoData && getSettingsStatus !== 'loading') {
+      dispatch(fetchInboxSettingsWithCache({ forceRefresh: true }));
+    } else if (isNetworkAvailable && getSettingsStatus === 'failed') {
+      dispatch(fetchInboxSettingsWithCache({ forceRefresh: true }));
+    }
+  }, [isNetworkAvailable]);
 
   useEffect(() => {
     if (settings.inboxSettings) {
@@ -178,85 +487,100 @@ export default function InboxSettingsScreen() {
   }, [workingHours, settings.inboxSettings]);
 
   const onRefresh = useCallback(() => {
-    dispatch(getSettings('inboxSettings'));
-  }, [dispatch]);
+    if (isOffline) return;
+    dispatch(fetchInboxSettingsWithCache({ forceRefresh: true }));
+  }, [dispatch, isOffline]);
 
   const showSnackbar = useCallback((message) => {
     setSnackbarMessage(message);
     setSnackbarVisible(true);
   }, []);
 
-  // Handle Read Receipt Toggle
+  // Silent background cache sync — fetches full data from server, updates SQLite + Redux
+  const syncInboxCacheInBackground = useCallback(() => {
+    callApi(`${endpoints.settings.getSettings}?keys=inboxSettings`, httpMethods.GET)
+      .then(async (response) => {
+        if (response.status !== 'error') {
+          const data = response.data || response;
+          const inboxSettings = data.inboxSettings || {};
+          await cacheManager.saveAppSetting('inboxSettings', inboxSettings);
+          dispatch(silentUpdateInboxSettings(inboxSettings));
+        }
+      })
+      .catch(() => {});
+  }, [dispatch]);
+
+  // Handle Read Receipt Toggle — optimistic update
   const handleToggleReadReceipts = async (enabled) => {
+    if (isOffline) return;
+    const previousValue = readReceiptsEnabled;
+    setReadReceiptsEnabled(enabled);
+    showSnackbar(`Read receipts ${enabled ? 'enabled' : 'disabled'}`);
     const key = 'inboxSettings.readReceipts';
     setUpdatingKey(key);
     try {
-      const result = await dispatch(updateSettings({ key, data: enabled })).unwrap();
-      if (result.status === 'success') {
-        setReadReceiptsEnabled(enabled);
-        showSnackbar(`Read receipts ${enabled ? 'enabled' : 'disabled'}`);
-      } else {
-        showSnackbar(result.message || 'Failed to update');
-      }
+      await dispatch(updateSettings({ key, data: enabled })).unwrap();
+      syncInboxCacheInBackground();
     } catch (error) {
+      setReadReceiptsEnabled(previousValue);
       showSnackbar(error || 'Failed to update');
     } finally {
       setUpdatingKey(null);
     }
   };
 
-  // Handle Welcome Message Toggle
+  // Handle Welcome Message Toggle — optimistic update
   const handleToggleWelcomeMessage = async (enabled) => {
+    if (isOffline) return;
+    const previousValue = welcomeMessageEnabled;
+    setWelcomeMessageEnabled(enabled);
+    showSnackbar(`Welcome message ${enabled ? 'enabled' : 'disabled'}`);
     // Use wellcomeMessage to match backend typo
     const key = 'inboxSettings.wellcomeMessage.enabled';
     setUpdatingKey(key);
     try {
-      const result = await dispatch(updateSettings({ key, data: enabled })).unwrap();
-      if (result.status === 'success') {
-        setWelcomeMessageEnabled(enabled);
-        showSnackbar(`Welcome message ${enabled ? 'enabled' : 'disabled'}`);
-      } else {
-        showSnackbar(result.message || 'Failed to update');
-      }
+      await dispatch(updateSettings({ key, data: enabled })).unwrap();
+      syncInboxCacheInBackground();
     } catch (error) {
+      setWelcomeMessageEnabled(previousValue);
       showSnackbar(error || 'Failed to update');
     } finally {
       setUpdatingKey(null);
     }
   };
 
-  // Handle Off-Hour Message Toggle
+  // Handle Off-Hour Message Toggle — optimistic update
   const handleToggleOffHourMessage = async (enabled) => {
+    if (isOffline) return;
+    const previousValue = offHourMessageEnabled;
+    setOffHourMessageEnabled(enabled);
+    showSnackbar(`Off-hours message ${enabled ? 'enabled' : 'disabled'}`);
     const key = 'inboxSettings.offHourMessage.enabled';
     setUpdatingKey(key);
     try {
-      const result = await dispatch(updateSettings({ key, data: enabled })).unwrap();
-      if (result.status === 'success') {
-        setOffHourMessageEnabled(enabled);
-        showSnackbar(`Off-hours message ${enabled ? 'enabled' : 'disabled'}`);
-      } else {
-        showSnackbar(result.message || 'Failed to update');
-      }
+      await dispatch(updateSettings({ key, data: enabled })).unwrap();
+      syncInboxCacheInBackground();
     } catch (error) {
+      setOffHourMessageEnabled(previousValue);
       showSnackbar(error || 'Failed to update');
     } finally {
       setUpdatingKey(null);
     }
   };
 
-  // Handle AI Auto Reply Toggle
+  // Handle AI Auto Reply Toggle — optimistic update
   const handleToggleAiAutoReply = async (enabled) => {
+    if (isOffline) return;
+    const previousValue = aiAutoReplyActive;
+    setAiAutoReplyActive(enabled);
+    showSnackbar(`AI Auto Reply ${enabled ? 'activated' : 'deactivated'}`);
     const key = 'inboxSettings.aiAutoReply.isActive';
     setUpdatingKey(key);
     try {
-      const result = await dispatch(updateSettings({ key, data: enabled })).unwrap();
-      if (result.status === 'success') {
-        setAiAutoReplyActive(enabled);
-        showSnackbar(`AI Auto Reply ${enabled ? 'activated' : 'deactivated'}`);
-      } else {
-        showSnackbar(result.message || 'Failed to update');
-      }
+      await dispatch(updateSettings({ key, data: enabled })).unwrap();
+      syncInboxCacheInBackground();
     } catch (error) {
+      setAiAutoReplyActive(previousValue);
       showSnackbar(error || 'Failed to update');
     } finally {
       setUpdatingKey(null);
@@ -322,21 +646,18 @@ export default function InboxSettingsScreen() {
     });
 
   const handleSaveWorkingHours = async () => {
+    if (isOffline) return;
     setSavingWorkingHours(true);
     try {
-      const result = await dispatch(
+      await dispatch(
         updateSettings({
           key: 'inboxSettings.workingHours.days',
           data: workingHours,
         })
       ).unwrap();
-
-      if (result.status === 'success') {
-        showSnackbar('Working hours saved successfully');
-        setHasUnsavedChanges(false);
-      } else {
-        showSnackbar(result.message || 'Failed to save');
-      }
+      showSnackbar('Working hours saved successfully');
+      setHasUnsavedChanges(false);
+      syncInboxCacheInBackground();
     } catch (error) {
       showSnackbar(error || 'Failed to save');
     } finally {
@@ -477,7 +798,7 @@ export default function InboxSettingsScreen() {
             <TouchableOpacity
               style={[styles.togglePillLarge, readReceiptsEnabled && styles.togglePillLargeActive]}
               onPress={() => handleToggleReadReceipts(!readReceiptsEnabled)}
-              disabled={isUpdating}
+              disabled={isUpdating || isOffline}
               activeOpacity={0.7}
             >
               {isUpdating ? (
@@ -543,7 +864,7 @@ export default function InboxSettingsScreen() {
             <TouchableOpacity
               style={[styles.togglePill, welcomeMessageEnabled && styles.togglePillActive]}
               onPress={() => handleToggleWelcomeMessage(!welcomeMessageEnabled)}
-              disabled={isUpdatingWelcome}
+              disabled={isUpdatingWelcome || isOffline}
             >
               {isUpdatingWelcome ? (
                 <ActivityIndicator size={12} color={welcomeMessageEnabled ? '#FFF' : colors.grey[400]} />
@@ -575,7 +896,7 @@ export default function InboxSettingsScreen() {
             <TouchableOpacity
               style={[styles.togglePill, offHourMessageEnabled && styles.togglePillActive]}
               onPress={() => handleToggleOffHourMessage(!offHourMessageEnabled)}
-              disabled={isUpdatingOffHour}
+              disabled={isUpdatingOffHour || isOffline}
             >
               {isUpdatingOffHour ? (
                 <ActivityIndicator size={12} color={offHourMessageEnabled ? '#FFF' : colors.grey[400]} />
@@ -597,7 +918,7 @@ export default function InboxSettingsScreen() {
 
   // Render Working Hours Section (fully functional) - Compact Design with Instructions
   const renderWorkingHoursSection = () => {
-    const isSaveDisabled = !hasUnsavedChanges || !isTimeValid() || savingWorkingHours;
+    const isSaveDisabled = !hasUnsavedChanges || !isTimeValid() || savingWorkingHours || isOffline;
     const enabledDaysCount = DAYS_OF_WEEK.filter(day => workingHours[day]?.enabled).length;
 
     return (
@@ -651,6 +972,7 @@ export default function InboxSettingsScreen() {
                   <TouchableOpacity
                     style={[styles.dayTogglePill, workingHours[day]?.enabled && styles.dayTogglePillActive]}
                     onPress={() => handleToggleDay(day)}
+                    disabled={isOffline}
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.compactDayName, workingHours[day]?.enabled && styles.compactDayNameActive]}>
@@ -665,6 +987,7 @@ export default function InboxSettingsScreen() {
                     <TouchableOpacity
                       style={styles.compactTimeButton}
                       onPress={() => handleOpenTimePicker(day, 'from')}
+                      disabled={isOffline}
                       activeOpacity={0.7}
                     >
                       <Icon name="clock-outline" size={12} color={colors.primary.main} style={styles.timeIcon} />
@@ -676,6 +999,7 @@ export default function InboxSettingsScreen() {
                     <TouchableOpacity
                       style={styles.compactTimeButton}
                       onPress={() => handleOpenTimePicker(day, 'to')}
+                      disabled={isOffline}
                       activeOpacity={0.7}
                     >
                       <Icon name="clock-outline" size={12} color={colors.primary.main} style={styles.timeIcon} />
@@ -744,7 +1068,7 @@ export default function InboxSettingsScreen() {
             <TouchableOpacity
               style={[styles.togglePill, aiAutoReplyActive && styles.togglePillActive]}
               onPress={() => handleToggleAiAutoReply(!aiAutoReplyActive)}
-              disabled={isUpdatingAiAutoReply}
+              disabled={isUpdatingAiAutoReply || isOffline}
             >
               {isUpdatingAiAutoReply ? (
                 <ActivityIndicator size={12} color={aiAutoReplyActive ? '#FFF' : colors.grey[400]} />
@@ -818,15 +1142,26 @@ export default function InboxSettingsScreen() {
     );
   };
 
-  if (isLoading && !readReceiptsEnabled) {
+  // Offline with no cached data
+  const hasNoData = !settings?.inboxSettings || Object.keys(settings.inboxSettings).length === 0;
+  if (isOffline && hasNoData && getSettingsStatus !== 'succeeded') {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading settings...</Text>
+        <View style={styles.offlineBox}>
+          <View style={styles.offlineIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.offlineTitle}>You're Offline</Text>
+          <Text style={styles.offlineSubtitle}>
+            Connect to the internet to load settings.{'\n'}Previously loaded data will appear here.
+          </Text>
         </View>
       </View>
     );
+  }
+
+  if (isLoading && !readReceiptsEnabled) {
+    return <InboxSettingsSkeleton />;
   }
 
   return (
@@ -961,9 +1296,13 @@ export default function InboxSettingsScreen() {
         </View>
       </Modal>
 
-      <Snackbar visible={snackbarVisible} onDismiss={() => setSnackbarVisible(false)} duration={2000}>
-        {snackbarMessage}
-      </Snackbar>
+      {snackbarVisible && (
+        <View style={styles.snackbarContainer}>
+          <Snackbar visible={snackbarVisible} onDismiss={() => setSnackbarVisible(false)} duration={2000} style={styles.snackbar}>
+            {snackbarMessage}
+          </Snackbar>
+        </View>
+      )}
     </View>
   );
 }
@@ -977,17 +1316,34 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 80,
   },
-  loadingBox: {
+  offlineBox: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 32,
     gap: 12,
   },
-  loadingText: {
+  offlineIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
     fontSize: 14,
     color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
-
   // Info Box
   infoBox: {
     flexDirection: 'row',
@@ -1729,6 +2085,16 @@ const styles = StyleSheet.create({
 
   bottomSpace: {
     height: 16,
+  },
+  snackbarContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+  },
+  snackbar: {
+    backgroundColor: '#323232',
   },
 
   // Time Picker Modal
