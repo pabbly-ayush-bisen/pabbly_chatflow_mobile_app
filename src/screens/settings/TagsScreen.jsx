@@ -173,30 +173,44 @@ export default function TagsScreen() {
 
   const { settings, getSettingsStatus } = useSelector((state) => state.settings);
   const { isOffline, isNetworkAvailable } = useNetwork();
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const initialLoadDone = useRef(false);
-  const hasEverLoaded = useRef(false);
+  const isLoadingRef = useRef(false);
+  const fetchSucceeded = useRef(false);
   const cachedBaseTags = useRef({ items: [], totalCount: 0 });
 
   const isLoading = getSettingsStatus === 'loading';
   const isRefreshing = isLoading && localTags.length > 0 && !isLoadingMore;
 
-  // Track if data was ever successfully loaded
+  // Network recovery — re-fetch when connectivity restored and data never loaded
   useEffect(() => {
-    if (getSettingsStatus === 'succeeded') {
-      hasEverLoaded.current = true;
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      fetchSucceeded.current = false;
+      setIsInitialLoading(true);
+      dispatch(fetchTagsWithCache({ forceRefresh: true }))
+        .unwrap()
+        .then(() => { fetchSucceeded.current = true; })
+        .catch(() => {})
+        .finally(() => {
+          isLoadingRef.current = false;
+          setIsInitialLoading(false);
+        });
     }
-  }, [getSettingsStatus]);
-
-  // Network recovery — re-fetch only when connectivity is restored after a failed load
-  useEffect(() => {
-    if (isNetworkAvailable && getSettingsStatus === 'failed' && !hasEverLoaded.current) {
-      dispatch(fetchTagsWithCache({ forceRefresh: true }));
-    }
-  }, [isNetworkAvailable, getSettingsStatus]);
+  }, [isNetworkAvailable]);
 
   // Initial load — cache-first
   useEffect(() => {
-    dispatch(fetchTagsWithCache());
+    isLoadingRef.current = true;
+    fetchSucceeded.current = false;
+    dispatch(fetchTagsWithCache())
+      .unwrap()
+      .then(() => { fetchSucceeded.current = true; })
+      .catch(() => {})
+      .finally(() => {
+        isLoadingRef.current = false;
+        setIsInitialLoading(false);
+      });
 
     // Cleanup debounce timer on unmount
     return () => {
@@ -208,22 +222,19 @@ export default function TagsScreen() {
 
   // Sync settings.tags → localTags on initial load only
   // After initial load, pagination and search manage localTags directly
+  // Gated on !isInitialLoading && fetchSucceeded to prevent premature sync from default Redux state
   useEffect(() => {
-    if (settings.tags && !initialLoadDone.current) {
-      const tagsData = settings.tags;
-      const items = tagsData.items || [];
-      const total = tagsData.totalCount || 0;
-
-      if (items.length > 0 || total === 0) {
-        setLocalTags(items);
-        setTotalCount(total);
-        setPage(1);
-        setHasMoreTags(items.length < total);
-        initialLoadDone.current = true;
-        cachedBaseTags.current = { items, totalCount: total };
-      }
+    if (settings.tags && !initialLoadDone.current && !isInitialLoading && fetchSucceeded.current) {
+      const items = settings.tags.items || [];
+      const total = settings.tags.totalCount || 0;
+      setLocalTags(items);
+      setTotalCount(total);
+      setPage(1);
+      setHasMoreTags(items.length < total);
+      initialLoadDone.current = true;
+      cachedBaseTags.current = { items, totalCount: total };
     }
-  }, [settings.tags]);
+  }, [settings.tags, isInitialLoading]);
 
   // Load tags from API — used for pagination and search only
   const loadTags = useCallback(async ({ reset = false, search = '' } = {}) => {
@@ -276,11 +287,16 @@ export default function TagsScreen() {
   const onRefresh = useCallback(() => {
     if (isOffline) return;
     setSearchQuery('');
-    setLocalTags([]);
     setPage(0);
     setHasMoreTags(true);
     initialLoadDone.current = false;
-    dispatch(fetchTagsWithCache({ forceRefresh: true }));
+    fetchSucceeded.current = false;
+    isLoadingRef.current = true;
+    dispatch(fetchTagsWithCache({ forceRefresh: true }))
+      .unwrap()
+      .then(() => { fetchSucceeded.current = true; })
+      .catch(() => {})
+      .finally(() => { isLoadingRef.current = false; });
   }, [dispatch, isOffline]);
 
   // Debounced search handler
@@ -511,7 +527,7 @@ export default function TagsScreen() {
   };
 
   // Offline with no successfully loaded data — only show if data was NEVER loaded
-  if (isOffline && !hasEverLoaded.current && getSettingsStatus !== 'succeeded') {
+  if (isOffline && !initialLoadDone.current && localTags.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.offlineBox}>
@@ -528,7 +544,7 @@ export default function TagsScreen() {
   }
 
   // Loading State - Initial load (skeleton instead of spinner)
-  if (isLoading && !isRefreshing && localTags.length === 0) {
+  if (isInitialLoading && localTags.length === 0 && !isOffline) {
     return <TagsSkeleton />;
   }
 
