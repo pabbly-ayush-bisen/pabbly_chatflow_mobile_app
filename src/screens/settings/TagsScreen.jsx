@@ -18,6 +18,19 @@ import { colors } from '../../theme/colors';
 
 const PAGE_SIZE = 10;
 
+const CHIP_COLORS = [
+  { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8' },   // Blue
+  { bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D' },   // Green
+  { bg: '#FDF4FF', border: '#F0ABFC', text: '#A21CAF' },   // Purple
+  { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C' },   // Orange
+  { bg: '#F0FDFA', border: '#99F6E4', text: '#0F766E' },   // Teal
+  { bg: '#FEF2F2', border: '#FECACA', text: '#DC2626' },   // Red
+  { bg: '#FFFBEB', border: '#FDE68A', text: '#B45309' },   // Amber
+  { bg: '#F5F3FF', border: '#C4B5FD', text: '#6D28D9' },   // Violet
+  { bg: '#ECFDF5', border: '#A7F3D0', text: '#047857' },   // Emerald
+  { bg: '#FDF2F8', border: '#FBCFE8', text: '#BE185D' },   // Pink
+];
+
 // Skeleton Pulse Component
 const SkeletonPulse = ({ style }) => {
   const opacity = useRef(new Animated.Value(0.3)).current;
@@ -286,6 +299,9 @@ export default function TagsScreen() {
     initialLoadDone.current = false;
     fetchSucceeded.current = false;
     isLoadingRef.current = true;
+    // Clear cache so fresh data is fetched from API
+    cacheManager.saveAppSetting('tags', null).catch(() => {});
+    cachedBaseTags.current = { items: [], totalCount: 0 };
     dispatch(fetchTagsWithCache({ forceRefresh: true }))
       .unwrap()
       .then(() => { fetchSucceeded.current = true; })
@@ -413,11 +429,14 @@ export default function TagsScreen() {
                 <Text style={styles.keywordsLabel}>Keywords (First Message)</Text>
               </View>
               <View style={styles.keywordsContainer}>
-                {keywords.map((keyword, index) => (
-                  <View key={index} style={styles.keywordChip}>
-                    <Text style={styles.keywordText} numberOfLines={1}>{keyword}</Text>
-                  </View>
-                ))}
+                {keywords.map((keyword, index) => {
+                  const chipColor = CHIP_COLORS[index % CHIP_COLORS.length];
+                  return (
+                    <View key={index} style={[styles.keywordChip, { backgroundColor: chipColor.bg, borderColor: chipColor.border }]}>
+                      <Text style={[styles.keywordText, { color: chipColor.text }]} numberOfLines={1}>{keyword}</Text>
+                    </View>
+                  );
+                })}
               </View>
             </View>
           )}
@@ -447,25 +466,25 @@ export default function TagsScreen() {
             <View style={styles.cardTags}>
               {/* Created Date */}
               {date && (
-                <View style={styles.infoBadge}>
-                  <Icon name="calendar-outline" size={12} color={colors.text.tertiary} />
-                  <Text style={styles.infoBadgeText}>{date}</Text>
+                <View style={[styles.infoBadge, { backgroundColor: '#EDE9FE' }]}>
+                  <Icon name="calendar-outline" size={12} color="#7C3AED" />
+                  <Text style={[styles.infoBadgeText, { color: '#7C3AED' }]}>{date}</Text>
                 </View>
               )}
 
               {/* Created Time */}
               {time && (
-                <View style={styles.infoBadge}>
-                  <Icon name="clock-outline" size={12} color={colors.text.tertiary} />
-                  <Text style={styles.infoBadgeText}>{time}</Text>
+                <View style={[styles.infoBadge, { backgroundColor: '#DBEAFE' }]}>
+                  <Icon name="clock-outline" size={12} color="#2563EB" />
+                  <Text style={[styles.infoBadgeText, { color: '#2563EB' }]}>{time}</Text>
                 </View>
               )}
 
               {/* Contact Count */}
               {contactCount > 0 && (
-                <View style={styles.infoBadge}>
-                  <Icon name="account-multiple-outline" size={12} color={colors.text.tertiary} />
-                  <Text style={styles.infoBadgeText}>
+                <View style={[styles.infoBadge, { backgroundColor: '#D1FAE5' }]}>
+                  <Icon name="account-multiple-outline" size={12} color="#059669" />
+                  <Text style={[styles.infoBadgeText, { color: '#059669' }]}>
                     {contactCount} {contactCount === 1 ? 'contact' : 'contacts'}
                   </Text>
                 </View>
@@ -482,7 +501,7 @@ export default function TagsScreen() {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconContainer}>
-        <Icon name="tag-off-outline" size={64} color={colors.grey[300]} />
+        <Icon name="tag-multiple-outline" size={64} color="#9C27B0" />
       </View>
       <Text style={styles.emptyTitle}>
         {searchQuery ? 'No tags found' : 'No tags yet'}
@@ -899,7 +918,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: colors.grey[100],
+    backgroundColor: '#F3E5F5',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
