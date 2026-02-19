@@ -331,8 +331,8 @@ export default function TagsScreen() {
 
   // Handle load more
   const handleLoadMore = useCallback(async () => {
-    // Don't load more if already loading, no more tags, or offline
-    if (isLoading || isLoadingMore || !hasMoreTags || isOffline) return;
+    // Don't load more if initial data hasn't synced yet, already loading, no more tags, or offline
+    if (!initialLoadDone.current || isLoading || isLoadingMore || !hasMoreTags || isOffline) return;
 
     setIsLoadingMore(true);
     await loadTags({ reset: false, search: searchQuery });
