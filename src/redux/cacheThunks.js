@@ -1726,6 +1726,75 @@ async function fetchOptInManagementFromServer() {
   return optInManagement;
 }
 
+// ─── Inbox Settings ───────────────────────────────────────────────────────────
+
+export const fetchInboxSettingsWithCache = createAsyncThunk(
+  'settings/fetchInboxSettingsWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      // Try cache first
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('inboxSettings');
+
+        if (cached) {
+          // Return cached data immediately, then silently refresh in background
+          fetchInboxSettingsFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateInboxSettings } = require('./slices/settingsSlice');
+                dispatch(silentUpdateInboxSettings(freshData));
+              }
+            })
+            .catch(() => {});
+
+          return { data: { inboxSettings: cached }, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchInboxSettingsFromServer();
+      return { data: { inboxSettings: freshData }, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('inboxSettings');
+        if (cached) {
+          return { data: { inboxSettings: cached }, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch inbox settings from API and save to cache.
+ * @returns {Promise<Object>} inboxSettings object
+ */
+async function fetchInboxSettingsFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=inboxSettings`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch inbox settings');
+  }
+
+  const data = response.data || response;
+  const inboxSettings = data.inboxSettings || {};
+
+  // Save to cache
+  await cacheManager.saveAppSetting('inboxSettings', inboxSettings);
+
+  return inboxSettings;
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -1751,4 +1820,5 @@ export default {
   fetchTemplatesWithCache,
   fetchTemplateStatsWithCache,
   fetchOptInManagementWithCache,
+  fetchInboxSettingsWithCache,
 };
