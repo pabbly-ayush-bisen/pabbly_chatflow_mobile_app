@@ -8,12 +8,12 @@ import {
   Modal,
   Platform,
   Animated,
+  Switch,
 } from 'react-native';
 import {
   Text,
   ActivityIndicator,
   Snackbar,
-  Switch,
   Button,
 } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
@@ -34,6 +34,8 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 
 const DAYS_OF_WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+const CHAT_STATUS_OPTIONS = ['open', 'intervened', 'on hold', 'pending', 'replied', 'resolved', 'closed'];
 
 const defaultWorkingHours = {
   monday: { enabled: false, from: null, to: null },
@@ -393,6 +395,11 @@ export default function InboxSettingsScreen() {
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [updatingKey, setUpdatingKey] = useState(null);
 
+  // Disable AI dialog state
+  const [showDisableAiDialog, setShowDisableAiDialog] = useState(false);
+  const [disableOption, setDisableOption] = useState('');
+  const [selectedChatStatus, setSelectedChatStatus] = useState('');
+
   const isLoading = getSettingsStatus === 'loading';
   const isRefreshing = getSettingsStatus === 'loading' && readReceiptsEnabled !== undefined;
 
@@ -568,23 +575,58 @@ export default function InboxSettingsScreen() {
     }
   };
 
-  // Handle AI Auto Reply Toggle — optimistic update
+  // Handle AI Auto Reply Toggle
   const handleToggleAiAutoReply = async (enabled) => {
     if (isOffline) return;
+    if (!enabled) {
+      // Show confirmation dialog when disabling
+      setShowDisableAiDialog(true);
+      return;
+    }
+    // Enable — direct optimistic toggle
     const previousValue = aiAutoReplyActive;
-    setAiAutoReplyActive(enabled);
-    showSnackbar(`AI Auto Reply ${enabled ? 'activated' : 'deactivated'}`);
-    const key = 'inboxSettings.aiAutoReply.isActive';
-    setUpdatingKey(key);
+    setAiAutoReplyActive(true);
+    showSnackbar('AI Auto Reply activated');
+    setUpdatingKey('inboxSettings.aiAutoReply.isActive');
     try {
-      await dispatch(updateSettings({ key, data: enabled })).unwrap();
+      await callApi(endpoints.settings.toggleAiAutoReply, httpMethods.POST, { isActive: true });
       syncInboxCacheInBackground();
     } catch (error) {
       setAiAutoReplyActive(previousValue);
-      showSnackbar(error || 'Failed to update');
+      showSnackbar(error?.message || 'Failed to update');
     } finally {
       setUpdatingKey(null);
     }
+  };
+
+  // Handle confirm disable AI auto reply from dialog
+  const handleConfirmDisableAi = async () => {
+    const payload = {
+      isActive: false,
+      disableOption: disableOption === 'allChats' ? 'all' : 'newChatsOnly',
+      ...(disableOption === 'allChats' && { selectedChatStatus }),
+    };
+    setShowDisableAiDialog(false);
+    setAiAutoReplyActive(false);
+    showSnackbar('AI Auto Reply deactivated');
+    setUpdatingKey('inboxSettings.aiAutoReply.isActive');
+    try {
+      await callApi(endpoints.settings.toggleAiAutoReply, httpMethods.POST, payload);
+      syncInboxCacheInBackground();
+    } catch (error) {
+      setAiAutoReplyActive(true);
+      showSnackbar(error?.message || 'Failed to disable');
+    } finally {
+      setUpdatingKey(null);
+      setDisableOption('');
+      setSelectedChatStatus('');
+    }
+  };
+
+  const handleCloseDisableAiDialog = () => {
+    setShowDisableAiDialog(false);
+    setDisableOption('');
+    setSelectedChatStatus('');
   };
 
   // Working Hours handlers
@@ -696,8 +738,11 @@ export default function InboxSettingsScreen() {
       <MessagePreviewBubble
         mode={isTemplate ? 'template' : 'regular'}
         enabled={enabled}
-        disabledTitle="Message Disabled"
-        disabledHint="Enable in web app to activate"
+        disabledTitle={isWelcome ? 'Welcome Message Disabled' : 'Off-Hours Message Disabled'}
+        disabledHint="Toggle on to activate"
+        disabledIcon="message-text-outline"
+        disabledIconColor="#16A34A"
+        disabledIconBg="#DCFCE7"
         messageType={msgType}
         // Template props
         templateData={tplData}
@@ -795,27 +840,13 @@ export default function InboxSettingsScreen() {
                   : 'Read status hidden from senders'}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.togglePillLarge, readReceiptsEnabled && styles.togglePillLargeActive]}
-              onPress={() => handleToggleReadReceipts(!readReceiptsEnabled)}
+            <Switch
+              value={readReceiptsEnabled}
+              onValueChange={(val) => handleToggleReadReceipts(val)}
               disabled={isUpdating || isOffline}
-              activeOpacity={0.7}
-            >
-              {isUpdating ? (
-                <ActivityIndicator size={14} color={readReceiptsEnabled ? '#FFF' : colors.grey[400]} />
-              ) : (
-                <>
-                  <Icon
-                    name={readReceiptsEnabled ? 'eye' : 'eye-off'}
-                    size={16}
-                    color={readReceiptsEnabled ? '#FFF' : colors.grey[500]}
-                  />
-                  <Text style={[styles.toggleTextLarge, readReceiptsEnabled && styles.toggleTextLargeActive]}>
-                    {readReceiptsEnabled ? 'On' : 'Off'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+              trackColor={{ false: colors.grey[300], true: '#16A34A' }}
+              thumbColor="#FFF"
+            />
           </View>
         </View>
 
@@ -861,22 +892,13 @@ export default function InboxSettingsScreen() {
                 <Text style={styles.readOnlyText}>Preview</Text>
               </View>
             </View>
-            <TouchableOpacity
-              style={[styles.togglePill, welcomeMessageEnabled && styles.togglePillActive]}
-              onPress={() => handleToggleWelcomeMessage(!welcomeMessageEnabled)}
+            <Switch
+              value={welcomeMessageEnabled}
+              onValueChange={(val) => handleToggleWelcomeMessage(val)}
               disabled={isUpdatingWelcome || isOffline}
-            >
-              {isUpdatingWelcome ? (
-                <ActivityIndicator size={12} color={welcomeMessageEnabled ? '#FFF' : colors.grey[400]} />
-              ) : (
-                <>
-                  <Icon name={welcomeMessageEnabled ? 'check' : 'close'} size={12} color={welcomeMessageEnabled ? '#FFF' : colors.grey[500]} />
-                  <Text style={[styles.toggleText, welcomeMessageEnabled && styles.toggleTextActive]}>
-                    {welcomeMessageEnabled ? 'On' : 'Off'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+              trackColor={{ false: colors.grey[300], true: '#16A34A' }}
+              thumbColor="#FFF"
+            />
           </View>
           {renderMessagePreview('welcome')}
         </View>
@@ -893,22 +915,13 @@ export default function InboxSettingsScreen() {
                 <Text style={styles.readOnlyText}>Preview</Text>
               </View>
             </View>
-            <TouchableOpacity
-              style={[styles.togglePill, offHourMessageEnabled && styles.togglePillActive]}
-              onPress={() => handleToggleOffHourMessage(!offHourMessageEnabled)}
+            <Switch
+              value={offHourMessageEnabled}
+              onValueChange={(val) => handleToggleOffHourMessage(val)}
               disabled={isUpdatingOffHour || isOffline}
-            >
-              {isUpdatingOffHour ? (
-                <ActivityIndicator size={12} color={offHourMessageEnabled ? '#FFF' : colors.grey[400]} />
-              ) : (
-                <>
-                  <Icon name={offHourMessageEnabled ? 'check' : 'close'} size={12} color={offHourMessageEnabled ? '#FFF' : colors.grey[500]} />
-                  <Text style={[styles.toggleText, offHourMessageEnabled && styles.toggleTextActive]}>
-                    {offHourMessageEnabled ? 'On' : 'Off'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+              trackColor={{ false: colors.grey[300], true: '#16A34A' }}
+              thumbColor="#FFF"
+            />
           </View>
           {renderMessagePreview('offHour')}
         </View>
@@ -1065,22 +1078,13 @@ export default function InboxSettingsScreen() {
                 {aiAutoReplyActive ? 'AI is responding to messages' : 'AI responses are disabled'}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.togglePill, aiAutoReplyActive && styles.togglePillActive]}
-              onPress={() => handleToggleAiAutoReply(!aiAutoReplyActive)}
+            <Switch
+              value={aiAutoReplyActive}
+              onValueChange={(val) => handleToggleAiAutoReply(val)}
               disabled={isUpdatingAiAutoReply || isOffline}
-            >
-              {isUpdatingAiAutoReply ? (
-                <ActivityIndicator size={12} color={aiAutoReplyActive ? '#FFF' : colors.grey[400]} />
-              ) : (
-                <>
-                  <Icon name={aiAutoReplyActive ? 'check' : 'close'} size={12} color={aiAutoReplyActive ? '#FFF' : colors.grey[500]} />
-                  <Text style={[styles.toggleText, aiAutoReplyActive && styles.toggleTextActive]}>
-                    {aiAutoReplyActive ? 'On' : 'Off'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+              trackColor={{ false: colors.grey[300], true: '#16A34A' }}
+              thumbColor="#FFF"
+            />
           </View>
 
           {/* Divider */}
@@ -1128,8 +1132,8 @@ export default function InboxSettingsScreen() {
             </View>
           ) : (
             <View style={styles.noRulesContainer}>
-              <View style={styles.noRulesIcon}>
-                <Icon name="robot-off-outline" size={32} color={colors.grey[400]} />
+              <View style={[styles.noRulesIcon, { backgroundColor: '#FFEDD5' }]}>
+                <Icon name="robot-outline" size={32} color="#F97316" />
               </View>
               <Text style={styles.noRulesTitle}>No Rules Configured</Text>
               <Text style={styles.noRulesHint}>
@@ -1294,6 +1298,130 @@ export default function InboxSettingsScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Disable AI Auto Reply Dialog */}
+      <Modal
+        visible={showDisableAiDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseDisableAiDialog}
+      >
+        <TouchableOpacity
+          style={styles.dialogOverlay}
+          activeOpacity={1}
+          onPress={handleCloseDisableAiDialog}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.disableAiDialog}>
+            {/* Header */}
+            <View style={styles.disableAiHeader}>
+              <View style={styles.disableAiIconRow}>
+                <View style={styles.disableAiIconBox}>
+                  <Icon name="robot-outline" size={22} color="#F97316" />
+                </View>
+                <TouchableOpacity
+                  onPress={handleCloseDisableAiDialog}
+                  style={styles.disableAiCloseBtn}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Icon name="close" size={20} color={colors.grey[400]} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.disableAiTitle}>Disable AI Replies</Text>
+              <Text style={styles.disableAiSubtitle}>
+                Select whether this applies to new chats only or all chats.
+              </Text>
+            </View>
+
+            <ScrollView
+              style={styles.disableAiContent}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {/* Option 1: New Chats Only */}
+              <TouchableOpacity
+                style={[styles.radioOptionCard, disableOption === 'newChatsOnly' && styles.radioOptionCardSelected]}
+                onPress={() => setDisableOption('newChatsOnly')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.radioRow}>
+                  <View style={[styles.radioCircle, disableOption === 'newChatsOnly' && styles.radioCircleSelected]}>
+                    {disableOption === 'newChatsOnly' && <View style={styles.radioCircleDot} />}
+                  </View>
+                  <View style={styles.radioTextContainer}>
+                    <Text style={styles.radioOptionTitle}>Disable for All New Chats Only</Text>
+                    <Text style={styles.radioOptionDesc}>
+                      AI replies will be disabled for all new chats initiated after this change. Existing chats will still have AI replies enabled.
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Option 2: All Chats */}
+              <TouchableOpacity
+                style={[styles.radioOptionCard, disableOption === 'allChats' && styles.radioOptionCardSelected]}
+                onPress={() => setDisableOption('allChats')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.radioRow}>
+                  <View style={[styles.radioCircle, disableOption === 'allChats' && styles.radioCircleSelected]}>
+                    {disableOption === 'allChats' && <View style={styles.radioCircleDot} />}
+                  </View>
+                  <View style={styles.radioTextContainer}>
+                    <Text style={styles.radioOptionTitle}>Disable for All Chats</Text>
+                    <Text style={styles.radioOptionDesc}>
+                      AI replies will be completely disabled for both existing and new chats.
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Status Picker — only when "All Chats" selected */}
+              {disableOption === 'allChats' && (
+                <View style={styles.statusPickerSection}>
+                  <Text style={styles.statusPickerLabel}>Move chats to status</Text>
+                  <View style={styles.statusPillsContainer}>
+                    {CHAT_STATUS_OPTIONS.map((status) => (
+                      <TouchableOpacity
+                        key={status}
+                        style={[styles.statusPill, selectedChatStatus === status && styles.statusPillSelected]}
+                        onPress={() => setSelectedChatStatus(status)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.statusPillText, selectedChatStatus === status && styles.statusPillTextSelected]}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Actions */}
+            <View style={styles.disableAiActions}>
+              <TouchableOpacity
+                style={styles.dialogCancelBtn}
+                onPress={handleCloseDisableAiDialog}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.dialogCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.dialogDisableBtn,
+                  (!disableOption || (disableOption === 'allChats' && !selectedChatStatus)) && styles.dialogDisableBtnDisabled,
+                ]}
+                onPress={handleConfirmDisableAi}
+                disabled={!disableOption || (disableOption === 'allChats' && !selectedChatStatus)}
+                activeOpacity={0.7}
+              >
+                <Icon name="robot-off-outline" size={16} color="#FFF" />
+                <Text style={styles.dialogDisableBtnText}>Disable AI Replies</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {snackbarVisible && (
@@ -1487,28 +1615,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 14,
   },
 
-  // Toggle Pill (same as OptInManagement)
-  togglePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.grey[100],
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    gap: 4,
-  },
-  togglePillActive: {
-    backgroundColor: '#16A34A',
-  },
-  toggleText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.grey[500],
-  },
-  toggleTextActive: {
-    color: '#FFF',
-  },
-
   // Enhanced Read Receipt Section
   readReceiptCard: {
     backgroundColor: '#FFFFFF',
@@ -1662,26 +1768,6 @@ const styles = StyleSheet.create({
   readReceiptToggleHint: {
     fontSize: 12,
     color: colors.text.secondary,
-  },
-  togglePillLarge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.grey[100],
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-  },
-  togglePillLargeActive: {
-    backgroundColor: '#16A34A',
-  },
-  toggleTextLarge: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.grey[500],
-  },
-  toggleTextLargeActive: {
-    color: '#FFF',
   },
   readReceiptInfoBox: {
     flexDirection: 'row',
@@ -2204,5 +2290,198 @@ const styles = StyleSheet.create({
   timePickerButton: {
     flex: 1,
     borderRadius: 10,
+  },
+
+  // Disable AI Dialog
+  dialogOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  disableAiDialog: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    width: '100%',
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  disableAiHeader: {
+    padding: 20,
+    paddingBottom: 16,
+  },
+  disableAiIconRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  disableAiIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFEDD5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disableAiCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disableAiTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 6,
+  },
+  disableAiSubtitle: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    lineHeight: 19,
+  },
+  disableAiContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+    maxHeight: 360,
+  },
+  radioOptionCard: {
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: '#FAFAFA',
+  },
+  radioOptionCardSelected: {
+    borderColor: '#F97316',
+    borderWidth: 1.5,
+    backgroundColor: '#FFF7ED',
+  },
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  radioCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  radioCircleSelected: {
+    borderColor: '#F97316',
+  },
+  radioCircleDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#F97316',
+  },
+  radioTextContainer: {
+    flex: 1,
+  },
+  radioOptionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  radioOptionDesc: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    lineHeight: 18,
+  },
+  statusPickerSection: {
+    backgroundColor: '#FFF7ED',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FFEDD5',
+  },
+  statusPickerLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 12,
+  },
+  statusPillsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  statusPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  statusPillSelected: {
+    backgroundColor: '#F97316',
+    borderColor: '#F97316',
+  },
+  statusPillText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.text.secondary,
+  },
+  statusPillTextSelected: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  disableAiActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    gap: 10,
+  },
+  dialogCancelBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+  },
+  dialogCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  dialogDisableBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+  },
+  dialogDisableBtnDisabled: {
+    opacity: 0.4,
+  },
+  dialogDisableBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
   },
 });
