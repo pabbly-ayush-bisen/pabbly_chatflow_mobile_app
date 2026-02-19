@@ -410,10 +410,7 @@ export default function InboxSettingsScreen() {
 
   // Network recovery — re-fetch when connectivity is restored
   useEffect(() => {
-    const hasNoData = !settings?.inboxSettings || Object.keys(settings.inboxSettings).length === 0;
-    if (isNetworkAvailable && hasNoData && getSettingsStatus !== 'loading') {
-      dispatch(fetchInboxSettingsWithCache({ forceRefresh: true }));
-    } else if (isNetworkAvailable && getSettingsStatus === 'failed') {
+    if (isNetworkAvailable && getSettingsStatus === 'failed') {
       dispatch(fetchInboxSettingsWithCache({ forceRefresh: true }));
     }
   }, [isNetworkAvailable]);
@@ -1146,9 +1143,8 @@ export default function InboxSettingsScreen() {
     );
   };
 
-  // Offline with no cached data
-  const hasNoData = !settings?.inboxSettings || Object.keys(settings.inboxSettings).length === 0;
-  if (isOffline && hasNoData && getSettingsStatus !== 'succeeded') {
+  // Offline with no successfully loaded data
+  if (isOffline && getSettingsStatus !== 'succeeded') {
     return (
       <View style={styles.container}>
         <View style={styles.offlineBox}>
