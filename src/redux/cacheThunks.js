@@ -1808,12 +1808,17 @@ export const fetchTagsWithCache = createAsyncThunk(
         const cached = await cacheManager.getAppSetting('tags');
 
         if (cached) {
-          // Return cached data immediately, then silently refresh in background
+          // Return cached data immediately, then silently refresh Redux in background
+          // Note: background refresh does NOT write to cache — only loadTags (pagination) manages cache
           fetchTagsFromServer()
             .then((freshData) => {
               if (freshData) {
+                // Merge fresh first-page with cached paginated items for Redux state
+                const freshIds = new Set(freshData.items.map(t => t._id));
+                const beyondFirstPage = cached.items.slice(freshData.items.length).filter(t => !freshIds.has(t._id));
+                const merged = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
                 const { silentUpdateTags } = require('./slices/settingsSlice');
-                dispatch(silentUpdateTags(freshData));
+                dispatch(silentUpdateTags(merged));
               }
             })
             .catch(() => {});
@@ -1824,7 +1829,20 @@ export const fetchTagsWithCache = createAsyncThunk(
 
       // Cache miss or force refresh — fetch from server
       const freshData = await fetchTagsFromServer();
-      return { data: { tags: freshData }, fromCache: false };
+
+      // Merge with existing cache to preserve paginated items beyond first page
+      let dataToSave = freshData;
+      try {
+        const existing = await cacheManager.getAppSetting('tags');
+        if (existing && existing.items && existing.items.length > freshData.items.length) {
+          const freshIds = new Set(freshData.items.map(t => t._id));
+          const beyondFirstPage = existing.items.slice(freshData.items.length).filter(t => !freshIds.has(t._id));
+          dataToSave = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
+        }
+      } catch (e) { /* no existing cache */ }
+
+      await cacheManager.saveAppSetting('tags', dataToSave);
+      return { data: { tags: dataToSave }, fromCache: false };
     } catch (error) {
       // Offline fallback — try cache
       try {
@@ -1842,9 +1860,8 @@ export const fetchTagsWithCache = createAsyncThunk(
 );
 
 /**
- * Fetch first page of tags from API and save to cache.
- * Merges fresh first-page data with existing cached items beyond the first page
- * so that accumulated paginated data is preserved.
+ * Fetch first page of tags from API (pure fetch, no cache operations).
+ * Cache saves are handled by fetchTagsWithCache (initial load) and loadTags (pagination).
  * @returns {Promise<Object>} tags object { items: [], totalCount: number }
  */
 async function fetchTagsFromServer() {
@@ -1858,24 +1875,7 @@ async function fetchTagsFromServer() {
   }
 
   const data = response.data || response;
-  const freshTags = data.tags || { items: [], totalCount: 0 };
-
-  // Merge with existing cache to preserve paginated items beyond first page
-  try {
-    const cached = await cacheManager.getAppSetting('tags');
-    if (cached && cached.items && cached.items.length > freshTags.items.length) {
-      const freshIds = new Set(freshTags.items.map(t => t._id));
-      const remainingCached = cached.items.slice(freshTags.items.length).filter(t => !freshIds.has(t._id));
-      const merged = { items: [...freshTags.items, ...remainingCached], totalCount: freshTags.totalCount };
-      await cacheManager.saveAppSetting('tags', merged);
-      return merged;
-    }
-  } catch (e) {
-    // Cache read failed, just save fresh data
-  }
-
-  await cacheManager.saveAppSetting('tags', freshTags);
-  return freshTags;
+  return data.tags || { items: [], totalCount: 0 };
 }
 
 export default {
