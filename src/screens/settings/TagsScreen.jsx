@@ -454,7 +454,7 @@ export default function TagsScreen() {
           {/* Auto-tag disabled message */}
           {!isAutoTagEnabled && (
             <View style={styles.disabledBox}>
-              <Icon name="tag-off-outline" size={14} color={colors.text.tertiary} />
+              <Icon name="tag-off-outline" size={14} color="#DC2626" />
               <Text style={styles.disabledText}>
                 Auto-tagging from first message is disabled
               </Text>
@@ -467,7 +467,7 @@ export default function TagsScreen() {
               {/* Created Date */}
               {date && (
                 <View style={[styles.infoBadge, { backgroundColor: '#EDE9FE' }]}>
-                  <Icon name="calendar-outline" size={12} color="#7C3AED" />
+                  <Icon name="calendar-outline" size={13} color="#7C3AED" />
                   <Text style={[styles.infoBadgeText, { color: '#7C3AED' }]}>{date}</Text>
                 </View>
               )}
@@ -475,7 +475,7 @@ export default function TagsScreen() {
               {/* Created Time */}
               {time && (
                 <View style={[styles.infoBadge, { backgroundColor: '#DBEAFE' }]}>
-                  <Icon name="clock-outline" size={12} color="#2563EB" />
+                  <Icon name="clock-outline" size={13} color="#2563EB" />
                   <Text style={[styles.infoBadgeText, { color: '#2563EB' }]}>{time}</Text>
                 </View>
               )}
@@ -483,7 +483,7 @@ export default function TagsScreen() {
               {/* Contact Count */}
               {contactCount > 0 && (
                 <View style={[styles.infoBadge, { backgroundColor: '#D1FAE5' }]}>
-                  <Icon name="account-multiple-outline" size={12} color="#059669" />
+                  <Icon name="account-multiple-outline" size={13} color="#059669" />
                   <Text style={[styles.infoBadgeText, { color: '#059669' }]}>
                     {contactCount} {contactCount === 1 ? 'contact' : 'contacts'}
                   </Text>
@@ -692,7 +692,7 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   separator: {
-    height: 10,
+    height: 12,
   },
 
   // Footer
@@ -732,21 +732,21 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardContent: {
-    padding: 14,
+    padding: 16,
   },
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   tagName: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: colors.text.primary,
     marginRight: 10,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   autoTagBadge: {
     flexDirection: 'row',
@@ -770,6 +770,9 @@ const styles = StyleSheet.create({
   keywordsSection: {
     backgroundColor: colors.grey[50],
     borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.grey[300],
     padding: 12,
     marginBottom: 12,
   },
@@ -792,14 +795,14 @@ const styles = StyleSheet.create({
   keywordChip: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: colors.grey[200],
   },
   keywordText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.text.primary,
     maxWidth: 150,
   },
@@ -824,7 +827,7 @@ const styles = StyleSheet.create({
   disabledBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.grey[50],
+    backgroundColor: '#FEF2F2',
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
@@ -832,7 +835,8 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     fontSize: 12,
-    color: colors.text.tertiary,
+    color: '#DC2626',
+    fontWeight: '500',
     flex: 1,
   },
 
@@ -841,6 +845,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: colors.grey[100],
+    paddingTop: 12,
   },
   cardTags: {
     flexDirection: 'row',
@@ -852,14 +859,14 @@ const styles = StyleSheet.create({
   infoBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 6,
     backgroundColor: colors.grey[100],
-    gap: 4,
+    gap: 5,
   },
   infoBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     color: colors.text.tertiary,
   },
