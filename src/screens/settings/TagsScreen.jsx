@@ -5,14 +5,157 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
 import { Text, ActivityIndicator, Searchbar, Snackbar } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { getSettings } from '../../redux/slices/settingsSlice';
+import { fetchTagsWithCache } from '../../redux/cacheThunks';
+import { cacheManager } from '../../database/CacheManager';
+import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
 
 const PAGE_SIZE = 10;
+
+// Skeleton Pulse Component
+const SkeletonPulse = ({ style }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+  return <Animated.View style={[{ backgroundColor: colors.grey[200], borderRadius: 6 }, style, { opacity }]} />;
+};
+
+// Skeleton Tag Card
+const TagCardSkeleton = () => (
+  <View style={skeletonStyles.tagCard}>
+    {/* Top Row: Name + Badge */}
+    <View style={skeletonStyles.topRow}>
+      <SkeletonPulse style={{ width: 140, height: 16, borderRadius: 4 }} />
+      <SkeletonPulse style={{ width: 100, height: 22, borderRadius: 6 }} />
+    </View>
+    {/* Keywords Section */}
+    <View style={skeletonStyles.keywordsBox}>
+      <View style={skeletonStyles.keywordsHeader}>
+        <SkeletonPulse style={{ width: 14, height: 14, borderRadius: 3 }} />
+        <SkeletonPulse style={{ width: 120, height: 12, borderRadius: 4 }} />
+      </View>
+      <View style={skeletonStyles.keywordsRow}>
+        <SkeletonPulse style={{ width: 70, height: 26, borderRadius: 6 }} />
+        <SkeletonPulse style={{ width: 55, height: 26, borderRadius: 6 }} />
+        <SkeletonPulse style={{ width: 85, height: 26, borderRadius: 6 }} />
+      </View>
+    </View>
+    {/* Bottom Row: Date + Time + Contacts */}
+    <View style={skeletonStyles.bottomRow}>
+      <SkeletonPulse style={{ width: 80, height: 22, borderRadius: 6 }} />
+      <SkeletonPulse style={{ width: 65, height: 22, borderRadius: 6 }} />
+      <SkeletonPulse style={{ width: 72, height: 22, borderRadius: 6 }} />
+    </View>
+  </View>
+);
+
+// Full Tags Skeleton
+const TagsSkeleton = () => (
+  <View style={skeletonStyles.container}>
+    {/* Search Bar */}
+    <View style={skeletonStyles.searchBar}>
+      <SkeletonPulse style={{ flex: 1, height: 48, borderRadius: 12 }} />
+    </View>
+    {/* Section Header */}
+    <View style={skeletonStyles.sectionHeader}>
+      <SkeletonPulse style={{ width: 50, height: 18, borderRadius: 4 }} />
+      <SkeletonPulse style={{ width: 80, height: 13, borderRadius: 4 }} />
+    </View>
+    {/* Info Banner */}
+    <View style={skeletonStyles.infoBanner}>
+      <SkeletonPulse style={{ width: 16, height: 16, borderRadius: 4 }} />
+      <SkeletonPulse style={{ flex: 1, height: 13, borderRadius: 4 }} />
+    </View>
+    {/* Tag Cards */}
+    <View style={skeletonStyles.list}>
+      <TagCardSkeleton />
+      <TagCardSkeleton />
+      <TagCardSkeleton />
+      <TagCardSkeleton />
+    </View>
+  </View>
+);
+
+const skeletonStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.default,
+  },
+  searchBar: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.lighter,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  list: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  tagCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+    padding: 14,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  keywordsBox: {
+    backgroundColor: colors.grey[50],
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  keywordsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  keywordsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+});
 
 export default function TagsScreen() {
   const dispatch = useDispatch();
@@ -29,11 +172,60 @@ export default function TagsScreen() {
   const searchDebounceRef = useRef(null);
 
   const { settings, getSettingsStatus } = useSelector((state) => state.settings);
+  const { isOffline, isNetworkAvailable } = useNetwork();
+  const initialLoadDone = useRef(false);
+  const hasEverLoaded = useRef(false);
+  const cachedBaseTags = useRef({ items: [], totalCount: 0 });
 
   const isLoading = getSettingsStatus === 'loading';
   const isRefreshing = isLoading && localTags.length > 0 && !isLoadingMore;
 
-  // Load tags with pagination
+  // Track if data was ever successfully loaded
+  useEffect(() => {
+    if (getSettingsStatus === 'succeeded') {
+      hasEverLoaded.current = true;
+    }
+  }, [getSettingsStatus]);
+
+  // Network recovery — re-fetch only when connectivity is restored after a failed load
+  useEffect(() => {
+    if (isNetworkAvailable && getSettingsStatus === 'failed' && !hasEverLoaded.current) {
+      dispatch(fetchTagsWithCache({ forceRefresh: true }));
+    }
+  }, [isNetworkAvailable, getSettingsStatus]);
+
+  // Initial load — cache-first
+  useEffect(() => {
+    dispatch(fetchTagsWithCache());
+
+    // Cleanup debounce timer on unmount
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
+  // Sync settings.tags → localTags on initial load only
+  // After initial load, pagination and search manage localTags directly
+  useEffect(() => {
+    if (settings.tags && !initialLoadDone.current) {
+      const tagsData = settings.tags;
+      const items = tagsData.items || [];
+      const total = tagsData.totalCount || 0;
+
+      if (items.length > 0 || total === 0) {
+        setLocalTags(items);
+        setTotalCount(total);
+        setPage(1);
+        setHasMoreTags(items.length < total);
+        initialLoadDone.current = true;
+        cachedBaseTags.current = { items, totalCount: total };
+      }
+    }
+  }, [settings.tags]);
+
+  // Load tags from API — used for pagination and search only
   const loadTags = useCallback(async ({ reset = false, search = '' } = {}) => {
     const currentPage = reset ? 0 : page;
     const skip = currentPage * PAGE_SIZE;
@@ -60,40 +252,36 @@ export default function TagsScreen() {
       if (reset) {
         setLocalTags(newTags);
         setPage(1);
+        setHasMoreTags(newTags.length < total);
       } else {
         // Filter out duplicates when appending
-        setLocalTags(prev => {
-          const existingIds = new Set(prev.map(tag => tag._id));
-          const uniqueNewTags = newTags.filter(tag => !existingIds.has(tag._id));
-          return [...prev, ...uniqueNewTags];
-        });
+        const existingIds = new Set(localTags.map(tag => tag._id));
+        const uniqueNewTags = newTags.filter(tag => !existingIds.has(tag._id));
+        const allTags = [...localTags, ...uniqueNewTags];
+        setLocalTags(allTags);
         setPage(prev => prev + 1);
-      }
+        setHasMoreTags(allTags.length < total);
 
-      // Check if there are more tags to load
-      const loadedCount = reset ? newTags.length : localTags.length + newTags.length;
-      setHasMoreTags(loadedCount < total);
+        // Update cache and base tags with accumulated tags (only for non-search pagination)
+        if (!search) {
+          cachedBaseTags.current = { items: allTags, totalCount: total };
+          cacheManager.saveAppSetting('tags', { items: allTags, totalCount: total }).catch(() => {});
+        }
+      }
     } catch (error) {
-      // Log:('Error loading tags:', error);
       showSnackbar('Failed to load tags');
     }
-  }, [dispatch, page, localTags.length]);
-
-  useEffect(() => {
-    loadTags({ reset: true });
-
-    // Cleanup debounce timer on unmount
-    return () => {
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
-    };
-  }, []);
+  }, [dispatch, page, localTags]);
 
   const onRefresh = useCallback(() => {
+    if (isOffline) return;
     setSearchQuery('');
-    loadTags({ reset: true, search: '' });
-  }, [loadTags]);
+    setLocalTags([]);
+    setPage(0);
+    setHasMoreTags(true);
+    initialLoadDone.current = false;
+    dispatch(fetchTagsWithCache({ forceRefresh: true }));
+  }, [dispatch, isOffline]);
 
   // Debounced search handler
   const handleSearch = useCallback((text) => {
@@ -104,21 +292,43 @@ export default function TagsScreen() {
       clearTimeout(searchDebounceRef.current);
     }
 
-    // Debounce API call by 500ms
+    // When search is cleared, restore base tags instantly (no API needed)
+    if (!text.trim()) {
+      const { items, totalCount: total } = cachedBaseTags.current;
+      setLocalTags(items);
+      setTotalCount(total);
+      setPage(Math.ceil(items.length / PAGE_SIZE));
+      setHasMoreTags(items.length < total);
+      return;
+    }
+
+    // Offline: local filter only (filteredTags handles it)
+    if (isOffline) return;
+
+    // Online: debounce, check local matches first — only hit API if not found in cache
     searchDebounceRef.current = setTimeout(() => {
-      loadTags({ reset: true, search: text });
+      const query = text.toLowerCase().trim();
+      const localMatches = cachedBaseTags.current.items.filter(tag => {
+        const name = tag.name?.toLowerCase() || '';
+        const keywords = tag.keywords?.join(' ')?.toLowerCase() || '';
+        return name.includes(query) || keywords.includes(query);
+      });
+
+      if (localMatches.length === 0) {
+        loadTags({ reset: true, search: text });
+      }
     }, 500);
-  }, [loadTags]);
+  }, [loadTags, isOffline]);
 
   // Handle load more
   const handleLoadMore = useCallback(async () => {
-    // Don't load more if already loading or no more tags
-    if (isLoading || isLoadingMore || !hasMoreTags) return;
+    // Don't load more if already loading, no more tags, or offline
+    if (isLoading || isLoadingMore || !hasMoreTags || isOffline) return;
 
     setIsLoadingMore(true);
     await loadTags({ reset: false, search: searchQuery });
     setIsLoadingMore(false);
-  }, [isLoading, isLoadingMore, hasMoreTags, loadTags, searchQuery]);
+  }, [isLoading, isLoadingMore, hasMoreTags, loadTags, searchQuery, isOffline]);
 
   // Filter tags locally for instant search feedback
   const filteredTags = localTags.filter((tag) => {
@@ -300,16 +510,26 @@ export default function TagsScreen() {
     return <View style={styles.listFooterSpace} />;
   };
 
-  // Loading State - Initial load
-  if (isLoading && !isRefreshing && localTags.length === 0) {
+  // Offline with no successfully loaded data — only show if data was NEVER loaded
+  if (isOffline && !hasEverLoaded.current && getSettingsStatus !== 'succeeded') {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading tags...</Text>
+        <View style={styles.offlineBox}>
+          <View style={styles.offlineIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.offlineTitle}>You're Offline</Text>
+          <Text style={styles.offlineSubtitle}>
+            Connect to the internet to load tags.{'\n'}Previously loaded data will appear here.
+          </Text>
         </View>
       </View>
     );
+  }
+
+  // Loading State - Initial load (skeleton instead of spinner)
+  if (isLoading && !isRefreshing && localTags.length === 0) {
+    return <TagsSkeleton />;
   }
 
   return (
@@ -365,13 +585,13 @@ export default function TagsScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={2000}
-      >
-        {snackbarMessage}
-      </Snackbar>
+      {snackbarVisible && (
+        <View style={styles.snackbarContainer}>
+          <Snackbar visible={snackbarVisible} onDismiss={() => setSnackbarVisible(false)} duration={2000} style={styles.snackbar}>
+            {snackbarMessage}
+          </Snackbar>
+        </View>
+      )}
     </View>
   );
 }
@@ -380,19 +600,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.default,
-  },
-
-  // Loading
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 50,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: colors.text.secondary,
   },
 
   // Header
@@ -627,6 +834,48 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     color: colors.text.tertiary,
+  },
+
+  // Snackbar (top-positioned)
+  snackbarContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+  },
+  snackbar: {
+    backgroundColor: '#323232',
+  },
+
+  // Offline State
+  offlineBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  offlineIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 
   // Empty State

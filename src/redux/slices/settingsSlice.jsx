@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
-import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache } from '../cacheThunks';
+import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getSettings = createAsyncThunk(
@@ -277,6 +277,9 @@ const settingsSlice = createSlice({
     silentUpdateInboxSettings: (state, action) => {
       state.settings.inboxSettings = action.payload;
     },
+    silentUpdateTags: (state, action) => {
+      state.settings.tags = action.payload;
+    },
     resetSettingsData: (state) => {
       state.settings = initialState.settings;
       state.getSettingsStatus = 'idle';
@@ -450,8 +453,27 @@ const settingsSlice = createSlice({
         state.getSettingsStatus = 'failed';
         state.getSettingsError = action.payload;
       });
+
+    // Fetch Tags with Cache
+    builder
+      .addCase(fetchTagsWithCache.pending, (state) => {
+        state.getSettingsStatus = 'loading';
+        state.getSettingsError = null;
+      })
+      .addCase(fetchTagsWithCache.fulfilled, (state, action) => {
+        state.getSettingsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.settings = {
+          ...state.settings,
+          ...data,
+        };
+      })
+      .addCase(fetchTagsWithCache.rejected, (state, action) => {
+        state.getSettingsStatus = 'failed';
+        state.getSettingsError = action.payload;
+      });
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, resetSettingsData } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;
