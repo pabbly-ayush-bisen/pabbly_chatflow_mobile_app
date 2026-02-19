@@ -193,15 +193,39 @@ export default function TagsScreen() {
   const cachedBaseTags = useRef({ items: [], totalCount: 0 });
 
   const isLoading = getSettingsStatus === 'loading';
-  const isRefreshing = isLoading && localTags.length > 0 && !isLoadingMore;
+  const isRefreshing = isLoading && localTags.length > 0 && !isLoadingMore && initialLoadDone.current;
 
-  // Initial load — cache-first (must be BEFORE network recovery to set isLoadingRef)
+  // Initial load — read cache locally for instant display, then fetch fresh from API
+  // Uses forceRefresh to always get latest data (picks up web changes after stack navigation remount)
   useEffect(() => {
     isLoadingRef.current = true;
     fetchSucceeded.current = false;
-    dispatch(fetchTagsWithCache())
+
+    // Read cache locally for instant display while API loads
+    cacheManager.getAppSetting('tags').then((cached) => {
+      if (cached && cached.items && cached.items.length > 0) {
+        setLocalTags(cached.items);
+        setTotalCount(cached.totalCount || 0);
+        setHasMoreTags(cached.items.length < (cached.totalCount || 0));
+        cachedBaseTags.current = { items: cached.items, totalCount: cached.totalCount || 0 };
+        setIsInitialLoading(false);
+      }
+    }).catch(() => {});
+
+    // Always fetch fresh from API to pick up changes made on web
+    dispatch(fetchTagsWithCache({ forceRefresh: true }))
       .unwrap()
-      .then(() => { fetchSucceeded.current = true; })
+      .then((result) => {
+        fetchSucceeded.current = true;
+        const data = result.data?.tags || result.tags || {};
+        const items = data.items || [];
+        const total = data.totalCount || 0;
+        setLocalTags(items);
+        setTotalCount(total);
+        setHasMoreTags(items.length < total);
+        initialLoadDone.current = true;
+        cachedBaseTags.current = { items, totalCount: total };
+      })
       .catch(() => {})
       .finally(() => {
         isLoadingRef.current = false;
@@ -224,7 +248,17 @@ export default function TagsScreen() {
       setIsInitialLoading(true);
       dispatch(fetchTagsWithCache({ forceRefresh: true }))
         .unwrap()
-        .then(() => { fetchSucceeded.current = true; })
+        .then((result) => {
+          fetchSucceeded.current = true;
+          const data = result.data?.tags || result.tags || {};
+          const items = data.items || [];
+          const total = data.totalCount || 0;
+          setLocalTags(items);
+          setTotalCount(total);
+          setHasMoreTags(items.length < total);
+          initialLoadDone.current = true;
+          cachedBaseTags.current = { items, totalCount: total };
+        })
         .catch(() => {})
         .finally(() => {
           isLoadingRef.current = false;

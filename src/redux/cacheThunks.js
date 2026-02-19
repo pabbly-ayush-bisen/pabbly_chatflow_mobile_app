@@ -1819,6 +1819,8 @@ export const fetchTagsWithCache = createAsyncThunk(
                 const merged = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
                 const { silentUpdateTags } = require('./slices/settingsSlice');
                 dispatch(silentUpdateTags(merged));
+                // Also update cache so next mount gets fresh data
+                cacheManager.saveAppSetting('tags', merged).catch(() => {});
               }
             })
             .catch(() => {});
