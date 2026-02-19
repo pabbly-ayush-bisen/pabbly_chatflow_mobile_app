@@ -408,12 +408,19 @@ export default function InboxSettingsScreen() {
     dispatch(fetchAllTemplates({ all: true, status: 'APPROVED' }));
   }, [dispatch]);
 
-  // Network recovery — re-fetch when connectivity is restored
+  // Network recovery — re-fetch only when connectivity is restored after a failed load
+  const hasEverLoaded = useRef(false);
   useEffect(() => {
-    if (isNetworkAvailable && getSettingsStatus === 'failed') {
+    if (getSettingsStatus === 'succeeded') {
+      hasEverLoaded.current = true;
+    }
+  }, [getSettingsStatus]);
+
+  useEffect(() => {
+    if (isNetworkAvailable && getSettingsStatus === 'failed' && !hasEverLoaded.current) {
       dispatch(fetchInboxSettingsWithCache({ forceRefresh: true }));
     }
-  }, [isNetworkAvailable]);
+  }, [isNetworkAvailable, getSettingsStatus]);
 
   useEffect(() => {
     if (settings.inboxSettings) {
@@ -1143,8 +1150,8 @@ export default function InboxSettingsScreen() {
     );
   };
 
-  // Offline with no successfully loaded data
-  if (isOffline && getSettingsStatus !== 'succeeded') {
+  // Offline with no successfully loaded data — only show if data was NEVER loaded
+  if (isOffline && !hasEverLoaded.current && getSettingsStatus !== 'succeeded') {
     return (
       <View style={styles.container}>
         <View style={styles.offlineBox}>
