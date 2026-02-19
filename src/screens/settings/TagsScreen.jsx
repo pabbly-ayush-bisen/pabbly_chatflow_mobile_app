@@ -13,6 +13,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { getSettings } from '../../redux/slices/settingsSlice';
 import { fetchTagsWithCache } from '../../redux/cacheThunks';
 import { cacheManager } from '../../database/CacheManager';
+import { useFocusEffect } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
 
@@ -247,6 +248,31 @@ export default function TagsScreen() {
     }
   }, [settings.tags, isInitialLoading]);
 
+  // Re-fetch when screen regains focus (picks up web app changes)
+  // Directly updates localTags from thunk result to avoid sync useEffect race condition
+  useFocusEffect(
+    useCallback(() => {
+      if (!initialLoadDone.current || isOffline) return;
+
+      initialLoadDone.current = false;
+      fetchSucceeded.current = false;
+      dispatch(fetchTagsWithCache({ forceRefresh: true }))
+        .unwrap()
+        .then((result) => {
+          fetchSucceeded.current = true;
+          const data = result.data?.tags || result.tags || {};
+          const items = data.items || [];
+          const total = data.totalCount || 0;
+          setLocalTags(items);
+          setTotalCount(total);
+          setHasMoreTags(items.length < total);
+          initialLoadDone.current = true;
+          cachedBaseTags.current = { items, totalCount: total };
+        })
+        .catch(() => { initialLoadDone.current = true; });
+    }, [isOffline])
+  );
+
   // Load tags from API — used for pagination and search only
   const loadTags = useCallback(async ({ reset = false, search = '' } = {}) => {
     const skip = reset ? 0 : localTags.length;
@@ -304,7 +330,17 @@ export default function TagsScreen() {
     cachedBaseTags.current = { items: [], totalCount: 0 };
     dispatch(fetchTagsWithCache({ forceRefresh: true }))
       .unwrap()
-      .then(() => { fetchSucceeded.current = true; })
+      .then((result) => {
+        fetchSucceeded.current = true;
+        const data = result.data?.tags || result.tags || {};
+        const items = data.items || [];
+        const total = data.totalCount || 0;
+        setLocalTags(items);
+        setTotalCount(total);
+        setHasMoreTags(items.length < total);
+        initialLoadDone.current = true;
+        cachedBaseTags.current = { items, totalCount: total };
+      })
       .catch(() => {})
       .finally(() => { isLoadingRef.current = false; });
   }, [dispatch, isOffline]);
