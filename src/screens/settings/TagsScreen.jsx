@@ -185,15 +185,10 @@ export default function TagsScreen() {
   useEffect(() => {
     isLoadingRef.current = true;
     fetchSucceeded.current = false;
-    console.log('[Tags] Initial load: dispatching fetchTagsWithCache');
     dispatch(fetchTagsWithCache())
       .unwrap()
-      .then((result) => {
-        fetchSucceeded.current = true;
-        const items = result?.data?.tags?.items || [];
-        console.log(`[Tags] Initial load SUCCESS: ${items.length} items, fromCache=${result?.fromCache}`);
-      })
-      .catch((err) => { console.log('[Tags] Initial load FAILED:', err); })
+      .then(() => { fetchSucceeded.current = true; })
+      .catch(() => {})
       .finally(() => {
         isLoadingRef.current = false;
         setIsInitialLoading(false);
@@ -231,7 +226,6 @@ export default function TagsScreen() {
     if (settings.tags && !initialLoadDone.current && !isInitialLoading && fetchSucceeded.current) {
       const items = settings.tags.items || [];
       const total = settings.tags.totalCount || 0;
-      console.log(`[Tags] Sync useEffect: setting localTags to ${items.length} items (totalCount=${total})`);
       setLocalTags(items);
       setTotalCount(total);
       setHasMoreTags(items.length < total);
@@ -243,7 +237,6 @@ export default function TagsScreen() {
   // Load tags from API — used for pagination and search only
   const loadTags = useCallback(async ({ reset = false, search = '' } = {}) => {
     const skip = reset ? 0 : localTags.length;
-    console.log(`[Tags] loadTags: reset=${reset}, search="${search}", skip=${skip}, currentLocalTags=${localTags.length}`);
 
     // Build query string
     let queryString = `tags&skip=${skip}&limit=${PAGE_SIZE}&order=-1`;
@@ -261,7 +254,6 @@ export default function TagsScreen() {
       const tagsData = data.tags || data;
       const newTags = tagsData.items || [];
       const total = tagsData.totalCount || 0;
-      console.log(`[Tags] loadTags API response: ${newTags.length} new tags, totalCount=${total}`);
 
       setTotalCount(total);
 
@@ -273,28 +265,16 @@ export default function TagsScreen() {
         const existingIds = new Set(localTags.map(tag => tag._id));
         const uniqueNewTags = newTags.filter(tag => !existingIds.has(tag._id));
         const allTags = [...localTags, ...uniqueNewTags];
-        console.log(`[Tags] loadTags accumulated: ${allTags.length} total (${uniqueNewTags.length} unique new)`);
         setLocalTags(allTags);
         setHasMoreTags(allTags.length < total);
 
         // Update cache and base tags with accumulated tags (only for non-search pagination)
         if (!search) {
           cachedBaseTags.current = { items: allTags, totalCount: total };
-          console.log(`[Tags] SAVING to cache: ${allTags.length} items, totalCount=${total}`);
-          cacheManager.saveAppSetting('tags', { items: allTags, totalCount: total })
-            .then(() => {
-              console.log(`[Tags] Cache SAVE SUCCESS: ${allTags.length} items`);
-              // Verify by reading back
-              return cacheManager.getAppSetting('tags');
-            })
-            .then((verified) => {
-              console.log(`[Tags] Cache VERIFY read-back: ${verified?.items?.length || 0} items`);
-            })
-            .catch((err) => { console.log('[Tags] Cache SAVE FAILED:', err); });
+          cacheManager.saveAppSetting('tags', { items: allTags, totalCount: total }).catch(() => {});
         }
       }
     } catch (error) {
-      console.log('[Tags] loadTags ERROR:', error);
       showSnackbar('Failed to load tags');
     }
   }, [dispatch, localTags]);
@@ -351,8 +331,8 @@ export default function TagsScreen() {
 
   // Handle load more
   const handleLoadMore = useCallback(async () => {
-    // Don't load more if already loading, no more tags, or offline
-    if (isLoading || isLoadingMore || !hasMoreTags || isOffline) return;
+    // Don't load more if initial data hasn't synced yet, already loading, no more tags, or offline
+    if (!initialLoadDone.current || isLoading || isLoadingMore || !hasMoreTags || isOffline) return;
 
     setIsLoadingMore(true);
     await loadTags({ reset: false, search: searchQuery });

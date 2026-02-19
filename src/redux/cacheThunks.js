@@ -1802,12 +1802,10 @@ export const fetchTagsWithCache = createAsyncThunk(
   async (params = {}, { dispatch, rejectWithValue }) => {
     try {
       const { forceRefresh = false } = params;
-      console.log(`[TagsCache] fetchTagsWithCache called: forceRefresh=${forceRefresh}`);
 
       // Try cache first
       if (!forceRefresh) {
         const cached = await cacheManager.getAppSetting('tags');
-        console.log(`[TagsCache] Cache read: ${cached ? cached.items?.length + ' items' : 'null (no cache)'}`);
 
         if (cached) {
           // Return cached data immediately, then silently refresh Redux in background
@@ -1815,17 +1813,15 @@ export const fetchTagsWithCache = createAsyncThunk(
           fetchTagsFromServer()
             .then((freshData) => {
               if (freshData) {
-                console.log(`[TagsCache] Background refresh: ${freshData.items.length} fresh items`);
                 // Merge fresh first-page with cached paginated items for Redux state
                 const freshIds = new Set(freshData.items.map(t => t._id));
                 const beyondFirstPage = cached.items.slice(freshData.items.length).filter(t => !freshIds.has(t._id));
                 const merged = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
-                console.log(`[TagsCache] Background merge: ${merged.items.length} items → silentUpdateTags (NO cache write)`);
                 const { silentUpdateTags } = require('./slices/settingsSlice');
                 dispatch(silentUpdateTags(merged));
               }
             })
-            .catch((err) => { console.log('[TagsCache] Background refresh FAILED:', err); });
+            .catch(() => {});
 
           return { data: { tags: cached }, fromCache: true };
         }
@@ -1833,36 +1829,25 @@ export const fetchTagsWithCache = createAsyncThunk(
 
       // Cache miss or force refresh — fetch from server
       const freshData = await fetchTagsFromServer();
-      console.log(`[TagsCache] API fetch: ${freshData.items.length} items, totalCount=${freshData.totalCount}`);
 
       // Merge with existing cache to preserve paginated items beyond first page
       let dataToSave = freshData;
       try {
         const existing = await cacheManager.getAppSetting('tags');
-        console.log(`[TagsCache] Existing cache for merge: ${existing ? existing.items?.length + ' items' : 'null'}`);
         if (existing && existing.items && existing.items.length > freshData.items.length) {
           const freshIds = new Set(freshData.items.map(t => t._id));
           const beyondFirstPage = existing.items.slice(freshData.items.length).filter(t => !freshIds.has(t._id));
           dataToSave = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
-          console.log(`[TagsCache] Merged: ${dataToSave.items.length} items (${freshData.items.length} fresh + ${beyondFirstPage.length} cached)`);
         }
-      } catch (e) { console.log('[TagsCache] Merge cache read failed:', e); }
+      } catch (e) { /* no existing cache */ }
 
-      console.log(`[TagsCache] SAVING to cache: ${dataToSave.items.length} items`);
       await cacheManager.saveAppSetting('tags', dataToSave);
-
-      // Verify the save
-      const verifyRead = await cacheManager.getAppSetting('tags');
-      console.log(`[TagsCache] VERIFY after save: ${verifyRead?.items?.length || 0} items`);
-
       return { data: { tags: dataToSave }, fromCache: false };
     } catch (error) {
-      console.log('[TagsCache] fetchTagsWithCache ERROR:', error.message);
       // Offline fallback — try cache
       try {
         const cached = await cacheManager.getAppSetting('tags');
         if (cached) {
-          console.log(`[TagsCache] Offline fallback: ${cached.items?.length || 0} items from cache`);
           return { data: { tags: cached }, fromCache: true };
         }
       } catch (cacheErr) {
@@ -1880,7 +1865,6 @@ export const fetchTagsWithCache = createAsyncThunk(
  * @returns {Promise<Object>} tags object { items: [], totalCount: number }
  */
 async function fetchTagsFromServer() {
-  console.log('[TagsCache] fetchTagsFromServer: calling API skip=0&limit=10');
   const response = await callApi(
     `${endpoints.settings.getSettings}?keys=tags&skip=0&limit=10&order=-1`,
     httpMethods.GET
@@ -1891,9 +1875,7 @@ async function fetchTagsFromServer() {
   }
 
   const data = response.data || response;
-  const tags = data.tags || { items: [], totalCount: 0 };
-  console.log(`[TagsCache] fetchTagsFromServer: got ${tags.items?.length || 0} items, totalCount=${tags.totalCount}`);
-  return tags;
+  return data.tags || { items: [], totalCount: 0 };
 }
 
 export default {
