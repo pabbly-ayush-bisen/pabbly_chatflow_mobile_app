@@ -165,7 +165,6 @@ export default function TagsScreen() {
 
   // Pagination state
   const [localTags, setLocalTags] = useState([]);
-  const [page, setPage] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreTags, setHasMoreTags] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -229,7 +228,6 @@ export default function TagsScreen() {
       const total = settings.tags.totalCount || 0;
       setLocalTags(items);
       setTotalCount(total);
-      setPage(Math.ceil(items.length / PAGE_SIZE));
       setHasMoreTags(items.length < total);
       initialLoadDone.current = true;
       cachedBaseTags.current = { items, totalCount: total };
@@ -261,7 +259,6 @@ export default function TagsScreen() {
 
       if (reset) {
         setLocalTags(newTags);
-        setPage(1);
         setHasMoreTags(newTags.length < total);
       } else {
         // Filter out duplicates when appending
@@ -269,7 +266,6 @@ export default function TagsScreen() {
         const uniqueNewTags = newTags.filter(tag => !existingIds.has(tag._id));
         const allTags = [...localTags, ...uniqueNewTags];
         setLocalTags(allTags);
-        setPage(prev => prev + 1);
         setHasMoreTags(allTags.length < total);
 
         // Update cache and base tags with accumulated tags (only for non-search pagination)
@@ -281,12 +277,11 @@ export default function TagsScreen() {
     } catch (error) {
       showSnackbar('Failed to load tags');
     }
-  }, [dispatch, page, localTags]);
+  }, [dispatch, localTags]);
 
   const onRefresh = useCallback(() => {
     if (isOffline) return;
     setSearchQuery('');
-    setPage(0);
     setHasMoreTags(true);
     initialLoadDone.current = false;
     fetchSucceeded.current = false;
@@ -312,7 +307,6 @@ export default function TagsScreen() {
       const { items, totalCount: total } = cachedBaseTags.current;
       setLocalTags(items);
       setTotalCount(total);
-      setPage(Math.ceil(items.length / PAGE_SIZE));
       setHasMoreTags(items.length < total);
       return;
     }
