@@ -1843,6 +1843,8 @@ export const fetchTagsWithCache = createAsyncThunk(
 
 /**
  * Fetch first page of tags from API and save to cache.
+ * Merges fresh first-page data with existing cached items beyond the first page
+ * so that accumulated paginated data is preserved.
  * @returns {Promise<Object>} tags object { items: [], totalCount: number }
  */
 async function fetchTagsFromServer() {
@@ -1856,12 +1858,24 @@ async function fetchTagsFromServer() {
   }
 
   const data = response.data || response;
-  const tags = data.tags || { items: [], totalCount: 0 };
+  const freshTags = data.tags || { items: [], totalCount: 0 };
 
-  // Save to cache
-  await cacheManager.saveAppSetting('tags', tags);
+  // Merge with existing cache to preserve paginated items beyond first page
+  try {
+    const cached = await cacheManager.getAppSetting('tags');
+    if (cached && cached.items && cached.items.length > freshTags.items.length) {
+      const freshIds = new Set(freshTags.items.map(t => t._id));
+      const remainingCached = cached.items.slice(freshTags.items.length).filter(t => !freshIds.has(t._id));
+      const merged = { items: [...freshTags.items, ...remainingCached], totalCount: freshTags.totalCount };
+      await cacheManager.saveAppSetting('tags', merged);
+      return merged;
+    }
+  } catch (e) {
+    // Cache read failed, just save fresh data
+  }
 
-  return tags;
+  await cacheManager.saveAppSetting('tags', freshTags);
+  return freshTags;
 }
 
 export default {
