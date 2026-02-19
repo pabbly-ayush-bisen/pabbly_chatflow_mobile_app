@@ -1795,6 +1795,75 @@ async function fetchInboxSettingsFromServer() {
   return inboxSettings;
 }
 
+// ─── Tags ─────────────────────────────────────────────────────────────────────
+
+export const fetchTagsWithCache = createAsyncThunk(
+  'settings/fetchTagsWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      // Try cache first
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('tags');
+
+        if (cached) {
+          // Return cached data immediately, then silently refresh in background
+          fetchTagsFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateTags } = require('./slices/settingsSlice');
+                dispatch(silentUpdateTags(freshData));
+              }
+            })
+            .catch(() => {});
+
+          return { data: { tags: cached }, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchTagsFromServer();
+      return { data: { tags: freshData }, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('tags');
+        if (cached) {
+          return { data: { tags: cached }, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch first page of tags from API and save to cache.
+ * @returns {Promise<Object>} tags object { items: [], totalCount: number }
+ */
+async function fetchTagsFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=tags&skip=0&limit=10&order=-1`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch tags');
+  }
+
+  const data = response.data || response;
+  const tags = data.tags || { items: [], totalCount: 0 };
+
+  // Save to cache
+  await cacheManager.saveAppSetting('tags', tags);
+
+  return tags;
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -1821,4 +1890,5 @@ export default {
   fetchTemplateStatsWithCache,
   fetchOptInManagementWithCache,
   fetchInboxSettingsWithCache,
+  fetchTagsWithCache,
 };
