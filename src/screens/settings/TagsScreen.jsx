@@ -182,24 +182,7 @@ export default function TagsScreen() {
   const isLoading = getSettingsStatus === 'loading';
   const isRefreshing = isLoading && localTags.length > 0 && !isLoadingMore;
 
-  // Network recovery — re-fetch when connectivity restored and data never loaded
-  useEffect(() => {
-    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
-      isLoadingRef.current = true;
-      fetchSucceeded.current = false;
-      setIsInitialLoading(true);
-      dispatch(fetchTagsWithCache({ forceRefresh: true }))
-        .unwrap()
-        .then(() => { fetchSucceeded.current = true; })
-        .catch(() => {})
-        .finally(() => {
-          isLoadingRef.current = false;
-          setIsInitialLoading(false);
-        });
-    }
-  }, [isNetworkAvailable]);
-
-  // Initial load — cache-first
+  // Initial load — cache-first (must be BEFORE network recovery to set isLoadingRef)
   useEffect(() => {
     isLoadingRef.current = true;
     fetchSucceeded.current = false;
@@ -220,6 +203,23 @@ export default function TagsScreen() {
     };
   }, []);
 
+  // Network recovery — re-fetch when connectivity restored and data never loaded
+  useEffect(() => {
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      fetchSucceeded.current = false;
+      setIsInitialLoading(true);
+      dispatch(fetchTagsWithCache({ forceRefresh: true }))
+        .unwrap()
+        .then(() => { fetchSucceeded.current = true; })
+        .catch(() => {})
+        .finally(() => {
+          isLoadingRef.current = false;
+          setIsInitialLoading(false);
+        });
+    }
+  }, [isNetworkAvailable]);
+
   // Sync settings.tags → localTags on initial load only
   // After initial load, pagination and search manage localTags directly
   // Gated on !isInitialLoading && fetchSucceeded to prevent premature sync from default Redux state
@@ -229,7 +229,7 @@ export default function TagsScreen() {
       const total = settings.tags.totalCount || 0;
       setLocalTags(items);
       setTotalCount(total);
-      setPage(1);
+      setPage(Math.ceil(items.length / PAGE_SIZE));
       setHasMoreTags(items.length < total);
       initialLoadDone.current = true;
       cachedBaseTags.current = { items, totalCount: total };
@@ -238,8 +238,7 @@ export default function TagsScreen() {
 
   // Load tags from API — used for pagination and search only
   const loadTags = useCallback(async ({ reset = false, search = '' } = {}) => {
-    const currentPage = reset ? 0 : page;
-    const skip = currentPage * PAGE_SIZE;
+    const skip = reset ? 0 : localTags.length;
 
     // Build query string
     let queryString = `tags&skip=${skip}&limit=${PAGE_SIZE}&order=-1`;
