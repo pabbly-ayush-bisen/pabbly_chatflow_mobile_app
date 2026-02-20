@@ -1880,6 +1880,72 @@ async function fetchTagsFromServer() {
   return data.tags || { items: [], totalCount: 0 };
 }
 
+// ─── User Attributes (Contact Custom Fields) ─────────────────────────────────
+
+export const fetchUserAttributesWithCache = createAsyncThunk(
+  'settings/fetchUserAttributesWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      // Try cache first
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('userAttributes');
+
+        if (cached) {
+          // Return cached data immediately, then silently refresh Redux in background
+          fetchUserAttributesFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateUserAttributes } = require('./slices/settingsSlice');
+                dispatch(silentUpdateUserAttributes(freshData));
+                cacheManager.saveAppSetting('userAttributes', freshData).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: { userAttributes: cached }, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchUserAttributesFromServer();
+      await cacheManager.saveAppSetting('userAttributes', freshData);
+      return { data: { userAttributes: freshData }, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('userAttributes');
+        if (cached) {
+          return { data: { userAttributes: cached }, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch all user attributes from API (pure fetch, no cache operations).
+ * @returns {Promise<Object>} userAttributes object { items: [], totalCount: number }
+ */
+async function fetchUserAttributesFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=userAttributes&order=-1`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch user attributes');
+  }
+
+  const data = response.data || response;
+  return data.userAttributes || { items: [], totalCount: 0 };
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -1907,4 +1973,5 @@ export default {
   fetchOptInManagementWithCache,
   fetchInboxSettingsWithCache,
   fetchTagsWithCache,
+  fetchUserAttributesWithCache,
 };

@@ -1,54 +1,270 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
   FlatList,
   RefreshControl,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
-import { Text, ActivityIndicator, Searchbar, Snackbar } from 'react-native-paper';
+import { Text, Snackbar } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { getSettings } from '../../redux/slices/settingsSlice';
+import { fetchUserAttributesWithCache } from '../../redux/cacheThunks';
+import { cacheManager } from '../../database/CacheManager';
+import { useFocusEffect } from '@react-navigation/native';
+import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
+
+// Skeleton Pulse Component
+const SkeletonPulse = ({ style }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+  return <Animated.View style={[{ backgroundColor: colors.grey[200], borderRadius: 6 }, style, { opacity }]} />;
+};
+
+// Skeleton Custom Field Card
+const CustomFieldCardSkeleton = () => (
+  <View style={skeletonStyles.fieldCard}>
+    {/* Main Row: Name | Description */}
+    <View style={skeletonStyles.mainRow}>
+      <View style={skeletonStyles.leftColumn}>
+        <SkeletonPulse style={{ width: 120, height: 16, borderRadius: 4 }} />
+      </View>
+      <View style={skeletonStyles.rightColumn}>
+        <SkeletonPulse style={{ width: 140, height: 14, borderRadius: 4 }} />
+      </View>
+    </View>
+    {/* Key Row */}
+    <View style={skeletonStyles.keyRow}>
+      <SkeletonPulse style={{ width: 14, height: 14, borderRadius: 3 }} />
+      <SkeletonPulse style={{ flex: 1, height: 12, borderRadius: 4 }} />
+      <SkeletonPulse style={{ width: 22, height: 22, borderRadius: 6 }} />
+    </View>
+  </View>
+);
+
+// Full Skeleton
+const CustomFieldsSkeleton = () => (
+  <View style={skeletonStyles.container}>
+    {/* Section Header */}
+    <View style={skeletonStyles.sectionHeader}>
+      <SkeletonPulse style={{ width: 160, height: 18, borderRadius: 4 }} />
+      <SkeletonPulse style={{ width: 80, height: 13, borderRadius: 4 }} />
+    </View>
+    {/* Info Banner */}
+    <View style={skeletonStyles.infoBanner}>
+      <SkeletonPulse style={{ width: 16, height: 16, borderRadius: 4 }} />
+      <SkeletonPulse style={{ flex: 1, height: 13, borderRadius: 4 }} />
+    </View>
+    {/* Field Cards */}
+    <View style={skeletonStyles.list}>
+      <CustomFieldCardSkeleton />
+      <CustomFieldCardSkeleton />
+      <CustomFieldCardSkeleton />
+      <CustomFieldCardSkeleton />
+      <CustomFieldCardSkeleton />
+    </View>
+  </View>
+);
+
+const skeletonStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.default,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.lighter,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  list: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  fieldCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+    padding: 16,
+  },
+  mainRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  leftColumn: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  rightColumn: {
+    flex: 1,
+    paddingLeft: 12,
+    alignItems: 'flex-end',
+  },
+  keyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.grey[50],
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+});
 
 export default function ContactCustomFieldScreen() {
   const dispatch = useDispatch();
-  const [searchQuery, setSearchQuery] = useState('');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
 
+  const [localFields, setLocalFields] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+
   const { settings, getSettingsStatus } = useSelector((state) => state.settings);
+  const { isOffline, isNetworkAvailable } = useNetwork();
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const initialLoadDone = useRef(false);
+  const isLoadingRef = useRef(false);
+  const fetchSucceeded = useRef(false);
 
   const isLoading = getSettingsStatus === 'loading';
-  const customFields = settings.userAttributes?.items || [];
-  const totalCount = settings.userAttributes?.totalCount || customFields.length;
-  const isRefreshing = isLoading && customFields.length > 0;
+  const isRefreshing = isLoading && localFields.length > 0 && initialLoadDone.current;
 
+  // Initial load — read cache locally for instant display, then fetch fresh from API
   useEffect(() => {
-    loadCustomFields();
+    isLoadingRef.current = true;
+    fetchSucceeded.current = false;
+
+    // Read cache locally for instant display while API loads
+    cacheManager.getAppSetting('userAttributes').then((cached) => {
+      if (cached && cached.items && cached.items.length > 0) {
+        setLocalFields(cached.items);
+        setTotalCount(cached.totalCount || 0);
+        setIsInitialLoading(false);
+      }
+    }).catch(() => {});
+
+    // Always fetch fresh from API to pick up changes made on web
+    dispatch(fetchUserAttributesWithCache({ forceRefresh: true }))
+      .unwrap()
+      .then((result) => {
+        fetchSucceeded.current = true;
+        const data = result.data?.userAttributes || result.userAttributes || {};
+        const items = data.items || [];
+        const total = data.totalCount || 0;
+        setLocalFields(items);
+        setTotalCount(total);
+        initialLoadDone.current = true;
+      })
+      .catch(() => {})
+      .finally(() => {
+        isLoadingRef.current = false;
+        setIsInitialLoading(false);
+      });
   }, []);
 
-  const loadCustomFields = () => {
-    dispatch(getSettings('userAttributes'));
-  };
+  // Network recovery — re-fetch when connectivity restored and data never loaded
+  useEffect(() => {
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      fetchSucceeded.current = false;
+      setIsInitialLoading(true);
+      dispatch(fetchUserAttributesWithCache({ forceRefresh: true }))
+        .unwrap()
+        .then((result) => {
+          fetchSucceeded.current = true;
+          const data = result.data?.userAttributes || result.userAttributes || {};
+          const items = data.items || [];
+          const total = data.totalCount || 0;
+          setLocalFields(items);
+          setTotalCount(total);
+          initialLoadDone.current = true;
+        })
+        .catch(() => {})
+        .finally(() => {
+          isLoadingRef.current = false;
+          setIsInitialLoading(false);
+        });
+    }
+  }, [isNetworkAvailable]);
+
+  // Sync settings.userAttributes → localFields on initial load only (safety net)
+  useEffect(() => {
+    if (settings.userAttributes && !initialLoadDone.current && !isInitialLoading && fetchSucceeded.current) {
+      const items = settings.userAttributes.items || [];
+      const total = settings.userAttributes.totalCount || 0;
+      setLocalFields(items);
+      setTotalCount(total);
+      initialLoadDone.current = true;
+    }
+  }, [settings.userAttributes, isInitialLoading]);
+
+  // Re-fetch when screen regains focus (picks up web app changes)
+  useFocusEffect(
+    useCallback(() => {
+      if (!initialLoadDone.current || isOffline) return;
+
+      initialLoadDone.current = false;
+      fetchSucceeded.current = false;
+      dispatch(fetchUserAttributesWithCache({ forceRefresh: true }))
+        .unwrap()
+        .then((result) => {
+          fetchSucceeded.current = true;
+          const data = result.data?.userAttributes || result.userAttributes || {};
+          const items = data.items || [];
+          const total = data.totalCount || 0;
+          setLocalFields(items);
+          setTotalCount(total);
+          initialLoadDone.current = true;
+        })
+        .catch(() => { initialLoadDone.current = true; });
+    }, [isOffline])
+  );
 
   const onRefresh = useCallback(() => {
-    loadCustomFields();
-  }, []);
-
-  const handleSearch = (text) => {
-    setSearchQuery(text);
-  };
-
-  const filteredFields = customFields.filter((field) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const name = field.name?.toLowerCase() || '';
-    const type = field.type?.toLowerCase() || '';
-    const key = field.key?.toLowerCase() || '';
-    return name.includes(query) || type.includes(query) || key.includes(query);
-  });
+    if (isOffline) return;
+    initialLoadDone.current = false;
+    fetchSucceeded.current = false;
+    isLoadingRef.current = true;
+    // Clear cache so fresh data is fetched from API
+    cacheManager.saveAppSetting('userAttributes', null).catch(() => {});
+    dispatch(fetchUserAttributesWithCache({ forceRefresh: true }))
+      .unwrap()
+      .then((result) => {
+        fetchSucceeded.current = true;
+        const data = result.data?.userAttributes || result.userAttributes || {};
+        const items = data.items || [];
+        const total = data.totalCount || 0;
+        setLocalFields(items);
+        setTotalCount(total);
+        initialLoadDone.current = true;
+      })
+      .catch(() => {})
+      .finally(() => { isLoadingRef.current = false; });
+  }, [dispatch, isOffline]);
 
   const showSnackbar = (message) => {
     setSnackbarMessage(message);
@@ -59,7 +275,7 @@ export default function ContactCustomFieldScreen() {
     showSnackbar(`Copied: ${text}`);
   };
 
-  // Custom Field Card - Two column layout: Name (left) | Description (right)
+  // Custom Field Card
   const renderFieldCard = ({ item }) => {
     const fieldName = item.name || 'Unnamed Field';
     const fieldKey = item.key || '';
@@ -75,12 +291,9 @@ export default function ContactCustomFieldScreen() {
         <View style={styles.cardContent}>
           {/* Main Row: Field Name (left) | Description (right) */}
           <View style={styles.mainRow}>
-            {/* Left Side - Field Name */}
             <View style={styles.leftColumn}>
               <Text style={styles.fieldName} numberOfLines={2}>{fieldName}</Text>
             </View>
-
-            {/* Right Side - Description */}
             <View style={styles.rightColumn}>
               <Text
                 style={[
@@ -116,51 +329,44 @@ export default function ContactCustomFieldScreen() {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconContainer}>
-        <Icon name="form-textbox" size={64} color={colors.grey[300]} />
+        <Icon name="form-textbox" size={64} color="#009688" />
       </View>
-      <Text style={styles.emptyTitle}>
-        {searchQuery ? 'No fields found' : 'No custom fields'}
-      </Text>
+      <Text style={styles.emptyTitle}>No custom fields</Text>
       <Text style={styles.emptySubtitle}>
-        {searchQuery
-          ? 'Try adjusting your search criteria'
-          : 'Create custom fields from the web dashboard to store additional contact information'}
+        Create custom fields from the web dashboard to store additional contact information
       </Text>
     </View>
   );
 
-  // Loading State
-  if (isLoading && !isRefreshing && customFields.length === 0) {
+  // Offline with no data
+  if (isOffline && !initialLoadDone.current && localFields.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading custom fields...</Text>
+        <View style={styles.offlineBox}>
+          <View style={styles.offlineIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.offlineTitle}>You're Offline</Text>
+          <Text style={styles.offlineSubtitle}>
+            Connect to the internet to load custom fields.{'\n'}Previously loaded data will appear here.
+          </Text>
         </View>
       </View>
     );
   }
 
+  // Loading State - Initial load (skeleton instead of spinner)
+  if (isInitialLoading && localFields.length === 0 && !isOffline) {
+    return <CustomFieldsSkeleton />;
+  }
+
   return (
     <View style={styles.container}>
-      {/* Search Header */}
-      <View style={styles.header}>
-        <Searchbar
-          placeholder="Search by name, type or key..."
-          onChangeText={handleSearch}
-          value={searchQuery}
-          style={styles.searchbar}
-          inputStyle={styles.searchInput}
-          iconColor={colors.text.tertiary}
-          placeholderTextColor={colors.text.tertiary}
-        />
-      </View>
-
       {/* Section Header */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Contact Custom Fields</Text>
+        <Text style={styles.sectionTitle}>Custom Fields</Text>
         <Text style={styles.sectionCount}>
-          {filteredFields.length} {filteredFields.length === 1 ? 'field' : 'fields'}
+          {totalCount} {totalCount === 1 ? 'field' : 'fields'}
         </Text>
       </View>
 
@@ -174,9 +380,9 @@ export default function ContactCustomFieldScreen() {
 
       {/* Fields List */}
       <FlatList
-        data={filteredFields}
+        data={localFields}
         renderItem={renderFieldCard}
-        keyExtractor={(item) => item._id || item.key || item.name}
+        keyExtractor={(item, index) => item._id ? `field-${item._id}` : `field-index-${index}`}
         contentContainerStyle={styles.fieldsList}
         refreshControl={
           <RefreshControl
@@ -188,15 +394,16 @@ export default function ContactCustomFieldScreen() {
         }
         ListEmptyComponent={renderEmptyState}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
+        showsVerticalScrollIndicator={false}
       />
 
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={2000}
-      >
-        {snackbarMessage}
-      </Snackbar>
+      {snackbarVisible && (
+        <View style={styles.snackbarContainer}>
+          <Snackbar visible={snackbarVisible} onDismiss={() => setSnackbarVisible(false)} duration={2000} style={styles.snackbar}>
+            {snackbarMessage}
+          </Snackbar>
+        </View>
+      )}
     </View>
   );
 }
@@ -207,38 +414,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.default,
   },
 
-  // Loading
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 50,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: colors.text.secondary,
-  },
-
-  // Header
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    backgroundColor: colors.background.default,
-  },
-  searchbar: {
-    backgroundColor: colors.grey[100],
-    borderRadius: 12,
-    elevation: 0,
-    shadowOpacity: 0,
-    height: 48,
-  },
-  searchInput: {
-    fontSize: 15,
-    minHeight: 48,
-  },
-
   // Section Header
   sectionHeader: {
     flexDirection: 'row',
@@ -247,6 +422,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: colors.background.default,
+    marginBottom: 8,
   },
   sectionTitle: {
     fontSize: 18,
@@ -282,7 +458,7 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   separator: {
-    height: 10,
+    height: 12,
   },
 
   // Field Card
@@ -298,13 +474,13 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardContent: {
-    padding: 14,
+    padding: 16,
   },
 
   // Main Row - Two columns
   mainRow: {
     flexDirection: 'row',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   leftColumn: {
     flex: 1,
@@ -317,8 +493,8 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
   fieldName: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: colors.text.primary,
     lineHeight: 22,
   },
@@ -341,6 +517,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey[100],
     gap: 6,
   },
   keyText: {
@@ -355,6 +533,48 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary.main + '10',
   },
 
+  // Snackbar (top-positioned)
+  snackbarContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+  },
+  snackbar: {
+    backgroundColor: '#323232',
+  },
+
+  // Offline State
+  offlineBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  offlineIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
   // Empty State
   emptyContainer: {
     flex: 1,
@@ -367,7 +587,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: colors.grey[100],
+    backgroundColor: '#E0F2F1',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
