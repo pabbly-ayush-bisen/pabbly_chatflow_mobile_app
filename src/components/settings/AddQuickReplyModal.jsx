@@ -1,13 +1,13 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
   TouchableOpacity,
   Image,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Keyboard,
   TextInput as RNTextInput,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
@@ -51,15 +51,37 @@ const AddQuickReplyModal = ({
   const [fileSize, setFileSize] = useState('');
   const [showRemoveMediaDialog, setShowRemoveMediaDialog] = useState(false);
 
+  // Keyboard height tracking — shrink sheet instead of pushing it up
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
   // Scroll handling for bottom sheet
   const scrollViewRef = useRef(null);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const inputPositions = useRef({});
 
   const handleScrollTo = (p) => {
     if (scrollViewRef.current) {
       scrollViewRef.current.scrollTo(p);
     }
   };
+
+  // Auto-scroll to focused input so it stays visible above keyboard
+  const scrollToInput = useCallback((fieldName) => {
+    setTimeout(() => {
+      const y = inputPositions.current[fieldName];
+      if (y !== undefined && scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ y: Math.max(0, y - 20), animated: true });
+      }
+    }, 300);
+  }, []);
 
   const handleOnScroll = (event) => {
     setScrollOffset(event.nativeEvent.contentOffset.y);
@@ -473,12 +495,8 @@ const AddQuickReplyModal = ({
       backdropOpacity={0.5}
       animationIn="slideInUp"
       animationOut="slideOutDown"
-      avoidKeyboard={true}
+      avoidKeyboard={false}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardView}
-      >
         <View style={styles.formSheet}>
           {/* Handle Bar */}
           <View style={styles.handleBar} />
@@ -507,7 +525,7 @@ const AddQuickReplyModal = ({
           <ScrollView
             ref={scrollViewRef}
             style={styles.formScrollView}
-            contentContainerStyle={styles.formScrollContent}
+            contentContainerStyle={[styles.formScrollContent, keyboardHeight > 0 && { paddingBottom: keyboardHeight }]}
             onScroll={handleOnScroll}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={true}
@@ -515,7 +533,7 @@ const AddQuickReplyModal = ({
             nestedScrollEnabled={true}
           >
             {/* Shortcut Input */}
-            <View style={styles.formGroup}>
+            <View style={styles.formGroup} onLayout={(e) => { inputPositions.current.shortcut = e.nativeEvent.layout.y; }}>
               <View style={styles.labelRow}>
                 <Icon name="slash-forward" size={18} color={colors.primary.main} />
                 <Text style={styles.formLabel}>
@@ -535,6 +553,7 @@ const AddQuickReplyModal = ({
                   editable={!isSaving}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  onFocus={() => scrollToInput('shortcut')}
                 />
               </View>
               <Text style={styles.formHint}>
@@ -598,7 +617,7 @@ const AddQuickReplyModal = ({
 
             {/* Message Input */}
             {(messageType === 'text' || messageType === 'image' || messageType === 'video') && (
-              <View style={styles.formGroup}>
+              <View style={styles.formGroup} onLayout={(e) => { inputPositions.current.message = e.nativeEvent.layout.y; }}>
                 <View style={styles.labelRow}>
                   <Icon name="message-text-outline" size={18} color={colors.primary.main} />
                   <Text style={styles.formLabel}>
@@ -622,6 +641,7 @@ const AddQuickReplyModal = ({
                     numberOfLines={4}
                     textAlignVertical="top"
                     editable={!isSaving}
+                    onFocus={() => scrollToInput('message')}
                   />
                 </View>
                 <Text style={styles.formHint}>
@@ -632,7 +652,7 @@ const AddQuickReplyModal = ({
 
             {/* File Upload Section */}
             {messageType !== 'text' && (
-              <View style={styles.formGroup}>
+              <View style={styles.formGroup} onLayout={(e) => { inputPositions.current.fileUpload = e.nativeEvent.layout.y; }}>
                 <View style={styles.labelRow}>
                   <Icon name="cloud-upload-outline" size={18} color={colors.primary.main} />
                   <Text style={styles.formLabel}>
@@ -652,6 +672,7 @@ const AddQuickReplyModal = ({
                     editable={!isSaving && !selectedFile}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    onFocus={() => scrollToInput('fileUpload')}
                   />
                 </View>
 
@@ -764,7 +785,7 @@ const AddQuickReplyModal = ({
 
                 {/* File Name for document type */}
                 {messageType === 'file' && headerFileURL && (
-                  <View style={styles.fileNameInputGroup}>
+                  <View style={styles.fileNameInputGroup} onLayout={(e) => { inputPositions.current.fileName = e.nativeEvent.layout.y + (inputPositions.current.fileUpload || 0); }}>
                     <View style={styles.labelRow}>
                       <Icon name="file-document-edit-outline" size={18} color={colors.primary.main} />
                       <Text style={styles.formLabel}>Display Name</Text>
@@ -777,6 +798,7 @@ const AddQuickReplyModal = ({
                         placeholderTextColor={colors.text.tertiary}
                         style={[styles.urlInput, { paddingLeft: 16 }]}
                         editable={!isSaving}
+                        onFocus={() => scrollToInput('fileName')}
                       />
                     </View>
                   </View>
@@ -898,7 +920,6 @@ const AddQuickReplyModal = ({
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
     </Modal>
 
       {/* Remove Media Confirmation Dialog */}
@@ -930,10 +951,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     margin: 0,
   },
-  keyboardView: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
   handleBar: {
     width: 40,
     height: 4,
@@ -949,7 +966,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.common.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.9,
+    height: SCREEN_HEIGHT * 0.8,
     paddingBottom: Platform.OS === 'ios' ? 34 : 16,
   },
   formHeader: {
@@ -994,8 +1011,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   formScrollView: {
-    flexGrow: 1,
-    maxHeight: SCREEN_HEIGHT * 0.55,
+    flex: 1,
   },
   formScrollContent: {
     paddingHorizontal: 20,

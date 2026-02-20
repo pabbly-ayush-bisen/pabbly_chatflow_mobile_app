@@ -13,11 +13,14 @@ import AddContactBottomSheet from '../components/contacts/AddContactBottomSheet'
 import { ContactsListSkeleton } from '../components/common';
 import { showError } from '../utils/toast';
 import { useNetwork } from '../contexts/NetworkContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ContactsScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch();
   const { isOffline, isNetworkAvailable } = useNetwork();
+  const insets = useSafeAreaInsets();
+  const TAB_BAR_HEIGHT = 60 + insets.bottom;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedList, setSelectedList] = useState(null);
   const [openingChatId, setOpeningChatId] = useState(null);
@@ -541,7 +544,7 @@ export default function ContactsScreen() {
           data={filteredContacts}
           renderItem={renderContactItem}
           keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.contactsList}
+          contentContainerStyle={[styles.contactsList, { paddingBottom: TAB_BAR_HEIGHT + 80 }]}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -568,7 +571,7 @@ export default function ContactsScreen() {
       {/* FAB */}
       <FAB
         icon="plus"
-        style={styles.fab}
+        style={[styles.fab, { bottom: TAB_BAR_HEIGHT + 16 }]}
         onPress={handleAddContact}
         color={colors.common.white}
       />
@@ -714,7 +717,6 @@ const styles = StyleSheet.create({
   // Contacts List
   contactsList: {
     paddingHorizontal: 16,
-    paddingBottom: 80,
   },
   separator: {
     height: 1,
@@ -882,7 +884,6 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 16,
-    bottom: 70,
     backgroundColor: colors.primary.main,
     borderRadius: 28,
   },
