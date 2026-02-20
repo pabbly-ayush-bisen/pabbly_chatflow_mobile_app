@@ -528,12 +528,18 @@ export const fetchQuickRepliesWithCache = createAsyncThunk(
           fetchQuickRepliesFromServer()
             .then((freshData) => {
               if (freshData) {
-                const freshIds = new Set(freshData.items.map(r => r._id));
-                const beyondFirstPage = cached.items.slice(freshData.items.length).filter(r => !freshIds.has(r._id));
-                const merged = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
+                // Only merge with cached paginated items if no items were deleted.
+                // If totalCount decreased, items were deleted server-side — use fresh
+                // data only to avoid preserving stale/deleted items in cache.
+                let dataToUpdate = freshData;
+                if (freshData.totalCount >= cached.items.length && cached.items.length > freshData.items.length) {
+                  const freshIds = new Set(freshData.items.map(r => r._id));
+                  const beyondFirstPage = cached.items.slice(freshData.items.length).filter(r => !freshIds.has(r._id));
+                  dataToUpdate = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
+                }
                 const { silentUpdateQuickReplies } = require('./slices/settingsSlice');
-                dispatch(silentUpdateQuickReplies(merged));
-                cacheManager.saveAppSetting('quickReplies', merged).catch(() => {});
+                dispatch(silentUpdateQuickReplies(dataToUpdate));
+                cacheManager.saveAppSetting('quickReplies', dataToUpdate).catch(() => {});
               }
             })
             .catch(() => {});
@@ -545,19 +551,13 @@ export const fetchQuickRepliesWithCache = createAsyncThunk(
       // Cache miss or force refresh — fetch from server
       const freshData = await fetchQuickRepliesFromServer();
 
-      // Merge with existing cache to preserve paginated items beyond first page
-      let dataToSave = freshData;
-      try {
-        const existing = await cacheManager.getAppSetting('quickReplies');
-        if (existing && existing.items && existing.items.length > freshData.items.length) {
-          const freshIds = new Set(freshData.items.map(r => r._id));
-          const beyondFirstPage = existing.items.slice(freshData.items.length).filter(r => !freshIds.has(r._id));
-          dataToSave = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
-        }
-      } catch (e) { /* no existing cache */ }
-
-      await cacheManager.saveAppSetting('quickReplies', dataToSave);
-      return { data: { quickReplies: dataToSave }, fromCache: false };
+      // On force refresh, save fresh data directly without merging.
+      // Merging with stale cache would preserve deleted items that no longer
+      // exist on the server (their IDs won't appear in the first-page freshIds,
+      // so the old merge logic would keep them as "beyond first page" items).
+      // Pagination will re-fetch subsequent pages on scroll.
+      await cacheManager.saveAppSetting('quickReplies', freshData);
+      return { data: { quickReplies: freshData }, fromCache: false };
     } catch (error) {
       // Offline fallback — try cache
       try {
