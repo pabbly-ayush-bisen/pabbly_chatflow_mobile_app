@@ -287,6 +287,13 @@ const assistantSlice = createSlice({
         state.statsStatus = 'failed';
         state.statsError = action.payload;
       });
+
+    // Reset state on logout (using string type to avoid circular imports)
+    builder
+      .addCase('user/logout/fulfilled', () => initialState)
+      .addCase('user/logout/rejected', () => initialState)
+      .addCase('user/logoutFromTeammember/fulfilled', () => initialState)
+      .addCase('user/logoutFromTeammember/rejected', () => initialState);
   },
 });
 
