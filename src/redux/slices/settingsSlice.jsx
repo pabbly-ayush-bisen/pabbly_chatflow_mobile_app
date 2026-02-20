@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
-import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache } from '../cacheThunks';
+import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache, fetchUserAttributesWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getSettings = createAsyncThunk(
@@ -280,6 +280,9 @@ const settingsSlice = createSlice({
     silentUpdateTags: (state, action) => {
       state.settings.tags = action.payload;
     },
+    silentUpdateUserAttributes: (state, action) => {
+      state.settings.userAttributes = action.payload;
+    },
     resetSettingsData: (state) => {
       state.settings = initialState.settings;
       state.getSettingsStatus = 'idle';
@@ -472,8 +475,27 @@ const settingsSlice = createSlice({
         state.getSettingsStatus = 'failed';
         state.getSettingsError = action.payload;
       });
+
+    // Fetch User Attributes with Cache
+    builder
+      .addCase(fetchUserAttributesWithCache.pending, (state) => {
+        state.getSettingsStatus = 'loading';
+        state.getSettingsError = null;
+      })
+      .addCase(fetchUserAttributesWithCache.fulfilled, (state, action) => {
+        state.getSettingsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.settings = {
+          ...state.settings,
+          ...data,
+        };
+      })
+      .addCase(fetchUserAttributesWithCache.rejected, (state, action) => {
+        state.getSettingsStatus = 'failed';
+        state.getSettingsError = action.payload;
+      });
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, resetSettingsData } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;
