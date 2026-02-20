@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
-import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache, fetchUserAttributesWithCache } from '../cacheThunks';
+import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache, fetchUserAttributesWithCache, fetchQuickRepliesWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getSettings = createAsyncThunk(
@@ -40,7 +40,7 @@ export const updateSettings = createAsyncThunk(
 
 export const deleteSettings = createAsyncThunk(
   'settings/deleteSettings',
-  async ({ settingId, key, names }, { rejectWithValue }) => {
+  async ({ settingId, key, names, ids }, { rejectWithValue }) => {
     try {
       // Support key/names deletion (for keywords)
       if (key && names) {
@@ -51,6 +51,17 @@ export const deleteSettings = createAsyncThunk(
           return rejectWithValue(response.message || 'Failed to delete settings');
         }
         return { key, names, ...(response.data || response) };
+      }
+
+      // Support key/ids deletion (for quick replies, tags, etc.)
+      if (key && ids) {
+        const url = endpoints.settings.deleteSettings;
+        const response = await callApi(url, httpMethods.DELETE, { key, ids });
+
+        if (response.status !== 'success' && response.status === 'error') {
+          return rejectWithValue(response.message || 'Failed to delete settings');
+        }
+        return { key, ids, ...(response.data || response) };
       }
 
       // Original settingId-based deletion
@@ -283,6 +294,9 @@ const settingsSlice = createSlice({
     silentUpdateUserAttributes: (state, action) => {
       state.settings.userAttributes = action.payload;
     },
+    silentUpdateQuickReplies: (state, action) => {
+      state.settings.quickReplies = action.payload;
+    },
     resetSettingsData: (state) => {
       state.settings = initialState.settings;
       state.getSettingsStatus = 'idle';
@@ -494,8 +508,27 @@ const settingsSlice = createSlice({
         state.getSettingsStatus = 'failed';
         state.getSettingsError = action.payload;
       });
+
+    // Fetch Quick Replies with Cache
+    builder
+      .addCase(fetchQuickRepliesWithCache.pending, (state) => {
+        state.getSettingsStatus = 'loading';
+        state.getSettingsError = null;
+      })
+      .addCase(fetchQuickRepliesWithCache.fulfilled, (state, action) => {
+        state.getSettingsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.settings = {
+          ...state.settings,
+          ...data,
+        };
+      })
+      .addCase(fetchQuickRepliesWithCache.rejected, (state, action) => {
+        state.getSettingsStatus = 'failed';
+        state.getSettingsError = action.payload;
+      });
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, resetSettingsData } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;

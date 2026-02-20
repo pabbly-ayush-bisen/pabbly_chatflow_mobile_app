@@ -511,55 +511,86 @@ export const initializeCache = createAsyncThunk(
   }
 );
 
-/**
- * Fetch quick replies with cache-first strategy
- */
+// ─── Quick Replies ────────────────────────────────────────────────────────────
+
 export const fetchQuickRepliesWithCache = createAsyncThunk(
   'settings/fetchQuickRepliesWithCache',
-  async (params = {}, { rejectWithValue }) => {
+  async (params = {}, { dispatch, rejectWithValue }) => {
     try {
       const { forceRefresh = false } = params;
 
       // Try cache first
       if (!forceRefresh) {
-        const cacheResult = await cacheManager.getQuickReplies();
-        if (cacheResult.quickReplies.length > 0) {
-          return {
-            status: 'success',
-            quickReplies: cacheResult.quickReplies,
-            fromCache: true,
-          };
+        const cached = await cacheManager.getAppSetting('quickReplies');
+
+        if (cached) {
+          // Return cached data immediately, then silently refresh Redux in background
+          fetchQuickRepliesFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const freshIds = new Set(freshData.items.map(r => r._id));
+                const beyondFirstPage = cached.items.slice(freshData.items.length).filter(r => !freshIds.has(r._id));
+                const merged = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
+                const { silentUpdateQuickReplies } = require('./slices/settingsSlice');
+                dispatch(silentUpdateQuickReplies(merged));
+                cacheManager.saveAppSetting('quickReplies', merged).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: { quickReplies: cached }, fromCache: true };
         }
       }
 
-      // Cache miss or force refresh — fetch from API
-      const response = await callApi(
-        `${endpoints.settings.getSettings}?keys=quickReplies`,
-        httpMethods.GET
-      );
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchQuickRepliesFromServer();
 
-      if (response.status === 'error') {
-        throw new Error(response.message || 'Failed to fetch quick replies');
-      }
+      // Merge with existing cache to preserve paginated items beyond first page
+      let dataToSave = freshData;
+      try {
+        const existing = await cacheManager.getAppSetting('quickReplies');
+        if (existing && existing.items && existing.items.length > freshData.items.length) {
+          const freshIds = new Set(freshData.items.map(r => r._id));
+          const beyondFirstPage = existing.items.slice(freshData.items.length).filter(r => !freshIds.has(r._id));
+          dataToSave = { items: [...freshData.items, ...beyondFirstPage], totalCount: freshData.totalCount };
+        }
+      } catch (e) { /* no existing cache */ }
 
-      const data = response.data || response;
-      const quickReplies = data.quickReplies?.items || data.quickReplies || [];
-
-      // Cache the results
-      if (quickReplies.length > 0) {
-        await cacheManager.saveQuickReplies(quickReplies);
-      }
-
-      return {
-        status: 'success',
-        quickReplies,
-        fromCache: false,
-      };
+      await cacheManager.saveAppSetting('quickReplies', dataToSave);
+      return { data: { quickReplies: dataToSave }, fromCache: false };
     } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('quickReplies');
+        if (cached) {
+          return { data: { quickReplies: cached }, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
       return rejectWithValue(error.message);
     }
   }
 );
+
+/**
+ * Fetch first page of quick replies from API (pure fetch, no cache operations).
+ * @returns {Promise<Object>} quickReplies object { items: [], totalCount: number }
+ */
+async function fetchQuickRepliesFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=quickReplies&skip=0&limit=10&order=-1`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch quick replies');
+  }
+
+  const data = response.data || response;
+  return data.quickReplies || { items: [], totalCount: 0 };
+}
 
 /**
  * Search chats locally in SQLite by contact name/phone (instant)

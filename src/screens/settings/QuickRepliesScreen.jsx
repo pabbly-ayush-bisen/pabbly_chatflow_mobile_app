@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  Animated,
 } from 'react-native';
 import {
   Text,
@@ -18,6 +19,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import { getSettings, updateSettings, deleteSettings } from '../../redux/slices/settingsSlice';
+import { fetchQuickRepliesWithCache } from '../../redux/cacheThunks';
+import { cacheManager } from '../../database/CacheManager';
+import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
 import { MessagePreviewBubble } from '../../components/common';
 import AddQuickReplyModal from '../../components/settings/AddQuickReplyModal';
@@ -35,20 +41,160 @@ const MESSAGE_TYPES = {
   file: { label: 'File', icon: 'file-document', color: '#FF9800', bg: '#FFF3E0' },
 };
 
+// Skeleton Pulse Component
+const SkeletonPulse = ({ style }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+  return <Animated.View style={[{ backgroundColor: colors.grey[200], borderRadius: 6 }, style, { opacity }]} />;
+};
+
+// Skeleton Quick Reply Card
+const QuickReplyCardSkeleton = () => (
+  <View style={skeletonStyles.replyCard}>
+    {/* Top Row: Shortcut + Type */}
+    <View style={skeletonStyles.topRow}>
+      <SkeletonPulse style={{ width: 140, height: 28, borderRadius: 6 }} />
+      <SkeletonPulse style={{ width: 70, height: 24, borderRadius: 6 }} />
+    </View>
+    {/* Bottom Row: Meta + Actions */}
+    <View style={skeletonStyles.bottomRow}>
+      <View style={skeletonStyles.metaRow}>
+        <SkeletonPulse style={{ width: 90, height: 16, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 70, height: 16, borderRadius: 4 }} />
+      </View>
+      <View style={skeletonStyles.actionsRow}>
+        <SkeletonPulse style={{ width: 34, height: 34, borderRadius: 8 }} />
+        <SkeletonPulse style={{ width: 34, height: 34, borderRadius: 8 }} />
+        <SkeletonPulse style={{ width: 34, height: 34, borderRadius: 8 }} />
+      </View>
+    </View>
+  </View>
+);
+
+// Full Skeleton
+const QuickRepliesSkeleton = () => (
+  <View style={skeletonStyles.container}>
+    {/* Search Bar */}
+    <View style={skeletonStyles.searchBar}>
+      <SkeletonPulse style={{ flex: 1, height: 48, borderRadius: 12 }} />
+    </View>
+    {/* Section Header */}
+    <View style={skeletonStyles.sectionHeader}>
+      <SkeletonPulse style={{ width: 120, height: 18, borderRadius: 4 }} />
+      <SkeletonPulse style={{ width: 60, height: 13, borderRadius: 4 }} />
+    </View>
+    {/* Info Banner */}
+    <View style={skeletonStyles.infoBanner}>
+      <SkeletonPulse style={{ width: 16, height: 16, borderRadius: 4 }} />
+      <SkeletonPulse style={{ flex: 1, height: 13, borderRadius: 4 }} />
+    </View>
+    {/* Cards */}
+    <View style={skeletonStyles.list}>
+      <QuickReplyCardSkeleton />
+      <QuickReplyCardSkeleton />
+      <QuickReplyCardSkeleton />
+      <QuickReplyCardSkeleton />
+      <QuickReplyCardSkeleton />
+    </View>
+  </View>
+);
+
+const skeletonStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.default,
+  },
+  searchBar: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.lighter,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  list: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  replyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey[200],
+    padding: 14,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+});
+
 export default function QuickRepliesScreen() {
   const dispatch = useDispatch();
+  const insets = useSafeAreaInsets();
+  const TAB_BAR_HEIGHT = 60 + insets.bottom;
   const [searchQuery, setSearchQuery] = useState('');
   const searchDebounceRef = useRef(null);
 
-  // Pagination state - using useRef to avoid stale closure issues
+  // Pagination state
   const [localReplies, setLocalReplies] = useState([]);
-  const pageRef = useRef(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreReplies, setHasMoreReplies] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
-  const isLoadingRef = useRef(false);
 
-  // Modal states - separate for Add and Edit
+  // Cache-first state
+  const { settings, getSettingsStatus, updateSettingsStatus, deleteSettingsStatus } = useSelector(
+    (state) => state.settings
+  );
+  const { isOffline, isNetworkAvailable } = useNetwork();
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const initialLoadDone = useRef(false);
+  const isLoadingRef = useRef(false);
+  const fetchSucceeded = useRef(false);
+  const cachedBaseReplies = useRef({ items: [], totalCount: 0 });
+
+  // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -63,23 +209,122 @@ export default function QuickRepliesScreen() {
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
 
-  const { getSettingsStatus, updateSettingsStatus, deleteSettingsStatus } = useSelector(
-    (state) => state.settings
-  );
-
   const isLoading = getSettingsStatus === 'loading';
   const isSaving = updateSettingsStatus === 'loading';
   const isDeleting = deleteSettingsStatus === 'loading';
-  const isRefreshing = isLoading && localReplies.length > 0 && !isLoadingMore;
+  const isRefreshing = isLoading && localReplies.length > 0 && !isLoadingMore && initialLoadDone.current;
 
-  // Load quick replies with pagination - fixed version
-  const loadReplies = useCallback(async ({ reset = false, search = '' } = {}) => {
-    // Prevent duplicate calls
-    if (isLoadingRef.current) return;
+  // Initial load — read cache locally for instant display, then fetch fresh from API
+  useEffect(() => {
     isLoadingRef.current = true;
+    fetchSucceeded.current = false;
 
-    const currentPage = reset ? 0 : pageRef.current;
-    const skip = currentPage * PAGE_SIZE;
+    // Read cache locally for instant display while API loads
+    cacheManager.getAppSetting('quickReplies').then((cached) => {
+      if (cached && cached.items && cached.items.length > 0) {
+        setLocalReplies(cached.items);
+        setTotalCount(cached.totalCount || 0);
+        setHasMoreReplies(cached.items.length < (cached.totalCount || 0));
+        cachedBaseReplies.current = { items: cached.items, totalCount: cached.totalCount || 0 };
+        setIsInitialLoading(false);
+      }
+    }).catch(() => {});
+
+    // Always fetch fresh from API to pick up changes made on web
+    dispatch(fetchQuickRepliesWithCache({ forceRefresh: true }))
+      .unwrap()
+      .then((result) => {
+        fetchSucceeded.current = true;
+        const data = result.data?.quickReplies || result.quickReplies || {};
+        const items = data.items || [];
+        const total = data.totalCount || 0;
+        setLocalReplies(items);
+        setTotalCount(total);
+        setHasMoreReplies(items.length < total);
+        initialLoadDone.current = true;
+        cachedBaseReplies.current = { items, totalCount: total };
+      })
+      .catch(() => {})
+      .finally(() => {
+        isLoadingRef.current = false;
+        setIsInitialLoading(false);
+      });
+
+    // Cleanup debounce timer on unmount
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
+  // Network recovery — re-fetch when connectivity restored and data never loaded
+  useEffect(() => {
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      fetchSucceeded.current = false;
+      setIsInitialLoading(true);
+      dispatch(fetchQuickRepliesWithCache({ forceRefresh: true }))
+        .unwrap()
+        .then((result) => {
+          fetchSucceeded.current = true;
+          const data = result.data?.quickReplies || result.quickReplies || {};
+          const items = data.items || [];
+          const total = data.totalCount || 0;
+          setLocalReplies(items);
+          setTotalCount(total);
+          setHasMoreReplies(items.length < total);
+          initialLoadDone.current = true;
+          cachedBaseReplies.current = { items, totalCount: total };
+        })
+        .catch(() => {})
+        .finally(() => {
+          isLoadingRef.current = false;
+          setIsInitialLoading(false);
+        });
+    }
+  }, [isNetworkAvailable]);
+
+  // Sync settings.quickReplies → localReplies on initial load only
+  useEffect(() => {
+    if (settings.quickReplies && !initialLoadDone.current && !isInitialLoading && fetchSucceeded.current) {
+      const items = settings.quickReplies.items || [];
+      const total = settings.quickReplies.totalCount || 0;
+      setLocalReplies(items);
+      setTotalCount(total);
+      setHasMoreReplies(items.length < total);
+      initialLoadDone.current = true;
+      cachedBaseReplies.current = { items, totalCount: total };
+    }
+  }, [settings.quickReplies, isInitialLoading]);
+
+  // Re-fetch when screen regains focus (picks up web app changes)
+  useFocusEffect(
+    useCallback(() => {
+      if (!initialLoadDone.current || isOffline) return;
+
+      initialLoadDone.current = false;
+      fetchSucceeded.current = false;
+      dispatch(fetchQuickRepliesWithCache({ forceRefresh: true }))
+        .unwrap()
+        .then((result) => {
+          fetchSucceeded.current = true;
+          const data = result.data?.quickReplies || result.quickReplies || {};
+          const items = data.items || [];
+          const total = data.totalCount || 0;
+          setLocalReplies(items);
+          setTotalCount(total);
+          setHasMoreReplies(items.length < total);
+          initialLoadDone.current = true;
+          cachedBaseReplies.current = { items, totalCount: total };
+        })
+        .catch(() => { initialLoadDone.current = true; });
+    }, [isOffline])
+  );
+
+  // Load replies from API — used for pagination and search only
+  const loadReplies = useCallback(async ({ reset = false, search = '' } = {}) => {
+    const skip = reset ? 0 : localReplies.length;
 
     let queryString = `quickReplies&skip=${skip}&limit=${PAGE_SIZE}&order=-1`;
 
@@ -98,42 +343,53 @@ export default function QuickRepliesScreen() {
 
       if (reset) {
         setLocalReplies(newReplies);
-        pageRef.current = 1;
         setHasMoreReplies(newReplies.length < total);
       } else {
-        setLocalReplies(prev => {
-          const existingIds = new Set(prev.map(reply => reply._id));
-          const uniqueNewReplies = newReplies.filter(reply => reply._id && !existingIds.has(reply._id));
-          const combined = [...prev, ...uniqueNewReplies];
-          setHasMoreReplies(combined.length < total);
-          return combined;
-        });
-        pageRef.current = currentPage + 1;
+        const existingIds = new Set(localReplies.map(reply => reply._id));
+        const uniqueNewReplies = newReplies.filter(reply => reply._id && !existingIds.has(reply._id));
+        const allReplies = [...localReplies, ...uniqueNewReplies];
+        setLocalReplies(allReplies);
+        setHasMoreReplies(allReplies.length < total);
+
+        // Update cache and base replies with accumulated data (only for non-search pagination)
+        if (!search) {
+          cachedBaseReplies.current = { items: allReplies, totalCount: total };
+          cacheManager.saveAppSetting('quickReplies', { items: allReplies, totalCount: total }).catch(() => {});
+        }
       }
     } catch (error) {
-      // Log:('Error loading quick replies:', error);
       showSnackbar('Failed to load quick replies');
-    } finally {
-      isLoadingRef.current = false;
     }
-  }, [dispatch]);
-
-  useEffect(() => {
-    loadReplies({ reset: true });
-
-    return () => {
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
-    };
-  }, []);
+  }, [dispatch, localReplies]);
 
   const onRefresh = useCallback(() => {
+    if (isOffline) return;
     setSearchQuery('');
-    pageRef.current = 0;
-    loadReplies({ reset: true, search: '' });
-  }, [loadReplies]);
+    setHasMoreReplies(true);
+    initialLoadDone.current = false;
+    fetchSucceeded.current = false;
+    isLoadingRef.current = true;
+    // Clear cache so fresh data is fetched from API
+    cacheManager.saveAppSetting('quickReplies', null).catch(() => {});
+    cachedBaseReplies.current = { items: [], totalCount: 0 };
+    dispatch(fetchQuickRepliesWithCache({ forceRefresh: true }))
+      .unwrap()
+      .then((result) => {
+        fetchSucceeded.current = true;
+        const data = result.data?.quickReplies || result.quickReplies || {};
+        const items = data.items || [];
+        const total = data.totalCount || 0;
+        setLocalReplies(items);
+        setTotalCount(total);
+        setHasMoreReplies(items.length < total);
+        initialLoadDone.current = true;
+        cachedBaseReplies.current = { items, totalCount: total };
+      })
+      .catch(() => {})
+      .finally(() => { isLoadingRef.current = false; });
+  }, [dispatch, isOffline]);
 
+  // Debounced search handler
   const handleSearch = useCallback((text) => {
     setSearchQuery(text);
 
@@ -141,20 +397,48 @@ export default function QuickRepliesScreen() {
       clearTimeout(searchDebounceRef.current);
     }
 
-    searchDebounceRef.current = setTimeout(() => {
-      pageRef.current = 0;
-      loadReplies({ reset: true, search: text });
-    }, 500);
-  }, [loadReplies]);
+    // When search is cleared, restore base replies instantly (no API needed)
+    if (!text.trim()) {
+      const { items, totalCount: total } = cachedBaseReplies.current;
+      setLocalReplies(items);
+      setTotalCount(total);
+      setHasMoreReplies(items.length < total);
+      return;
+    }
 
-  const handleLoadMore = useCallback(() => {
-    if (isLoadingRef.current || isLoadingMore || !hasMoreReplies) return;
+    // Offline: local filter only (filteredReplies handles it)
+    if (isOffline) return;
+
+    // Online: debounce, check local matches first — only hit API if not found in cache
+    searchDebounceRef.current = setTimeout(() => {
+      const query = text.toLowerCase().trim();
+      const localMatches = cachedBaseReplies.current.items.filter(reply => {
+        const shortcut = reply.shortcut?.toLowerCase() || '';
+        return shortcut.includes(query);
+      });
+
+      if (localMatches.length === 0) {
+        loadReplies({ reset: true, search: text });
+      }
+    }, 500);
+  }, [loadReplies, isOffline]);
+
+  // Handle load more
+  const handleLoadMore = useCallback(async () => {
+    if (!initialLoadDone.current || isLoading || isLoadingMore || !hasMoreReplies || isOffline) return;
 
     setIsLoadingMore(true);
-    loadReplies({ reset: false, search: searchQuery }).finally(() => {
-      setIsLoadingMore(false);
-    });
-  }, [isLoadingMore, hasMoreReplies, loadReplies, searchQuery]);
+    await loadReplies({ reset: false, search: searchQuery });
+    setIsLoadingMore(false);
+  }, [isLoading, isLoadingMore, hasMoreReplies, loadReplies, searchQuery, isOffline]);
+
+  // Filter replies locally for instant search feedback
+  const filteredReplies = localReplies.filter((reply) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    const shortcut = reply.shortcut?.toLowerCase() || '';
+    return shortcut.includes(query);
+  });
 
   const showSnackbar = (msg) => {
     setSnackbarMessage(msg);
@@ -195,7 +479,7 @@ export default function QuickRepliesScreen() {
       await dispatch(updateSettings(data)).unwrap();
       showSnackbar('Quick reply created successfully');
       setShowAddModal(false);
-      pageRef.current = 0;
+      // Reload fresh data after CRUD operation
       loadReplies({ reset: true, search: searchQuery });
       return true;
     } catch (error) {
@@ -207,7 +491,6 @@ export default function QuickRepliesScreen() {
 
   const handleSaveEditReply = async (replyData) => {
     try {
-      // Match web app format: include _id in data item, don't pass settingId at top level
       const data = {
         key: 'quickReplies',
         data: [{
@@ -225,7 +508,6 @@ export default function QuickRepliesScreen() {
       showSnackbar('Quick reply updated successfully');
       setShowEditModal(false);
       setReplyToEdit(null);
-      pageRef.current = 0;
       loadReplies({ reset: true, search: searchQuery });
       return true;
     } catch (error) {
@@ -239,11 +521,10 @@ export default function QuickRepliesScreen() {
     if (!replyToDelete) return;
 
     try {
-      await dispatch(deleteSettings({ settingId: replyToDelete._id })).unwrap();
+      await dispatch(deleteSettings({ key: 'quickReplies', ids: [replyToDelete._id] })).unwrap();
       showSnackbar('Quick reply deleted successfully');
       setShowDeleteModal(false);
       setReplyToDelete(null);
-      pageRef.current = 0;
       loadReplies({ reset: true, search: searchQuery });
     } catch (error) {
       const errorMessage = typeof error === 'string' ? error : error?.message || 'Failed to delete quick reply';
@@ -338,7 +619,7 @@ export default function QuickRepliesScreen() {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconContainer}>
-        <Icon name="lightning-bolt-outline" size={64} color={colors.grey[300]} />
+        <Icon name="lightning-bolt-outline" size={64} color="#FF9800" />
       </View>
       <Text style={styles.emptyTitle}>
         {searchQuery ? 'No quick replies found' : 'No quick replies yet'}
@@ -612,16 +893,26 @@ export default function QuickRepliesScreen() {
     </Modal>
   );
 
-  // Loading State
-  if (isLoading && !isRefreshing && localReplies.length === 0) {
+  // Offline with no data
+  if (isOffline && !initialLoadDone.current && localReplies.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading quick replies...</Text>
+        <View style={styles.offlineBox}>
+          <View style={styles.offlineIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.offlineTitle}>You're Offline</Text>
+          <Text style={styles.offlineSubtitle}>
+            Connect to the internet to load quick replies.{'\n'}Previously loaded data will appear here.
+          </Text>
         </View>
       </View>
     );
+  }
+
+  // Loading State - Initial load (skeleton instead of spinner)
+  if (isInitialLoading && localReplies.length === 0 && !isOffline) {
+    return <QuickRepliesSkeleton />;
   }
 
   return (
@@ -657,10 +948,10 @@ export default function QuickRepliesScreen() {
 
       {/* List */}
       <FlatList
-        data={localReplies}
+        data={filteredReplies}
         renderItem={renderReplyCard}
         keyExtractor={(item, index) => item._id ? `qr-${item._id}` : `qr-index-${index}`}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: TAB_BAR_HEIGHT + 80 }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -678,7 +969,7 @@ export default function QuickRepliesScreen() {
       />
 
       {/* FAB */}
-      <TouchableOpacity style={styles.fab} onPress={handleAddReply} activeOpacity={0.8}>
+      <TouchableOpacity style={[styles.fab, { bottom: TAB_BAR_HEIGHT + 16 }]} onPress={handleAddReply} activeOpacity={0.8}>
         <Icon name="plus" size={26} color={colors.common.white} />
       </TouchableOpacity>
 
@@ -721,18 +1012,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.default,
-  },
-
-  // Loading
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: colors.text.secondary,
   },
 
   // Search
@@ -840,17 +1119,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   shortcutBadge: {
-    backgroundColor: colors.grey[100],
+    backgroundColor: '#FFF3E0',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
-    flex: 1,
-    maxWidth: '60%',
+    flexShrink: 1,
   },
   shortcutText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text.primary,
+    color: '#E65100',
   },
   typeBadge: {
     flexDirection: 'row',
@@ -910,7 +1188,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: colors.grey[100],
+    backgroundColor: '#FFF3E0',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -946,7 +1224,6 @@ const styles = StyleSheet.create({
   // FAB
   fab: {
     position: 'absolute',
-    bottom: 20,
     right: 16,
     width: 54,
     height: 54,
@@ -959,6 +1236,36 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
+  },
+
+  // Offline State
+  offlineBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  offlineIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 
   // Modal Base Styles
@@ -1018,22 +1325,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: colors.text.primary,
-  },
-  previewShortcutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  previewShortcutLabel: {
-    fontSize: 13,
-    color: colors.text.tertiary,
-  },
-  previewShortcutValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.text.primary,
-    maxWidth: 150,
   },
   previewCloseBtn: {
     width: 40,
