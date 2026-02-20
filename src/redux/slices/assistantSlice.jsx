@@ -1,18 +1,20 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
+import { fetchAssistantsWithCache, fetchAssistantStatsWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getAssistants = createAsyncThunk(
   'assistant/getAssistants',
-  async ({ page = 1, limit = 50, fetchAll = true, status, name }, { rejectWithValue }) => {
+  async ({ page = 0, limit = 10, fetchAll = false, status, name }, { rejectWithValue }) => {
     try {
       // Build query parameters
       const params = new URLSearchParams();
       params.append('page', page.toString());
       params.append('limit', limit.toString());
 
-      // Always include fetchAll=true to get actual assistant data
-      params.append('fetchAll', 'true');
+      if (fetchAll) {
+        params.append('fetchAll', 'true');
+      }
 
       if (status && status !== 'all') {
         params.append('status', status);
@@ -119,6 +121,17 @@ const assistantSlice = createSlice({
       state.assistantError = null;
       state.statsError = null;
       state.flowsError = null;
+    },
+    silentUpdateAssistants: (state, action) => {
+      const data = action.payload;
+      state.assistants = data.assistants || [];
+      state.totalResults = data.totalResults || data.assistants?.length || 0;
+    },
+    silentUpdateAssistantStats: (state, action) => {
+      const data = action.payload;
+      state.totalAssistants = data.total || 0;
+      state.activeAssistants = data.active || 0;
+      state.inactiveAssistants = data.inactive || 0;
     },
   },
   extraReducers: (builder) => {
@@ -239,8 +252,43 @@ const assistantSlice = createSlice({
         state.flowsStatus = 'failed';
         state.flowsError = action.payload;
       });
+
+    // Fetch Assistants with Cache
+    builder
+      .addCase(fetchAssistantsWithCache.pending, (state) => {
+        state.assistantsStatus = 'loading';
+        state.assistantsError = null;
+      })
+      .addCase(fetchAssistantsWithCache.fulfilled, (state, action) => {
+        state.assistantsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.assistants = data.assistants || [];
+        state.totalResults = data.totalResults || data.assistants?.length || 0;
+      })
+      .addCase(fetchAssistantsWithCache.rejected, (state, action) => {
+        state.assistantsStatus = 'failed';
+        state.assistantsError = action.payload;
+      });
+
+    // Fetch Assistant Stats with Cache
+    builder
+      .addCase(fetchAssistantStatsWithCache.pending, (state) => {
+        state.statsStatus = 'loading';
+        state.statsError = null;
+      })
+      .addCase(fetchAssistantStatsWithCache.fulfilled, (state, action) => {
+        state.statsStatus = 'succeeded';
+        const data = action.payload.data || action.payload;
+        state.totalAssistants = data.total || 0;
+        state.activeAssistants = data.active || 0;
+        state.inactiveAssistants = data.inactive || 0;
+      })
+      .addCase(fetchAssistantStatsWithCache.rejected, (state, action) => {
+        state.statsStatus = 'failed';
+        state.statsError = action.payload;
+      });
   },
 });
 
-export const { setSelectedAssistant, clearAssistantError } = assistantSlice.actions;
+export const { setSelectedAssistant, clearAssistantError, silentUpdateAssistants, silentUpdateAssistantStats } = assistantSlice.actions;
 export default assistantSlice.reducer;
