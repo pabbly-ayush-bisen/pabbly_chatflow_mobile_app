@@ -2159,6 +2159,166 @@ async function fetchAssistantStatsFromServer() {
   };
 }
 
+// ==========================================
+// CHAT RULES CACHE THUNKS
+// ==========================================
+
+/**
+ * Fetch chat status rules with cache-first strategy.
+ * Cache hit → return cached rules instantly, silently refresh from API in background.
+ * Cache miss or forceRefresh → fetch from API, save to cache, return.
+ * Offline fallback → return cached data if available.
+ */
+export const fetchChatStatusRulesWithCache = createAsyncThunk(
+  'settings/fetchChatStatusRulesWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('chatStatusRules');
+
+        if (cached) {
+          // Silently refresh from server in background
+          fetchChatStatusRulesFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateChatStatusRules } = require('./slices/settingsSlice');
+                dispatch(silentUpdateChatStatusRules(freshData));
+                cacheManager.saveAppSetting('chatStatusRules', freshData).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: cached, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchChatStatusRulesFromServer();
+      await cacheManager.saveAppSetting('chatStatusRules', freshData);
+      return { data: freshData, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('chatStatusRules');
+        if (cached) {
+          return { data: cached, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch chat status rules from API and parse active rules.
+ * @returns {Promise<Array>} Array of active rule objects { fromStatus, toStatus, days, _id }
+ */
+async function fetchChatStatusRulesFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=chatStatusRules`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch chat status rules');
+  }
+
+  const data = response.data || response;
+  const rulesObj = data?.chatStatusRules?.items?.[0] || data?.chatStatusRules || {};
+
+  // Convert to array of active rules
+  const activeRules = [];
+  Object.entries(rulesObj).forEach(([key, value]) => {
+    if (!/^\d+$/.test(key) && value && typeof value === 'object') {
+      const { toStatus, days, _id } = value;
+      if (toStatus && days && parseInt(days) > 0) {
+        activeRules.push({
+          fromStatus: key,
+          toStatus,
+          days: parseInt(days),
+          _id,
+        });
+      }
+    }
+  });
+
+  return activeRules;
+}
+
+/**
+ * Fetch chat team members with cache-first strategy.
+ * Cache hit → return cached members instantly, silently refresh from API in background.
+ * Cache miss or forceRefresh → fetch from API, save to cache, return.
+ * Offline fallback → return cached data if available.
+ */
+export const fetchChatTeamMembersWithCache = createAsyncThunk(
+  'settings/fetchChatTeamMembersWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('chatTeamMembers');
+
+        if (cached) {
+          // Silently refresh from server in background
+          fetchChatTeamMembersFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateChatTeamMembers } = require('./slices/settingsSlice');
+                dispatch(silentUpdateChatTeamMembers(freshData));
+                cacheManager.saveAppSetting('chatTeamMembers', freshData).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: cached, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchChatTeamMembersFromServer();
+      await cacheManager.saveAppSetting('chatTeamMembers', freshData);
+      return { data: freshData, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('chatTeamMembers');
+        if (cached) {
+          return { data: cached, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch chat team members from API.
+ * @returns {Promise<Array>} Array of team member objects
+ */
+async function fetchChatTeamMembersFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=teamMembers&skip=0&limit=100&order=-1`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch chat team members');
+  }
+
+  const data = response.data || response;
+  return data?.teamMembers?.items || [];
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -2189,4 +2349,6 @@ export default {
   fetchUserAttributesWithCache,
   fetchAssistantsWithCache,
   fetchAssistantStatsWithCache,
+  fetchChatStatusRulesWithCache,
+  fetchChatTeamMembersWithCache,
 };

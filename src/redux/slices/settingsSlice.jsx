@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
-import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache, fetchUserAttributesWithCache, fetchQuickRepliesWithCache } from '../cacheThunks';
+import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache, fetchUserAttributesWithCache, fetchQuickRepliesWithCache, fetchChatStatusRulesWithCache, fetchChatTeamMembersWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getSettings = createAsyncThunk(
@@ -297,6 +297,12 @@ const settingsSlice = createSlice({
     silentUpdateQuickReplies: (state, action) => {
       state.settings.quickReplies = action.payload;
     },
+    silentUpdateChatStatusRules: (state, action) => {
+      state.settings.chatStatusRules = action.payload;
+    },
+    silentUpdateChatTeamMembers: (state, action) => {
+      state.settings.chatTeamMembers = action.payload;
+    },
     resetSettingsData: (state) => {
       state.settings = initialState.settings;
       state.getSettingsStatus = 'idle';
@@ -527,8 +533,45 @@ const settingsSlice = createSlice({
         state.getSettingsStatus = 'failed';
         state.getSettingsError = action.payload;
       });
+
+    // Fetch Chat Status Rules with Cache
+    builder
+      .addCase(fetchChatStatusRulesWithCache.pending, (state) => {
+        state.getSettingsStatus = 'loading';
+        state.getSettingsError = null;
+      })
+      .addCase(fetchChatStatusRulesWithCache.fulfilled, (state, action) => {
+        state.getSettingsStatus = 'succeeded';
+        state.settings.chatStatusRules = action.payload.data || action.payload;
+      })
+      .addCase(fetchChatStatusRulesWithCache.rejected, (state, action) => {
+        state.getSettingsStatus = 'failed';
+        state.getSettingsError = action.payload;
+      });
+
+    // Fetch Chat Team Members with Cache
+    builder
+      .addCase(fetchChatTeamMembersWithCache.pending, (state) => {
+        state.getSettingsStatus = 'loading';
+        state.getSettingsError = null;
+      })
+      .addCase(fetchChatTeamMembersWithCache.fulfilled, (state, action) => {
+        state.getSettingsStatus = 'succeeded';
+        state.settings.chatTeamMembers = action.payload.data || action.payload;
+      })
+      .addCase(fetchChatTeamMembersWithCache.rejected, (state, action) => {
+        state.getSettingsStatus = 'failed';
+        state.getSettingsError = action.payload;
+      });
+
+    // Reset state on logout (using string type to avoid circular imports)
+    builder
+      .addCase('user/logout/fulfilled', () => initialState)
+      .addCase('user/logout/rejected', () => initialState)
+      .addCase('user/logoutFromTeammember/fulfilled', () => initialState)
+      .addCase('user/logoutFromTeammember/rejected', () => initialState);
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, resetSettingsData } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, silentUpdateChatStatusRules, silentUpdateChatTeamMembers, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;
