@@ -1977,6 +1977,188 @@ async function fetchUserAttributesFromServer() {
   return data.userAttributes || { items: [], totalCount: 0 };
 }
 
+// ==========================================
+// AI ASSISTANT CACHE THUNKS
+// ==========================================
+
+/**
+ * Fetch assistants with cache-first strategy (first page only, paginated).
+ * Cache hit -> return cached instantly, silently refresh first page from API in background.
+ * Cache miss or forceRefresh -> fetch first page from API, save to cache, return.
+ * Offline fallback -> return cached data if available.
+ * Pagination is handled by the screen via getAssistants thunk.
+ */
+export const fetchAssistantsWithCache = createAsyncThunk(
+  'assistant/fetchAssistantsWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('assistants');
+
+        if (cached && cached.assistants && cached.assistants.length > 0) {
+          // Return cached data immediately, then silently refresh first page in background
+          fetchAssistantsFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                // Merge fresh first page with cached paginated items beyond first page
+                let dataToUpdate = freshData;
+                if (freshData.totalResults >= cached.assistants.length && cached.assistants.length > freshData.assistants.length) {
+                  const freshIds = new Set(freshData.assistants.map(a => a._id));
+                  const beyondFirstPage = cached.assistants.slice(freshData.assistants.length).filter(a => !freshIds.has(a._id));
+                  dataToUpdate = { assistants: [...freshData.assistants, ...beyondFirstPage], totalResults: freshData.totalResults };
+                }
+                const { silentUpdateAssistants } = require('./slices/assistantSlice');
+                dispatch(silentUpdateAssistants(dataToUpdate));
+                cacheManager.saveAppSetting('assistants', dataToUpdate).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: cached, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch first page from server
+      const freshData = await fetchAssistantsFromServer();
+
+      // Merge with existing cache to preserve paginated items beyond first page
+      let dataToSave = freshData;
+      try {
+        const existing = await cacheManager.getAppSetting('assistants');
+        if (existing && existing.assistants && existing.assistants.length > freshData.assistants.length) {
+          const freshIds = new Set(freshData.assistants.map(a => a._id));
+          const beyondFirstPage = existing.assistants
+            .slice(freshData.assistants.length)
+            .filter(a => !freshIds.has(a._id));
+          dataToSave = { assistants: [...freshData.assistants, ...beyondFirstPage], totalResults: freshData.totalResults };
+        }
+      } catch (e) { /* no existing cache to merge */ }
+
+      await cacheManager.saveAppSetting('assistants', dataToSave);
+      return { data: dataToSave, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('assistants');
+        if (cached && cached.assistants && cached.assistants.length > 0) {
+          return { data: cached, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+const PAGE_SIZE_ASSISTANTS = 10;
+
+async function fetchAssistantsFromServer() {
+  const params = new URLSearchParams();
+  params.append('page', '0');
+  params.append('limit', PAGE_SIZE_ASSISTANTS.toString());
+
+  const url = `${endpoints.assistants.getAssistants}?${params.toString()}`;
+  const response = await callApi(url, httpMethods.GET);
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch assistants');
+  }
+
+  // Parse response — handle multiple response structures (mirrors assistantSlice reducer)
+  let assistantsList = [];
+  const raw = response._raw || {};
+
+  if (Array.isArray(response?.assistants)) {
+    assistantsList = response.assistants;
+  } else if (Array.isArray(raw?.assistants)) {
+    assistantsList = raw.assistants;
+  } else if (Array.isArray(response?.data?.assistants)) {
+    assistantsList = response.data.assistants;
+  } else if (Array.isArray(raw?.data?.assistants)) {
+    assistantsList = raw.data.assistants;
+  } else if (Array.isArray(response?.data)) {
+    assistantsList = response.data;
+  } else if (Array.isArray(raw?.data)) {
+    assistantsList = raw.data;
+  } else if (Array.isArray(response)) {
+    assistantsList = response;
+  }
+
+  const totalResults = response?.pagination?.totalItems
+    || raw?.pagination?.totalItems
+    || response?.data?.pagination?.totalItems
+    || assistantsList.length;
+
+  return { assistants: assistantsList, totalResults };
+}
+
+/**
+ * Fetch assistant stats with cache-first strategy.
+ */
+export const fetchAssistantStatsWithCache = createAsyncThunk(
+  'assistant/fetchAssistantStatsWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('assistantStats');
+
+        if (cached) {
+          // Silently refresh from server in background
+          fetchAssistantStatsFromServer()
+            .then((freshStats) => {
+              if (freshStats) {
+                const { silentUpdateAssistantStats } = require('./slices/assistantSlice');
+                dispatch(silentUpdateAssistantStats(freshStats));
+                cacheManager.saveAppSetting('assistantStats', freshStats).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: cached, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshStats = await fetchAssistantStatsFromServer();
+      await cacheManager.saveAppSetting('assistantStats', freshStats);
+      return { data: freshStats, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('assistantStats');
+        if (cached) {
+          return { data: cached, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+async function fetchAssistantStatsFromServer() {
+  const response = await callApi(endpoints.assistants.getAssistantStats, httpMethods.GET);
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch assistant stats');
+  }
+
+  const data = response.data || response;
+  return {
+    total: data.total || 0,
+    active: data.active || 0,
+    inactive: data.inactive || 0,
+  };
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -2005,4 +2187,6 @@ export default {
   fetchInboxSettingsWithCache,
   fetchTagsWithCache,
   fetchUserAttributesWithCache,
+  fetchAssistantsWithCache,
+  fetchAssistantStatsWithCache,
 };

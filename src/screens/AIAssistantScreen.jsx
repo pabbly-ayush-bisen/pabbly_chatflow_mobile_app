@@ -13,7 +13,11 @@ import { Text, Searchbar, ActivityIndicator } from 'react-native-paper';
 import Modal from 'react-native-modal';
 import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { getAssistants, getAssistantStats, getAssistant } from '../redux/slices/assistantSlice';
+import { getAssistants, getAssistant } from '../redux/slices/assistantSlice';
+import { fetchAssistantsWithCache, fetchAssistantStatsWithCache } from '../redux/cacheThunks';
+import { cacheManager } from '../database/CacheManager';
+import { useFocusEffect } from '@react-navigation/native';
+import { useNetwork } from '../contexts/NetworkContext';
 import { colors } from '../theme/colors';
 import { format, formatDistanceToNow } from 'date-fns';
 
@@ -26,7 +30,7 @@ const MODEL_CONFIG = {
   'gpt-4o': { name: 'GPT-4o', icon: 'lightning-bolt', color: '#F59E0B' },
   'gpt-4o-mini': { name: 'GPT-4o Mini', icon: 'flash', color: '#06B6D4' },
   'gpt-3.5-turbo': { name: 'GPT-3.5', icon: 'speedometer', color: '#3B82F6' },
-  default: { name: 'AI Model', icon: 'robot', color: '#6366F1' },
+  default: { name: 'NA', icon: 'robot', color: colors.secondary.main },
 };
 
 // Provider configurations with icons and colors
@@ -59,8 +63,8 @@ const getModelConfig = (modelName) => {
 
 // Status configuration
 const STATUS_CONFIG = {
-  active: { label: 'Active', color: '#16A34A', icon: 'check-circle' },
-  inactive: { label: 'Inactive', color: '#64748B', icon: 'pause-circle' },
+  active: { label: 'Active', color: colors.success.main, icon: 'check-circle' },
+  inactive: { label: 'Inactive', color: colors.error.main, icon: 'pause-circle' },
 };
 
 // Skeleton Components
@@ -100,49 +104,401 @@ const SkeletonList = () => (
   </View>
 );
 
+// Parse assistants API response — handles multiple response structures
+const parseAssistantsResponse = (result) => {
+  let assistants = [];
+  const payload = result;
+  const raw = payload?._raw || {};
+
+  if (Array.isArray(payload?.assistants)) {
+    assistants = payload.assistants;
+  } else if (Array.isArray(raw?.assistants)) {
+    assistants = raw.assistants;
+  } else if (Array.isArray(payload?.data?.assistants)) {
+    assistants = payload.data.assistants;
+  } else if (Array.isArray(raw?.data?.assistants)) {
+    assistants = raw.data.assistants;
+  } else if (Array.isArray(payload?.data)) {
+    assistants = payload.data;
+  } else if (Array.isArray(raw?.data)) {
+    assistants = raw.data;
+  } else if (Array.isArray(payload)) {
+    assistants = payload;
+  }
+
+  const totalResults = payload?.pagination?.totalItems
+    || raw?.pagination?.totalItems
+    || payload?.data?.pagination?.totalItems
+    || assistants.length;
+
+  return { assistants, totalResults };
+};
+
 export default function AIAssistantScreen() {
   const dispatch = useDispatch();
+  const PAGE_SIZE = 10;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [detailsVisible, setDetailsVisible] = useState(false);
 
-  const {
-    assistants,
-    selectedAssistant,
-    assistantsStatus,
-    assistantsError,
-    assistantStatus,
-    totalAssistants,
-    activeAssistants,
-    inactiveAssistants,
-  } = useSelector((state) => state.assistant);
+  // Local state for cache-first pattern with pagination
+  const [localAssistants, setLocalAssistants] = useState([]);
+  const [localStats, setLocalStats] = useState({ total: 0, active: 0, inactive: 0 });
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreAssistants, setHasMoreAssistants] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isFilterLoading, setIsFilterLoading] = useState(false);
+
+  // Refs for coordinating cache/network state
+  const initialLoadDone = useRef(false);
+  const isLoadingRef = useRef(false);
+  const isLoadingMoreRef = useRef(false);
+  const fetchSucceeded = useRef(false);
+  const cachedBaseAssistants = useRef([]);
+  const searchDebounceRef = useRef(null);
+  const currentPageRef = useRef(0);
+  const isFirstFocus = useRef(true);
+
+  // Redux selectors — only for detail view
+  const { selectedAssistant, assistantStatus, assistantsStatus } = useSelector((state) => state.assistant);
+  const { isOffline, isNetworkAvailable } = useNetwork();
 
   const isLoading = assistantsStatus === 'loading';
   const isLoadingDetails = assistantStatus === 'loading';
-  const isInitialLoading = isLoading && assistants.length === 0;
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // ── LOCAL FILTERING: Filter from local list for search only ──
+  const filteredAssistants = searchQuery.trim()
+    ? localAssistants.filter((assistant) => {
+        const query = searchQuery.toLowerCase().trim();
+        const name = (assistant.name || '').toLowerCase();
+        const model = (assistant.modelName || assistant.model || '').toLowerCase();
+        const provider = (assistant.modelProvider || '').toLowerCase();
+        return name.includes(query) || model.includes(query) || provider.includes(query);
+      })
+    : localAssistants;
 
-  useEffect(() => {
-    loadAssistants();
-  }, [searchQuery, selectedStatus]);
+  // ── LOAD ASSISTANTS: Pagination with progressive per-status cache accumulation ──
+  const loadAssistants = useCallback(async ({ reset = false, status = 'all', search = '' } = {}) => {
+    if (reset) {
+      currentPageRef.current = 0;
+    }
 
-  const loadData = useCallback(() => {
-    dispatch(getAssistantStats());
-    loadAssistants();
+    const pageToFetch = currentPageRef.current;
+
+    try {
+      const result = await dispatch(getAssistants({
+        page: pageToFetch,
+        limit: PAGE_SIZE,
+        status: status !== 'all' ? status : undefined,
+        name: search || undefined,
+      })).unwrap();
+
+      const parsed = parseAssistantsResponse(result);
+      const newAssistants = parsed.assistants;
+      const total = parsed.totalResults || 0;
+
+      setTotalCount(total);
+
+      if (reset) {
+        setLocalAssistants(newAssistants);
+        setHasMoreAssistants(newAssistants.length < total);
+        currentPageRef.current = 1;
+        // Save to per-status cache
+        if (!search) {
+          const cacheKey = status === 'all' ? 'assistants' : `assistants_${status}`;
+          if (status === 'all') cachedBaseAssistants.current = newAssistants;
+          cacheManager.saveAppSetting(cacheKey, { assistants: newAssistants, totalResults: total }).catch(() => {});
+        }
+      } else {
+        // Append with dedup using functional update to avoid stale closure
+        setLocalAssistants(prev => {
+          const existingIds = new Set(prev.map(a => a._id));
+          const uniqueNew = newAssistants.filter(a => !existingIds.has(a._id));
+          const allAssistants = [...prev, ...uniqueNew];
+          setHasMoreAssistants(allAssistants.length < total);
+
+          // Progressive cache accumulation (per-status)
+          if (!search) {
+            const cacheKey = status === 'all' ? 'assistants' : `assistants_${status}`;
+            if (status === 'all') cachedBaseAssistants.current = allAssistants;
+            cacheManager.saveAppSetting(cacheKey, { assistants: allAssistants, totalResults: total }).catch(() => {});
+          }
+
+          return allAssistants;
+        });
+        currentPageRef.current = pageToFetch + 1;
+      }
+    } catch (error) {
+      // Load failed — silently handle
+    }
   }, [dispatch]);
 
-  const loadAssistants = useCallback(() => {
-    dispatch(getAssistants({
-      page: 1,
-      limit: 50,
-      fetchAll: true,
-      status: selectedStatus !== 'all' ? selectedStatus : undefined,
-      name: searchQuery || undefined,
-    }));
-  }, [dispatch, searchQuery, selectedStatus]);
+  // ── HANDLE LOAD MORE ──
+  const handleLoadMore = useCallback(async () => {
+    if (!initialLoadDone.current || isLoading || isLoadingMoreRef.current || !hasMoreAssistants || isOffline) {
+      return;
+    }
+
+    isLoadingMoreRef.current = true;
+    setIsLoadingMore(true);
+    await loadAssistants({ reset: false, status: selectedStatus, search: searchQuery });
+    isLoadingMoreRef.current = false;
+    setIsLoadingMore(false);
+  }, [isLoading, hasMoreAssistants, loadAssistants, selectedStatus, searchQuery, isOffline]);
+
+  // ── HELPER: Process initial/refresh result ──
+  const processInitialResult = useCallback((assistantsResult, statsResult) => {
+    const assistantsData = assistantsResult.data || assistantsResult;
+    const incomingList = assistantsData.assistants || [];
+    const total = assistantsData.totalResults || incomingList.length;
+
+    // Merge with existing local data to preserve paginated items beyond the first page
+    const existingList = cachedBaseAssistants.current;
+    let finalList = incomingList;
+    if (existingList.length > incomingList.length && incomingList.length > 0) {
+      const incomingIds = new Set(incomingList.map(a => a._id));
+      const beyondIncoming = existingList
+        .slice(incomingList.length)
+        .filter(a => !incomingIds.has(a._id));
+      finalList = [...incomingList, ...beyondIncoming];
+    }
+
+    const nextPage = Math.floor(finalList.length / PAGE_SIZE);
+    setLocalAssistants(finalList);
+    setTotalCount(total);
+    setHasMoreAssistants(finalList.length < total);
+    cachedBaseAssistants.current = finalList;
+    currentPageRef.current = nextPage;
+
+    // Save merged result back to cache so next visit gets the full list
+    if (finalList.length > incomingList.length) {
+      cacheManager.saveAppSetting('assistants', { assistants: finalList, totalResults: total }).catch(() => {});
+    }
+
+    const statsData = statsResult.data || statsResult;
+    setLocalStats({
+      total: statsData.total || 0,
+      active: statsData.active || 0,
+      inactive: statsData.inactive || 0,
+    });
+  }, []);
+
+  // ── INITIAL LOAD: Read cache instantly, then fetch fresh first page ──
+  useEffect(() => {
+    isLoadingRef.current = true;
+    fetchSucceeded.current = false;
+
+    // Step 1: Read cache locally for instant display
+    Promise.all([
+      cacheManager.getAppSetting('assistants'),
+      cacheManager.getAppSetting('assistantStats'),
+    ]).then(([cachedAssistants]) => {
+      if (cachedAssistants && cachedAssistants.assistants && cachedAssistants.assistants.length > 0) {
+        setLocalAssistants(cachedAssistants.assistants);
+        setTotalCount(cachedAssistants.totalResults || cachedAssistants.assistants.length);
+        setHasMoreAssistants(cachedAssistants.assistants.length < (cachedAssistants.totalResults || 0));
+        cachedBaseAssistants.current = cachedAssistants.assistants;
+        setIsInitialLoading(false);
+      }
+    }).catch(() => {});
+
+    // Step 2: Always fetch fresh first page from API
+    Promise.all([
+      dispatch(fetchAssistantsWithCache({ forceRefresh: true })).unwrap(),
+      dispatch(fetchAssistantStatsWithCache({ forceRefresh: true })).unwrap(),
+    ]).then(([assistantsResult, statsResult]) => {
+      fetchSucceeded.current = true;
+      processInitialResult(assistantsResult, statsResult);
+      initialLoadDone.current = true;
+    }).catch(() => {}).finally(() => {
+      isLoadingRef.current = false;
+      setIsInitialLoading(false);
+    });
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
+  // ── NETWORK RECOVERY: Re-fetch when connectivity restored ──
+  useEffect(() => {
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      fetchSucceeded.current = false;
+      setIsInitialLoading(true);
+
+      Promise.all([
+        dispatch(fetchAssistantsWithCache({ forceRefresh: true })).unwrap(),
+        dispatch(fetchAssistantStatsWithCache({ forceRefresh: true })).unwrap(),
+      ]).then(([assistantsResult, statsResult]) => {
+        fetchSucceeded.current = true;
+        processInitialResult(assistantsResult, statsResult);
+        initialLoadDone.current = true;
+      }).catch(() => {}).finally(() => {
+        isLoadingRef.current = false;
+        setIsInitialLoading(false);
+      });
+    }
+  }, [isNetworkAvailable]);
+
+  // ── SCREEN REFOCUS: Re-fetch first page when screen regains focus ──
+  useFocusEffect(
+    useCallback(() => {
+      // Skip on initial mount — the useEffect above already handles the first load
+      if (isFirstFocus.current) {
+        isFirstFocus.current = false;
+        return;
+      }
+
+      if (!initialLoadDone.current || isOffline) {
+        return;
+      }
+
+      Promise.all([
+        dispatch(fetchAssistantsWithCache({ forceRefresh: true })).unwrap(),
+        dispatch(fetchAssistantStatsWithCache({ forceRefresh: true })).unwrap(),
+      ]).then(([assistantsResult, statsResult]) => {
+        processInitialResult(assistantsResult, statsResult);
+      }).catch(() => {});
+    }, [isOffline])
+  );
+
+  // ── PULL TO REFRESH: Clear cache, fetch fresh first page ──
+  const onRefresh = useCallback(() => {
+    if (isOffline) return;
+    setSearchQuery('');
+    setSelectedStatus('all');
+    setHasMoreAssistants(true);
+    isLoadingRef.current = true;
+    currentPageRef.current = 0;
+
+    Promise.all([
+      cacheManager.saveAppSetting('assistants', null),
+      cacheManager.saveAppSetting('assistantStats', null),
+      cacheManager.saveAppSetting('assistants_active', null),
+      cacheManager.saveAppSetting('assistants_inactive', null),
+    ]).catch(() => {});
+
+    cachedBaseAssistants.current = [];
+
+    Promise.all([
+      dispatch(fetchAssistantsWithCache({ forceRefresh: true })).unwrap(),
+      dispatch(fetchAssistantStatsWithCache({ forceRefresh: true })).unwrap(),
+    ]).then(([assistantsResult, statsResult]) => {
+      processInitialResult(assistantsResult, statsResult);
+    }).catch(() => {}).finally(() => {
+      isLoadingRef.current = false;
+    });
+  }, [dispatch, isOffline]);
+
+  // ── SEARCH: Debounced with local filter + API fallback ──
+  const handleSearch = useCallback((text) => {
+    setSearchQuery(text);
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    // When search is cleared, restore base assistants
+    if (!text.trim()) {
+      const base = cachedBaseAssistants.current;
+      setLocalAssistants(base);
+      setTotalCount(localStats.total || base.length);
+      setHasMoreAssistants(base.length < (localStats.total || 0));
+      currentPageRef.current = Math.floor(base.length / PAGE_SIZE);
+      return;
+    }
+
+    if (isOffline) return;
+
+    // Debounce: check local matches first, API fallback if none found
+    searchDebounceRef.current = setTimeout(() => {
+      const query = text.toLowerCase().trim();
+      const localMatches = cachedBaseAssistants.current.filter(a => {
+        const name = (a.name || '').toLowerCase();
+        const model = (a.modelName || a.model || '').toLowerCase();
+        const provider = (a.modelProvider || '').toLowerCase();
+        return name.includes(query) || model.includes(query) || provider.includes(query);
+      });
+
+      if (localMatches.length === 0) {
+        loadAssistants({ reset: true, status: selectedStatus, search: text });
+      }
+    }, 500);
+  }, [loadAssistants, isOffline, selectedStatus, localStats]);
+
+  // ── STATUS FILTER: Per-status cache → instant display or skeleton → API ──
+  const handleStatusChange = useCallback((status) => {
+    setSelectedStatus(status);
+    setSearchQuery('');
+
+    if (status === 'all') {
+      const base = cachedBaseAssistants.current;
+      setLocalAssistants(base);
+      setTotalCount(localStats.total || base.length);
+      setHasMoreAssistants(base.length < (localStats.total || 0));
+      currentPageRef.current = Math.floor(base.length / PAGE_SIZE);
+      return;
+    }
+
+    if (isOffline) return;
+
+    currentPageRef.current = 0;
+    setHasMoreAssistants(true);
+    const cacheKey = `assistants_${status}`;
+
+    // Check per-status cache first
+    cacheManager.getAppSetting(cacheKey)
+      .catch(() => null)
+      .then((cached) => {
+        if (cached && cached.assistants && cached.assistants.length > 0) {
+          setLocalAssistants(cached.assistants);
+          setTotalCount(cached.totalResults || cached.assistants.length);
+          setHasMoreAssistants(cached.assistants.length < (cached.totalResults || 0));
+          currentPageRef.current = Math.floor(cached.assistants.length / PAGE_SIZE);
+
+          // Silently refresh first page in background
+          dispatch(getAssistants({ page: 0, limit: PAGE_SIZE, status }))
+            .unwrap()
+            .then((result) => {
+              const parsed = parseAssistantsResponse(result);
+              let merged = parsed.assistants;
+              if (cached.assistants.length > parsed.assistants.length) {
+                const freshIds = new Set(parsed.assistants.map(a => a._id));
+                const beyondFirstPage = cached.assistants
+                  .slice(parsed.assistants.length)
+                  .filter(a => !freshIds.has(a._id));
+                merged = [...parsed.assistants, ...beyondFirstPage];
+              }
+              setLocalAssistants(merged);
+              setTotalCount(parsed.totalResults);
+              setHasMoreAssistants(merged.length < parsed.totalResults);
+              currentPageRef.current = Math.floor(merged.length / PAGE_SIZE);
+              cacheManager.saveAppSetting(cacheKey, { assistants: merged, totalResults: parsed.totalResults }).catch(() => {});
+            })
+            .catch(() => {});
+          return;
+        }
+
+        // No cache — show skeleton, fetch from API
+        setIsFilterLoading(true);
+        dispatch(getAssistants({ page: 0, limit: PAGE_SIZE, status }))
+          .unwrap()
+          .then((result) => {
+            const parsed = parseAssistantsResponse(result);
+            setLocalAssistants(parsed.assistants);
+            setTotalCount(parsed.totalResults);
+            setHasMoreAssistants(parsed.assistants.length < parsed.totalResults);
+            currentPageRef.current = 1;
+            cacheManager.saveAppSetting(cacheKey, { assistants: parsed.assistants, totalResults: parsed.totalResults }).catch(() => {});
+          })
+          .catch(() => {})
+          .finally(() => setIsFilterLoading(false));
+      });
+  }, [dispatch, isOffline, localStats]);
 
   const handleAssistantPress = (assistant) => {
     dispatch(getAssistant(assistant._id));
@@ -170,9 +526,9 @@ export default function AIAssistantScreen() {
 
   // Filter Pills Data
   const filterPills = [
-    { key: 'all', label: 'All', count: totalAssistants, icon: 'robot-outline' },
-    { key: 'active', label: 'Active', count: activeAssistants, icon: 'check-circle-outline' },
-    { key: 'inactive', label: 'Inactive', count: inactiveAssistants, icon: 'pause-circle-outline' },
+    { key: 'all', label: 'All', count: localStats.total, icon: 'robot-outline', color: colors.primary.main },
+    { key: 'active', label: 'Active', count: localStats.active, icon: 'check-circle-outline', color: colors.success.main },
+    { key: 'inactive', label: 'Inactive', count: localStats.inactive, icon: 'pause-circle-outline', color: colors.error.main },
   ];
 
   // Filter Pill Component
@@ -180,14 +536,14 @@ export default function AIAssistantScreen() {
     const isSelected = selectedStatus === item.key;
     return (
       <TouchableOpacity
-        onPress={() => setSelectedStatus(item.key)}
+        onPress={() => handleStatusChange(item.key)}
         activeOpacity={0.7}
-        style={[styles.filterChip, isSelected && styles.filterChipActive]}
+        style={[styles.filterChip, isSelected && { backgroundColor: item.color, borderColor: item.color }]}
       >
         <Icon
           name={item.icon}
           size={16}
-          color={isSelected ? '#FFFFFF' : colors.text.secondary}
+          color={isSelected ? '#FFFFFF' : item.color}
         />
         <Text style={[styles.filterText, isSelected && styles.filterTextActive]}>
           {item.label}
@@ -242,7 +598,7 @@ export default function AIAssistantScreen() {
             <View style={[styles.modelChip, { backgroundColor: model.color + '12' }]}>
               <Icon name={model.icon} size={14} color={model.color} />
               <Text style={[styles.modelChipText, { color: model.color }]}>
-                {item.modelName || item.model || model.name}
+                Used AI/Model : {item.modelName || item.model || model.name}
               </Text>
             </View>
             {item.modelProvider && (
@@ -558,56 +914,59 @@ export default function AIAssistantScreen() {
     );
   };
 
-  // Empty State - Show skeleton when loading, otherwise show empty message
-  const renderEmpty = () => {
-    // Show skeleton cards when loading (filtering/searching)
-    if (isLoading) {
-      return <SkeletonList />;
+  // Footer Component for load more / showing all
+  const renderFooter = () => {
+    if (isLoadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color={colors.primary.main} />
+          <Text style={styles.footerLoaderText}>Loading more...</Text>
+        </View>
+      );
     }
 
+    if (!hasMoreAssistants && localAssistants.length > 0) {
+      return (
+        <View style={styles.footerEnd}>
+          <Text style={styles.footerEndText}>
+            Showing all {localAssistants.length} assistants
+          </Text>
+        </View>
+      );
+    }
+
+    return <View style={styles.listFooterSpace} />;
+  };
+
+  // Empty State
+  const renderEmpty = () => {
     return (
       <View style={styles.emptyContainer}>
-        <View style={styles.emptyIconContainer}>
-          <Icon name="robot-off-outline" size={64} color={colors.grey[300]} />
+        <View style={[styles.emptyIconContainer, { backgroundColor: colors.secondary.main + '15' }]}>
+          <Icon name="robot-outline" size={64} color={colors.secondary.main} />
         </View>
-        <Text style={styles.emptyTitle}>No AI Assistants</Text>
+        <Text style={styles.emptyTitle}>
+          {searchQuery ? 'No assistants found' : 'No AI Assistants'}
+        </Text>
         <Text style={styles.emptySubtitle}>
           {searchQuery
-            ? 'Try a different search term'
-            : assistantsError
-            ? `Error: ${assistantsError}`
-            : 'No assistants found for the selected filter'}
+            ? 'Try adjusting your search criteria'
+            : selectedStatus !== 'all'
+            ? `No ${selectedStatus} assistants found`
+            : 'Create AI assistants from the web dashboard to manage your conversations'}
         </Text>
-        {assistantsError && (
-          <TouchableOpacity style={styles.retryBtn} onPress={loadData} activeOpacity={0.8}>
-            <Icon name="refresh" size={18} color="#FFFFFF" />
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-        )}
       </View>
     );
   };
 
-  // Section Header
-  const renderSectionHeader = () => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>
-        {selectedStatus === 'all' ? 'All Assistants' : selectedStatus === 'active' ? 'Active Assistants' : 'Inactive Assistants'}
-      </Text>
-      <Text style={styles.sectionCount}>
-        {assistants.length} {assistants.length === 1 ? 'assistant' : 'assistants'}
-      </Text>
-    </View>
-  );
-
-  // List Header Component
-  const ListHeader = () => (
+  // ── FIXED HEADER: Search, Filter Pills, Section Header ──
+  const renderFixedHeader = () => (
     <>
-      {/* Search - Matching ContactsScreen */}
+      {/* Search */}
       <View style={styles.header}>
         <Searchbar
           placeholder="Search assistants..."
-          onChangeText={setSearchQuery}
+          onChangeText={handleSearch}
           value={searchQuery}
           style={styles.searchbar}
           inputStyle={styles.searchInput}
@@ -629,29 +988,53 @@ export default function AIAssistantScreen() {
       </View>
 
       {/* Section Header */}
-      {renderSectionHeader()}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {selectedStatus === 'all' ? 'All Assistants' : selectedStatus === 'active' ? 'Active Assistants' : 'Inactive Assistants'}
+        </Text>
+        <Text style={styles.sectionCount}>
+          {localAssistants.length} of {totalCount} {totalCount === 1 ? 'assistant' : 'assistants'}
+        </Text>
+      </View>
     </>
   );
 
-  // Initial Loading State
-  if (isInitialLoading) {
+  // ── OFFLINE STATE: Show only when offline + no cached data + never loaded ──
+  if (isOffline && !initialLoadDone.current && localAssistants.length === 0) {
     return (
       <View style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.emptyTitle}>You're Offline</Text>
+          <Text style={styles.emptySubtitle}>
+            Connect to the internet to load AI assistants.{'\n'}Previously loaded data will appear here.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ── SKELETON STATE: Show when initial loading + no cache + online ──
+  if (isInitialLoading && localAssistants.length === 0 && !isOffline) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <SkeletonBox style={{ height: 48, borderRadius: 12 }} />
+        </View>
+        <View style={styles.filtersContainer}>
+          <View style={[styles.filtersList, { flexDirection: 'row' }]}>
+            <SkeletonBox style={{ width: 80, height: 36, borderRadius: 20, marginRight: 8 }} />
+            <SkeletonBox style={{ width: 90, height: 36, borderRadius: 20, marginRight: 8 }} />
+            <SkeletonBox style={{ width: 100, height: 36, borderRadius: 20 }} />
+          </View>
+        </View>
+        <View style={styles.sectionHeader}>
+          <SkeletonBox style={{ width: 120, height: 20 }} />
+          <SkeletonBox style={{ width: 80, height: 16 }} />
+        </View>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.header}>
-            <SkeletonBox style={{ height: 48, borderRadius: 12 }} />
-          </View>
-          <View style={styles.filtersContainer}>
-            <View style={[styles.filtersList, { flexDirection: 'row' }]}>
-              <SkeletonBox style={{ width: 80, height: 36, borderRadius: 20, marginRight: 8 }} />
-              <SkeletonBox style={{ width: 90, height: 36, borderRadius: 20, marginRight: 8 }} />
-              <SkeletonBox style={{ width: 100, height: 36, borderRadius: 20 }} />
-            </View>
-          </View>
-          <View style={styles.sectionHeader}>
-            <SkeletonBox style={{ width: 120, height: 20 }} />
-            <SkeletonBox style={{ width: 80, height: 16 }} />
-          </View>
           <View style={{ paddingHorizontal: 16 }}>
             {[1, 2, 3, 4].map((i) => <AssistantCardSkeleton key={i} />)}
           </View>
@@ -660,28 +1043,35 @@ export default function AIAssistantScreen() {
     );
   }
 
-  // Determine what to show in the list
-  const showSkeletonInList = isLoading && assistants.length > 0;
-
+  // ── MAIN RENDER: Cached data visible at all times (including offline) ──
   return (
     <View style={styles.container}>
-      <FlatList
-        data={showSkeletonInList ? [] : assistants}
-        renderItem={renderCard}
-        keyExtractor={(item, index) => item?._id || `assistant-${index}`}
-        contentContainerStyle={[styles.listContent, (assistants.length === 0 || showSkeletonInList) && { flex: 1 }]}
-        ListHeaderComponent={ListHeader}
-        ListEmptyComponent={renderEmpty}
-        refreshControl={
-          <RefreshControl
-            refreshing={false}
-            onRefresh={loadData}
-            colors={[colors.primary.main]}
-            tintColor={colors.primary.main}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      />
+      {renderFixedHeader()}
+      {isFilterLoading ? (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <SkeletonList />
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={filteredAssistants}
+          renderItem={renderCard}
+          keyExtractor={(item, index) => item?._id || `assistant-${index}`}
+          contentContainerStyle={[styles.listContent, filteredAssistants.length === 0 && { flex: 1 }]}
+          ListEmptyComponent={renderEmpty}
+          ListFooterComponent={renderFooter}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={onRefresh}
+              colors={[colors.primary.main]}
+              tintColor={colors.primary.main}
+            />
+          }
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
       {renderDetailsBottomSheet()}
     </View>
   );
@@ -935,7 +1325,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
-    paddingTop: 40,
+    paddingTop: 60,
   },
   emptyIconContainer: {
     width: 120,
@@ -972,6 +1362,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+
+  // Footer
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  footerLoaderText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
+  footerEnd: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  footerEndText: {
+    fontSize: 12,
+    color: colors.text.tertiary,
+  },
+  listFooterSpace: {
+    height: 32,
   },
 
   // Skeleton
