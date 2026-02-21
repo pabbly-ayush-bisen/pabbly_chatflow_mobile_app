@@ -471,41 +471,6 @@ export default function ChatRulesScreen() {
           </Text>
         </View>
 
-        {/* ============ CHAT STATUS RULES SECTION ============ */}
-        <View style={styles.sectionCard}>
-          {/* Section Header */}
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconBox, { backgroundColor: '#E8F5E9' }]}>
-              <Icon name="swap-horizontal" size={22} color="#4CAF50" />
-            </View>
-            <View style={styles.sectionTitleBox}>
-              <Text style={styles.sectionTitle}>Chat Status Rules</Text>
-              <Text style={styles.sectionSubtitle}>
-                Auto-change status after specified days
-              </Text>
-            </View>
-            {chatStatusRules.length > 0 && (
-              <View style={styles.countChip}>
-                <Text style={styles.countText}>{chatStatusRules.length}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Section Content */}
-          {chatStatusRules.length > 0 ? (
-            <View style={styles.sectionContent}>
-              {chatStatusRules.map((rule, index) =>
-                renderStatusRuleItem(rule, index, index === chatStatusRules.length - 1)
-              )}
-            </View>
-          ) : (
-            <View style={styles.emptyContent}>
-              <Icon name="swap-horizontal" size={32} color={colors.grey[300]} />
-              <Text style={styles.emptyText}>No status rules configured</Text>
-            </View>
-          )}
-        </View>
-
         {/* ============ CHAT ASSIGNMENT RULES SECTION ============ */}
         <View style={styles.sectionCard}>
           {/* Section Header */}
@@ -535,8 +500,47 @@ export default function ChatRulesScreen() {
             </View>
           ) : (
             <View style={styles.emptyContent}>
-              <Icon name="account-off-outline" size={32} color={colors.grey[300]} />
+              <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: '#E3F2FD', justifyContent: 'center', alignItems: 'center' }}>
+                <Icon name="account-multiple-check-outline" size={32} color="#2196F3" />
+              </View>
               <Text style={styles.emptyText}>No team members with auto-assignment</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ============ CHAT STATUS RULES SECTION ============ */}
+        <View style={styles.sectionCard}>
+          {/* Section Header */}
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIconBox, { backgroundColor: '#E8EAF6' }]}>
+              <Icon name="swap-horizontal" size={22} color="#3F51B5" />
+            </View>
+            <View style={styles.sectionTitleBox}>
+              <Text style={styles.sectionTitle}>Chat Status Rules</Text>
+              <Text style={styles.sectionSubtitle}>
+                Auto-change status after specified days
+              </Text>
+            </View>
+            {chatStatusRules.length > 0 && (
+              <View style={styles.countChip}>
+                <Text style={styles.countText}>{chatStatusRules.length}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Section Content */}
+          {chatStatusRules.length > 0 ? (
+            <View style={styles.sectionContent}>
+              {chatStatusRules.map((rule, index) =>
+                renderStatusRuleItem(rule, index, index === chatStatusRules.length - 1)
+              )}
+            </View>
+          ) : (
+            <View style={styles.emptyContent}>
+              <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: '#E8EAF6', justifyContent: 'center', alignItems: 'center' }}>
+                <Icon name="swap-horizontal" size={32} color="#3F51B5" />
+              </View>
+              <Text style={styles.emptyText}>No status rules configured</Text>
             </View>
           )}
         </View>
