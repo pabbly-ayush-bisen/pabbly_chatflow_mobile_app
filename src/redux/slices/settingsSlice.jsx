@@ -261,6 +261,10 @@ const initialState = {
       totalCount: 0,
       items: []
     },
+    sla: {
+      hours: undefined,
+      mins: undefined,
+    },
     soundNotification: false,
     timeZone: ''
   },
@@ -302,6 +306,9 @@ const settingsSlice = createSlice({
     },
     silentUpdateChatTeamMembers: (state, action) => {
       state.settings.chatTeamMembers = action.payload;
+    },
+    silentUpdateSla: (state, action) => {
+      state.settings.sla = action.payload;
     },
     resetSettingsData: (state) => {
       state.settings = initialState.settings;
@@ -573,5 +580,5 @@ const settingsSlice = createSlice({
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, silentUpdateChatStatusRules, silentUpdateChatTeamMembers, resetSettingsData } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, silentUpdateChatStatusRules, silentUpdateChatTeamMembers, silentUpdateSla, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;
