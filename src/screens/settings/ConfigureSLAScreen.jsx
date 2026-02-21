@@ -1,15 +1,123 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   RefreshControl,
+  Animated,
 } from 'react-native';
-import { Text, ActivityIndicator, Snackbar } from 'react-native-paper';
+import { Text, Snackbar } from 'react-native-paper';
 import { useDispatch } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { getSettings } from '../../redux/slices/settingsSlice';
+import { fetchSlaWithCache } from '../../redux/cacheThunks';
+import { cacheManager } from '../../database/CacheManager';
+import { useFocusEffect } from '@react-navigation/native';
+import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
+
+// Skeleton Pulse Component
+const SkeletonPulse = ({ style }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+  return <Animated.View style={[{ backgroundColor: colors.grey[200], borderRadius: 6 }, style, { opacity }]} />;
+};
+
+// Layout-Matched Skeleton for SLA Screen
+const SLASkeleton = () => (
+  <View style={styles.container}>
+    <View style={styles.scrollContent}>
+      {/* Info Banner Skeleton */}
+      <View style={skeletonStyles.infoBanner}>
+        <SkeletonPulse style={{ width: 18, height: 18, borderRadius: 4 }} />
+        <SkeletonPulse style={{ flex: 1, height: 14, borderRadius: 4 }} />
+      </View>
+
+      {/* SLA Card Skeleton */}
+      <View style={skeletonStyles.slaCard}>
+        {/* Card Header Skeleton */}
+        <View style={skeletonStyles.cardHeader}>
+          <SkeletonPulse style={{ width: 52, height: 52, borderRadius: 14 }} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <SkeletonPulse style={{ width: 150, height: 16, borderRadius: 4 }} />
+            <SkeletonPulse style={{ width: 210, height: 12, borderRadius: 4 }} />
+          </View>
+        </View>
+        {/* Time Display Skeleton */}
+        <View style={skeletonStyles.timeDisplay}>
+          <View style={{ alignItems: 'center' }}>
+            <SkeletonPulse style={{ width: 80, height: 80, borderRadius: 16 }} />
+            <SkeletonPulse style={{ width: 50, height: 10, borderRadius: 4, marginTop: 8 }} />
+          </View>
+          <SkeletonPulse style={{ width: 16, height: 32, borderRadius: 4, marginBottom: 20 }} />
+          <View style={{ alignItems: 'center' }}>
+            <SkeletonPulse style={{ width: 80, height: 80, borderRadius: 16 }} />
+            <SkeletonPulse style={{ width: 60, height: 10, borderRadius: 4, marginTop: 8 }} />
+          </View>
+        </View>
+      </View>
+
+      {/* Info Card Skeleton */}
+      <View style={skeletonStyles.infoCard}>
+        <SkeletonPulse style={{ width: 100, height: 16, borderRadius: 4, marginBottom: 10 }} />
+        <SkeletonPulse style={{ width: '100%', height: 12, borderRadius: 4, marginBottom: 6 }} />
+        <SkeletonPulse style={{ width: '90%', height: 12, borderRadius: 4, marginBottom: 6 }} />
+        <SkeletonPulse style={{ width: '75%', height: 12, borderRadius: 4 }} />
+      </View>
+    </View>
+  </View>
+);
+
+const skeletonStyles = StyleSheet.create({
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.lighter,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginBottom: 20,
+    gap: 10,
+  },
+  slaCard: {
+    backgroundColor: colors.common.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey[50],
+    gap: 14,
+  },
+  timeDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 16,
+  },
+  infoCard: {
+    backgroundColor: colors.common.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey[100],
+    padding: 16,
+  },
+});
 
 export default function ConfigureSLAScreen() {
   const dispatch = useDispatch();
@@ -20,35 +128,106 @@ export default function ConfigureSLAScreen() {
   // Local state for SLA data
   const [hours, setHours] = useState('--');
   const [mins, setMins] = useState('--');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  // Load SLA data
-  const loadSLAData = useCallback(async () => {
-    try {
-      const result = await dispatch(getSettings('sla')).unwrap();
-      const data = result.data || result;
-      const slaData = data?.sla || {};
+  // Refs for cache-first pattern
+  const initialLoadDone = useRef(false);
+  const isLoadingRef = useRef(false);
+  const isFirstFocus = useRef(true);
 
-      // Set hours and mins with proper handling
-      setHours(slaData.hours !== undefined && slaData.hours !== null ? String(slaData.hours) : '--');
-      setMins(slaData.mins !== undefined && slaData.mins !== null ? String(slaData.mins) : '--');
-    } catch (error) {
-      // Log:('Error loading SLA config:', error);
-      showSnackbar('Failed to load SLA configuration');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [dispatch]);
+  // Network state
+  const { isOffline, isNetworkAvailable } = useNetwork();
 
+  // Helper to apply SLA data to local state
+  const applySlaData = useCallback((slaData) => {
+    if (!slaData) return;
+    setHours(slaData.hours !== undefined && slaData.hours !== null ? String(slaData.hours) : '--');
+    setMins(slaData.mins !== undefined && slaData.mins !== null ? String(slaData.mins) : '--');
+  }, []);
+
+  // Initial load — read cache locally for instant display, then fetch fresh from API
   useEffect(() => {
-    loadSLAData();
-  }, [loadSLAData]);
+    isLoadingRef.current = true;
 
+    // Read cache locally for instant display while API loads
+    cacheManager.getAppSetting('sla').then((cached) => {
+      if (cached && (cached.hours !== undefined || cached.mins !== undefined)) {
+        applySlaData(cached);
+        setIsInitialLoading(false);
+      }
+    }).catch(() => {});
+
+    // Always fetch fresh from API to pick up changes made on web
+    dispatch(fetchSlaWithCache({ forceRefresh: true })).unwrap()
+      .then((result) => {
+        const slaData = result?.data || result || {};
+        applySlaData(slaData);
+        initialLoadDone.current = true;
+      })
+      .catch(() => {})
+      .finally(() => {
+        isLoadingRef.current = false;
+        setIsInitialLoading(false);
+      });
+  }, []);
+
+  // Network recovery — re-fetch when connectivity restored and data never loaded
+  useEffect(() => {
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      setIsInitialLoading(true);
+      dispatch(fetchSlaWithCache({ forceRefresh: true })).unwrap()
+        .then((result) => {
+          const slaData = result?.data || result || {};
+          applySlaData(slaData);
+          initialLoadDone.current = true;
+        })
+        .catch(() => {})
+        .finally(() => {
+          isLoadingRef.current = false;
+          setIsInitialLoading(false);
+        });
+    }
+  }, [isNetworkAvailable]);
+
+  // Re-fetch when screen regains focus (picks up web dashboard changes)
+  useFocusEffect(
+    useCallback(() => {
+      // Skip on initial mount — the useEffect above already handles the first load
+      if (isFirstFocus.current) {
+        isFirstFocus.current = false;
+        return;
+      }
+      if (!initialLoadDone.current || isOffline) return;
+
+      dispatch(fetchSlaWithCache({ forceRefresh: true })).unwrap()
+        .then((result) => {
+          const slaData = result?.data || result || {};
+          applySlaData(slaData);
+        })
+        .catch(() => {});
+    }, [isOffline])
+  );
+
+  // Pull-to-refresh with cache reset & offline guard
   const onRefresh = useCallback(async () => {
+    if (isOffline) return;
     setIsRefreshing(true);
-    await loadSLAData();
-    setIsRefreshing(false);
-  }, [loadSLAData]);
+    // Clear cache so fresh data is fetched from API
+    await cacheManager.saveAppSetting('sla', null).catch(() => {});
+    dispatch(fetchSlaWithCache({ forceRefresh: true })).unwrap()
+      .then((result) => {
+        const slaData = result?.data || result || {};
+        applySlaData(slaData);
+        initialLoadDone.current = true;
+      })
+      .catch(() => {
+        showSnackbar('Failed to load SLA configuration');
+      })
+      .finally(() => {
+        setIsRefreshing(false);
+      });
+  }, [dispatch, isOffline, applySlaData]);
 
   const showSnackbar = (message) => {
     setSnackbarMessage(message);
@@ -68,16 +247,26 @@ export default function ConfigureSLAScreen() {
     return num < 10 ? `0${num}` : `${num}`;
   };
 
-  // Loading State
-  if (isLoading) {
+  // Offline with no data — only show if data was NEVER loaded
+  if (isOffline && !initialLoadDone.current && hours === '--' && mins === '--') {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading SLA configuration...</Text>
+        <View style={styles.offlineBox}>
+          <View style={styles.offlineIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.offlineTitle}>You're Offline</Text>
+          <Text style={styles.offlineSubtitle}>
+            Connect to the internet to load SLA configuration.{'\n'}Previously loaded data will appear here.
+          </Text>
         </View>
       </View>
     );
+  }
+
+  // Loading State — skeleton instead of spinner
+  if (isInitialLoading && hours === '--' && mins === '--' && !isOffline) {
+    return <SLASkeleton />;
   }
 
   return (
@@ -172,16 +361,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.default,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: colors.text.secondary,
   },
   scrollContent: {
     padding: 16,
@@ -319,6 +498,36 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 13,
     color: colors.text.secondary,
+    lineHeight: 20,
+  },
+
+  // Offline State
+  offlineBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  offlineIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
     lineHeight: 20,
   },
 

@@ -2319,6 +2319,75 @@ async function fetchChatTeamMembersFromServer() {
   return data?.teamMembers?.items || [];
 }
 
+/**
+ * Fetch SLA configuration with cache-first strategy.
+ * Cache hit → return cached SLA instantly, silently refresh from API in background.
+ * Cache miss or forceRefresh → fetch from API, save to cache, return.
+ * Offline fallback → return cached data if available.
+ */
+export const fetchSlaWithCache = createAsyncThunk(
+  'settings/fetchSlaWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('sla');
+
+        if (cached) {
+          // Silently refresh from server in background
+          fetchSlaFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateSla } = require('./slices/settingsSlice');
+                dispatch(silentUpdateSla(freshData));
+                cacheManager.saveAppSetting('sla', freshData).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: cached, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchSlaFromServer();
+      await cacheManager.saveAppSetting('sla', freshData);
+      return { data: freshData, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('sla');
+        if (cached) {
+          return { data: cached, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch SLA configuration from API.
+ * @returns {Promise<Object>} SLA object { hours, mins }
+ */
+async function fetchSlaFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=sla`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch SLA configuration');
+  }
+
+  const data = response.data || response;
+  return data?.sla || {};
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -2351,4 +2420,5 @@ export default {
   fetchAssistantStatsWithCache,
   fetchChatStatusRulesWithCache,
   fetchChatTeamMembersWithCache,
+  fetchSlaWithCache,
 };
