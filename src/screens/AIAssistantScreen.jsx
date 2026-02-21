@@ -19,6 +19,7 @@ import { cacheManager } from '../database/CacheManager';
 import { useFocusEffect } from '@react-navigation/native';
 import { useNetwork } from '../contexts/NetworkContext';
 import { colors } from '../theme/colors';
+import { cardStyles } from '../theme/cardStyles';
 import { format, formatDistanceToNow } from 'date-fns';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -1183,17 +1184,9 @@ const styles = StyleSheet.create({
 
   // Card - Modern Design matching TemplatesScreen
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    ...cardStyles.card,
     marginHorizontal: 16,
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
     flexDirection: 'row',
     alignItems: 'center',
   },

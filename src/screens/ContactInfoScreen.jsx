@@ -18,6 +18,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { colors, chatColors, getAvatarColor } from '../theme/colors';
+import { cardStyles } from '../theme/cardStyles';
 import { format, formatDistanceToNow } from 'date-fns';
 import { updateContactChat, setChatStatus, updateChatInList } from '../redux/slices/inboxSlice';
 import { EnableAiAssistantDialog } from '../components/chat';
@@ -1502,22 +1503,10 @@ const styles = StyleSheet.create({
 
   // Quick Actions
   quickActionsCard: {
+    ...cardStyles.card,
     flexDirection: 'row',
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
   },
   quickAction: {
     flex: 1,
@@ -1539,21 +1528,9 @@ const styles = StyleSheet.create({
 
   // Section Card
   sectionCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
+    ...cardStyles.card,
     padding: 16,
     marginBottom: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1873,22 +1850,10 @@ const styles = StyleSheet.create({
 
   // Orders Tab
   ordersSummaryCard: {
+    ...cardStyles.card,
     flexDirection: 'row',
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
     padding: 20,
     marginBottom: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
   },
   ordersSummaryItem: {
     flex: 1,
@@ -1919,20 +1884,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   orderCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
+    ...cardStyles.card,
     padding: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
   },
   orderCardHeader: {
     flexDirection: 'row',

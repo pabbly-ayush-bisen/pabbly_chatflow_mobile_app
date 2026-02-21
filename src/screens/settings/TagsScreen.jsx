@@ -13,9 +13,11 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { getSettings } from '../../redux/slices/settingsSlice';
 import { fetchTagsWithCache } from '../../redux/cacheThunks';
 import { cacheManager } from '../../database/CacheManager';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
+import { InfoBanner } from '../../components/common';
 
 const PAGE_SIZE = 10;
 
@@ -80,19 +82,14 @@ const TagCardSkeleton = () => (
 // Full Tags Skeleton
 const TagsSkeleton = () => (
   <View style={skeletonStyles.container}>
-    {/* Search Bar */}
-    <View style={skeletonStyles.searchBar}>
-      <SkeletonPulse style={{ flex: 1, height: 48, borderRadius: 12 }} />
-    </View>
-    {/* Section Header */}
-    <View style={skeletonStyles.sectionHeader}>
-      <SkeletonPulse style={{ width: 50, height: 18, borderRadius: 4 }} />
-      <SkeletonPulse style={{ width: 80, height: 13, borderRadius: 4 }} />
-    </View>
     {/* Info Banner */}
     <View style={skeletonStyles.infoBanner}>
       <SkeletonPulse style={{ width: 16, height: 16, borderRadius: 4 }} />
       <SkeletonPulse style={{ flex: 1, height: 13, borderRadius: 4 }} />
+    </View>
+    {/* Search Bar */}
+    <View style={skeletonStyles.searchBar}>
+      <SkeletonPulse style={{ flex: 1, height: 48, borderRadius: 12 }} />
     </View>
     {/* Tag Cards */}
     <View style={skeletonStyles.list}>
@@ -107,30 +104,25 @@ const TagsSkeleton = () => (
 const skeletonStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
   searchBar: {
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
   infoBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
+    backgroundColor: '#FFF8E1',
     marginHorizontal: 16,
     marginBottom: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 12,
     gap: 8,
+    borderWidth: 1,
+    borderColor: '#FFECB3',
   },
   list: {
     paddingHorizontal: 16,
@@ -173,6 +165,7 @@ const skeletonStyles = StyleSheet.create({
 
 export default function TagsScreen() {
   const dispatch = useDispatch();
+  const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
@@ -194,6 +187,20 @@ export default function TagsScreen() {
 
   const isLoading = getSettingsStatus === 'loading';
   const isRefreshing = isLoading && localTags.length > 0 && !isLoadingMore && initialLoadDone.current;
+
+  // Set header count badge
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitleAlign: 'left',
+      headerRight: () => (
+        <View style={styles.headerCountBadge}>
+          <Text style={styles.headerCountText}>
+            {totalCount} {totalCount === 1 ? 'tag' : 'tags'}
+          </Text>
+        </View>
+      ),
+    });
+  }, [navigation, totalCount]);
 
   // Initial load — read cache locally for instant display, then fetch fresh from API
   // Uses forceRefresh to always get latest data (picks up web changes after stack navigation remount)
@@ -632,6 +639,12 @@ export default function TagsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Info Banner */}
+      <InfoBanner
+        message="Manage tags from the web dashboard"
+        style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 4 }}
+      />
+
       {/* Search Header */}
       <View style={styles.header}>
         <Searchbar
@@ -643,22 +656,6 @@ export default function TagsScreen() {
           iconColor={colors.text.tertiary}
           placeholderTextColor={colors.text.tertiary}
         />
-      </View>
-
-      {/* Section Header */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Tags</Text>
-        <Text style={styles.sectionCount}>
-          {localTags.length} of {totalCount} {totalCount === 1 ? 'tag' : 'tags'}
-        </Text>
-      </View>
-
-      {/* Info Banner */}
-      <View style={styles.infoBanner}>
-        <Icon name="information-outline" size={16} color={colors.primary.main} />
-        <Text style={styles.infoBannerText}>
-          Manage tags from the web dashboard
-        </Text>
       </View>
 
       {/* Tags List */}
@@ -697,7 +694,7 @@ export default function TagsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
 
   // Header
@@ -705,7 +702,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
-    backgroundColor: colors.background.default,
   },
   searchbar: {
     backgroundColor: colors.grey[100],
@@ -719,41 +715,18 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
 
-  // Section Header
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: colors.background.default,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text.primary,
-  },
-  sectionCount: {
-    fontSize: 13,
-    color: colors.text.tertiary,
-  },
-
-  // Info Banner
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
-    marginHorizontal: 16,
-    marginBottom: 12,
+  // Header Count Badge
+  headerCountBadge: {
+    backgroundColor: colors.grey[100],
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginRight: 16,
   },
-  infoBannerText: {
-    flex: 1,
+  headerCountText: {
     fontSize: 13,
-    color: colors.primary.dark,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
 
   // Tags List
@@ -791,15 +764,7 @@ const styles = StyleSheet.create({
 
   // Tag Card - Template style
   tagCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    ...cardStyles.card,
   },
   cardContent: {
     padding: 16,

@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { cardStyles } from '../theme/cardStyles';
 import ChatflowLogo from '../components/ChatflowLogo';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -397,11 +398,8 @@ const styles = StyleSheet.create({
     gap: CARD_GAP,
   },
   videoCard: {
+    ...cardStyles.cardFlat,
     width: VIDEO_CARD_WIDTH,
-    backgroundColor: colors.common.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
     overflow: 'hidden',
   },
   thumbnailContainer: {
@@ -448,12 +446,9 @@ const styles = StyleSheet.create({
     gap: CARD_GAP,
   },
   quickActionCard: {
+    ...cardStyles.cardFlat,
     width: VIDEO_CARD_WIDTH,
-    backgroundColor: colors.common.white,
-    borderRadius: 12,
     padding: 14,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
     alignItems: 'flex-start',
   },
   quickActionIconBox: {

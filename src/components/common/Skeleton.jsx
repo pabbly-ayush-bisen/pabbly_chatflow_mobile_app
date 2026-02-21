@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated, Easing } from 'react-native';
+import { cardStyles } from '../../theme/cardStyles';
 
 /**
  * Reusable Skeleton loading component with shimmer animation
@@ -333,12 +334,9 @@ const statsStyles = StyleSheet.create({
     gap: 12,
   },
   container: {
+    ...cardStyles.cardFlat,
     width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   topRow: {
     flexDirection: 'row',
@@ -359,11 +357,8 @@ const waCardStyles = StyleSheet.create({
     gap: 10,
   },
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    ...cardStyles.cardFlat,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   header: {
     flexDirection: 'row',
@@ -388,11 +383,8 @@ const memberStyles = StyleSheet.create({
     gap: 10,
   },
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    ...cardStyles.cardFlat,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   row: {
     flexDirection: 'row',
@@ -414,11 +406,8 @@ const sharedStyles = StyleSheet.create({
     gap: 10,
   },
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    ...cardStyles.cardFlat,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   row: {
     flexDirection: 'row',
@@ -516,11 +505,8 @@ const templateStyles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    ...cardStyles.cardFlat,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   topRow: {
     flexDirection: 'row',

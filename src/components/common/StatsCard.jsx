@@ -2,6 +2,7 @@ import { View, StyleSheet, Dimensions } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -64,12 +65,9 @@ const StatsCard = ({
 
 const styles = StyleSheet.create({
   container: {
+    ...cardStyles.cardFlat,
     width: (SCREEN_WIDTH - 44) / 2,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   topRow: {
     flexDirection: 'row',

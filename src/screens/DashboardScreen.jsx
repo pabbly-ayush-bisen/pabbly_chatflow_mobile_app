@@ -36,6 +36,7 @@ import {
   fetchSharedAccountsWithCache,
 } from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
+import { cardStyles } from '../theme/cardStyles';
 import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
 import { clearContactsData } from '../redux/slices/contactSlice';
 import { useNetwork } from '../contexts/NetworkContext';
@@ -1424,10 +1425,7 @@ const styles = StyleSheet.create({
 
   // Team Members preview cards
   memberPreviewCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    ...cardStyles.cardFlat,
     padding: 12,
   },
   memberPreviewRow: {
@@ -1496,10 +1494,7 @@ const styles = StyleSheet.create({
 
   // Shared Accounts - Clean design with Access button
   sharedCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    ...cardStyles.cardFlat,
   },
   sharedCardContent: {
     flexDirection: 'row',

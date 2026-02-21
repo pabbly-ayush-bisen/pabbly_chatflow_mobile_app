@@ -19,6 +19,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { resetTemplates } from '../redux/slices/templateSlice';
 import { fetchTemplatesWithCache, fetchTemplateStatsWithCache } from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
+import { cardStyles } from '../theme/cardStyles';
 import { TemplatesListSkeleton, MessagePreviewBubble } from '../components/common';
 import { getTemplateHeader, getCarouselCards, getLimitedTimeOffer } from '../components/common/MessagePreview';
 import { useNetwork } from '../contexts/NetworkContext';
@@ -781,16 +782,8 @@ const styles = StyleSheet.create({
 
   // Template Card - Modern Design
   templateCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    ...cardStyles.card,
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
   },
   cardContent: {
     padding: 14,

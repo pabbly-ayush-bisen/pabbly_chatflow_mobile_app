@@ -4,6 +4,7 @@ import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
 import { getDownloadedMediaSize, clearAllDownloadedMedia } from '../../services/mediaDownloadService';
 
 export default function StorageSettingsScreen() {
@@ -142,17 +143,14 @@ export default function StorageSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
   },
   card: {
-    backgroundColor: colors.common.white,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
+    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
   },

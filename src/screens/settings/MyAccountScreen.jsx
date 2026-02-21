@@ -12,6 +12,7 @@ import { useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
 
 export default function MyAccountScreen() {
   const { user, activeWaNumber, teamMemberStatus } = useSelector((state) => state.user);
@@ -329,7 +330,7 @@ export default function MyAccountScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
   scrollContent: {
     paddingBottom: 80,
@@ -534,14 +535,8 @@ const styles = StyleSheet.create({
 
   // Info Card
   infoCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
+    ...cardStyles.card,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
   },
   infoRow: {
     flexDirection: 'row',
@@ -593,14 +588,8 @@ const styles = StyleSheet.create({
 
   // Actions Card
   actionsCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
+    ...cardStyles.card,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
   },
   actionItem: {
     flexDirection: 'row',
