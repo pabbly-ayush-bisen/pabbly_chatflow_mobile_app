@@ -24,6 +24,7 @@ import { fetchAllTemplates } from '../redux/slices/templateSlice';
 import { sendMessageViaSocket, resetUnreadCountViaSocket, sendTemplateViaSocket } from '../services/socketService';
 import { uploadFileWithProgress, validateFileSize } from '../services/fileUploadService';
 import { cacheManager } from '../database/CacheManager';
+import { playSentMessageSound } from '../services/notificationService';
 import useUploadState from '../hooks/useUploadState';
 import useMediaDownload from '../hooks/useMediaDownload';
 import { getMediaUrl } from '../utils/messageHelpers';
@@ -457,6 +458,8 @@ export default function ChatDetailsScreen({ route, navigation }) {
       if (sent) {
         // Message was sent successfully via socket
         setIsSending(false);
+        // Play sent message tone
+        playSentMessageSound();
         // Don't refresh conversation - socket handlers will update the message status
         // The optimistic message is already in the UI with pending status
       } else {
@@ -699,6 +702,8 @@ export default function ChatDetailsScreen({ route, navigation }) {
 
       if (sent) {
         setIsSending(false);
+        // Play sent message tone
+        playSentMessageSound();
       } else {
         // Socket not connected — queue the carousel template for sending on reconnect
         try {
@@ -845,6 +850,8 @@ export default function ChatDetailsScreen({ route, navigation }) {
     if (sent) {
       // Clear sending state - socket handlers will update the message status
       setIsSending(false);
+      // Play sent message tone
+      playSentMessageSound();
     } else {
       // Socket not connected — queue the template for sending on reconnect
       try {

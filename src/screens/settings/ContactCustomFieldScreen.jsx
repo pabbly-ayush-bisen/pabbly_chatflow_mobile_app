@@ -12,9 +12,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { fetchUserAttributesWithCache } from '../../redux/cacheThunks';
 import { cacheManager } from '../../database/CacheManager';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
+import { InfoBanner } from '../../components/common';
 
 // Skeleton Pulse Component
 const SkeletonPulse = ({ style }) => {
@@ -56,11 +58,6 @@ const CustomFieldCardSkeleton = () => (
 // Full Skeleton
 const CustomFieldsSkeleton = () => (
   <View style={skeletonStyles.container}>
-    {/* Section Header */}
-    <View style={skeletonStyles.sectionHeader}>
-      <SkeletonPulse style={{ width: 160, height: 18, borderRadius: 4 }} />
-      <SkeletonPulse style={{ width: 80, height: 13, borderRadius: 4 }} />
-    </View>
     {/* Info Banner */}
     <View style={skeletonStyles.infoBanner}>
       <SkeletonPulse style={{ width: 16, height: 16, borderRadius: 4 }} />
@@ -80,25 +77,20 @@ const CustomFieldsSkeleton = () => (
 const skeletonStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: colors.background.neutral,
   },
   infoBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
+    backgroundColor: '#FFF8E1',
     marginHorizontal: 16,
     marginBottom: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 12,
     gap: 8,
+    borderWidth: 1,
+    borderColor: '#FFECB3',
   },
   list: {
     paddingHorizontal: 16,
@@ -137,6 +129,7 @@ const skeletonStyles = StyleSheet.create({
 
 export default function ContactCustomFieldScreen() {
   const dispatch = useDispatch();
+  const navigation = useNavigation();
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
 
@@ -152,6 +145,20 @@ export default function ContactCustomFieldScreen() {
 
   const isLoading = getSettingsStatus === 'loading';
   const isRefreshing = isLoading && localFields.length > 0 && initialLoadDone.current;
+
+  // Set header count badge
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitleAlign: 'left',
+      headerRight: () => (
+        <View style={styles.headerCountBadge}>
+          <Text style={styles.headerCountText}>
+            {totalCount} {totalCount === 1 ? 'field' : 'fields'}
+          </Text>
+        </View>
+      ),
+    });
+  }, [navigation, totalCount]);
 
   // Initial load — read cache locally for instant display, then fetch fresh from API
   useEffect(() => {
@@ -362,21 +369,11 @@ export default function ContactCustomFieldScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Section Header */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Custom Fields</Text>
-        <Text style={styles.sectionCount}>
-          {totalCount} {totalCount === 1 ? 'field' : 'fields'}
-        </Text>
-      </View>
-
       {/* Info Banner */}
-      <View style={styles.infoBanner}>
-        <Icon name="information-outline" size={16} color={colors.primary.main} />
-        <Text style={styles.infoBannerText}>
-          Manage custom fields from the web dashboard
-        </Text>
-      </View>
+      <InfoBanner
+        message="Manage custom fields from the web dashboard"
+        style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 12 }}
+      />
 
       {/* Fields List */}
       <FlatList
@@ -411,46 +408,23 @@ export default function ContactCustomFieldScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
 
-  // Section Header
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: colors.background.default,
-    marginBottom: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text.primary,
-  },
-  sectionCount: {
-    fontSize: 13,
-    color: colors.text.tertiary,
-  },
-
-  // Info Banner
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
-    marginHorizontal: 16,
-    marginBottom: 12,
+  // Header Count Badge
+  headerCountBadge: {
+    backgroundColor: colors.grey[100],
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginRight: 16,
   },
-  infoBannerText: {
-    flex: 1,
+  headerCountText: {
     fontSize: 13,
-    color: colors.primary.dark,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
+
 
   // Fields List
   fieldsList: {
@@ -463,15 +437,7 @@ const styles = StyleSheet.create({
 
   // Field Card
   fieldCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    ...cardStyles.card,
   },
   cardContent: {
     padding: 16,

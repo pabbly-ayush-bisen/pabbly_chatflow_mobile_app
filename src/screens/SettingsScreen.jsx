@@ -4,6 +4,7 @@ import { Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { cardStyles } from '../theme/cardStyles';
 
 export default function SettingsScreen({ navigation }) {
 
@@ -135,10 +136,7 @@ const styles = StyleSheet.create({
 
   // Settings Card
   settingsCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
+    ...cardStyles.cardFlat,
     marginBottom: 16,
     overflow: 'hidden',
   },

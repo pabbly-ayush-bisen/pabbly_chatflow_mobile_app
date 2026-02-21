@@ -14,6 +14,7 @@ const NOTIFICATION_PREFS_KEY = '@pabbly_notification_prefs';
 
 // Sound object reference for cleanup
 let notificationSound = null;
+let sentMessageSound = null;
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -208,6 +209,46 @@ export const playNotificationSound = async () => {
     } catch (fallbackError) {
       // Fallback sound also failed
     }
+  }
+};
+
+/**
+ * Play a short "whoosh" sound when a message is sent from inbox
+ * Similar to WhatsApp's outgoing message sound
+ */
+export const playSentMessageSound = async () => {
+  try {
+    // Unload previous sound if exists
+    if (sentMessageSound) {
+      await sentMessageSound.unloadAsync();
+      sentMessageSound = null;
+    }
+
+    // Configure audio mode
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    });
+
+    // Load and play a short swoosh/pop sound for sent messages
+    const { sound } = await Audio.Sound.createAsync(
+      { uri: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3' },
+      { shouldPlay: true, volume: 0.5 }
+    );
+
+    sentMessageSound = sound;
+
+    // Cleanup after sound finishes
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.didJustFinish) {
+        sound.unloadAsync();
+        sentMessageSound = null;
+      }
+    });
+  } catch (error) {
+    // Silently fail - sent sound is non-critical
   }
 };
 
@@ -409,6 +450,7 @@ export default {
   getLastNotificationResponse,
   getNotificationPreferences,
   playNotificationSound,
+  playSentMessageSound,
   vibrateNotification,
   triggerNotificationFeedback,
 };

@@ -14,6 +14,8 @@ import { cacheManager } from '../../database/CacheManager';
 import { useFocusEffect } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
+import { InfoBanner } from '../../components/common';
 
 // Status configurations with labels and colors
 const STATUS_CONFIG = {
@@ -159,7 +161,7 @@ const ChatRulesSkeleton = () => (
 const skeletonStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
   scrollContent: {
     padding: 16,
@@ -167,18 +169,18 @@ const skeletonStyles = StyleSheet.create({
   infoBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
+    backgroundColor: '#FFF8E1',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     marginBottom: 16,
     gap: 10,
   },
   sectionCard: {
     backgroundColor: colors.common.white,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.grey[100],
+    borderColor: colors.grey[200],
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -464,12 +466,10 @@ export default function ChatRulesScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Info Banner */}
-        <View style={styles.infoBanner}>
-          <Icon name="information-outline" size={18} color={colors.primary.main} />
-          <Text style={styles.infoBannerText}>
-            Chat rules are configured from the web dashboard
-          </Text>
-        </View>
+        <InfoBanner
+          message="Chat rules are configured from the web dashboard"
+          style={{ marginBottom: 16 }}
+        />
 
         {/* ============ CHAT ASSIGNMENT RULES SECTION ============ */}
         <View style={styles.sectionCard}>
@@ -562,45 +562,18 @@ export default function ChatRulesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 80,
   },
 
-  // Info Banner
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginBottom: 16,
-    gap: 10,
-  },
-  infoBannerText: {
-    flex: 1,
-    fontSize: 13,
-    color: colors.primary.dark,
-  },
-
   // Section Card - Container for each section
   sectionCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
+    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
-    // Shadow for iOS
-    shadowColor: colors.common.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    // Shadow for Android
-    elevation: 3,
   },
   sectionHeader: {
     flexDirection: 'row',

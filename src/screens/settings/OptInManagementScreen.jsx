@@ -23,7 +23,8 @@ import { useNetwork } from '../../contexts/NetworkContext';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
 import { cacheManager } from '../../database/CacheManager';
 import { colors, chatColors } from '../../theme/colors';
-import { MessagePreviewBubble } from '../../components/common';
+import { cardStyles } from '../../theme/cardStyles';
+import { MessagePreviewBubble, InfoBanner } from '../../components/common';
 import { getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
 
 const CHIP_COLORS = [
@@ -171,13 +172,13 @@ const skeletonStyles = StyleSheet.create({
   infoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFF8E1',
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     gap: 10,
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#FFECB3',
   },
 });
 
@@ -627,15 +628,11 @@ export default function OptInManagementScreen() {
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[colors.primary.main]} />
         }
       >
-        {/* Info */}
-        <View style={styles.infoBox}>
-          <View style={styles.infoIconBox}>
-            <Icon name="information-outline" size={16} color="#1D4ED8" />
-          </View>
-          <Text style={styles.infoText}>
-            Add or remove keywords here. Message setup requires web app.
-          </Text>
-        </View>
+        {/* Info Banner */}
+        <InfoBanner
+          message="Add or remove keywords here. Message setup requires web app."
+          style={{ marginBottom: 16 }}
+        />
 
         {renderSection('optIn')}
         {renderSection('optOut')}
@@ -662,7 +659,7 @@ export default function OptInManagementScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background.neutral,
   },
   scrollContent: {
     padding: 16,
@@ -697,45 +694,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Info Box
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-  },
-  infoIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#DBEAFE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#1D4ED8',
-    lineHeight: 17,
-  },
-
   // Card
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    ...cardStyles.card,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
   },
   cardHeader: {
     flexDirection: 'row',

@@ -10,6 +10,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { getSettings } from '../../redux/slices/settingsSlice';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
+import { InfoBanner } from '../../components/common';
 
 // Common timezone regions
 const TIMEZONE_REGIONS = {
@@ -190,12 +192,10 @@ export default function TimeZoneScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Info Banner */}
-        <View style={styles.infoBanner}>
-          <Icon name="information-outline" size={18} color={colors.primary.main} />
-          <Text style={styles.infoBannerText}>
-            This timezone is used for scheduling broadcasts, working hours, and activity logs. Configure from the web dashboard.
-          </Text>
-        </View>
+        <InfoBanner
+          message="This timezone is used for scheduling broadcasts, working hours, and activity logs. Configure from the web dashboard."
+          style={{ marginBottom: 16 }}
+        />
 
         {/* Main Timezone Card */}
         <View style={styles.timezoneCard}>
@@ -338,7 +338,7 @@ export default function TimeZoneScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
 
   // Loading
@@ -361,35 +361,10 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
 
-  // Info Banner
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.primary.lighter,
-    marginBottom: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 10,
-  },
-  infoBannerText: {
-    flex: 1,
-    fontSize: 13,
-    color: colors.primary.dark,
-    lineHeight: 18,
-  },
 
   // Timezone Card
   timezoneCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 4,
+    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -494,16 +469,8 @@ const styles = StyleSheet.create({
 
   // Usage Card
   usageCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
+    ...cardStyles.card,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
   },
   usageHeader: {
     flexDirection: 'row',

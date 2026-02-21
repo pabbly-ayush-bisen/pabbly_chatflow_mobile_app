@@ -14,6 +14,14 @@ import { cacheManager } from '../../database/CacheManager';
 import { useFocusEffect } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
+import { cardStyles } from '../../theme/cardStyles';
+import { InfoBanner } from '../../components/common';
+
+// SLA screen accent colors (matching Settings/More screen)
+const SLA_COLORS = {
+  icon: '#E91E63',
+  iconBg: '#FCE4EC',
+};
 
 // Skeleton Pulse Component
 const SkeletonPulse = ({ style }) => {
@@ -37,7 +45,7 @@ const SLASkeleton = () => (
     <View style={styles.scrollContent}>
       {/* Info Banner Skeleton */}
       <View style={skeletonStyles.infoBanner}>
-        <SkeletonPulse style={{ width: 18, height: 18, borderRadius: 4 }} />
+        <SkeletonPulse style={{ width: 18, height: 18, borderRadius: 9 }} />
         <SkeletonPulse style={{ flex: 1, height: 14, borderRadius: 4 }} />
       </View>
 
@@ -45,7 +53,7 @@ const SLASkeleton = () => (
       <View style={skeletonStyles.slaCard}>
         {/* Card Header Skeleton */}
         <View style={skeletonStyles.cardHeader}>
-          <SkeletonPulse style={{ width: 52, height: 52, borderRadius: 14 }} />
+          <SkeletonPulse style={{ width: 48, height: 48, borderRadius: 14 }} />
           <View style={{ flex: 1, gap: 6 }}>
             <SkeletonPulse style={{ width: 150, height: 16, borderRadius: 4 }} />
             <SkeletonPulse style={{ width: 210, height: 12, borderRadius: 4 }} />
@@ -54,19 +62,20 @@ const SLASkeleton = () => (
         {/* Time Display Skeleton */}
         <View style={skeletonStyles.timeDisplay}>
           <View style={{ alignItems: 'center' }}>
-            <SkeletonPulse style={{ width: 80, height: 80, borderRadius: 16 }} />
-            <SkeletonPulse style={{ width: 50, height: 10, borderRadius: 4, marginTop: 8 }} />
+            <SkeletonPulse style={{ width: 100, height: 100, borderRadius: 20 }} />
+            <SkeletonPulse style={{ width: 50, height: 10, borderRadius: 4, marginTop: 10 }} />
           </View>
-          <SkeletonPulse style={{ width: 16, height: 32, borderRadius: 4, marginBottom: 20 }} />
+          <SkeletonPulse style={{ width: 10, height: 10, borderRadius: 5, marginBottom: 20 }} />
           <View style={{ alignItems: 'center' }}>
-            <SkeletonPulse style={{ width: 80, height: 80, borderRadius: 16 }} />
-            <SkeletonPulse style={{ width: 60, height: 10, borderRadius: 4, marginTop: 8 }} />
+            <SkeletonPulse style={{ width: 100, height: 100, borderRadius: 20 }} />
+            <SkeletonPulse style={{ width: 60, height: 10, borderRadius: 4, marginTop: 10 }} />
           </View>
         </View>
       </View>
 
       {/* Info Card Skeleton */}
       <View style={skeletonStyles.infoCard}>
+        <SkeletonPulse style={{ width: 24, height: 24, borderRadius: 12, marginBottom: 10 }} />
         <SkeletonPulse style={{ width: 100, height: 16, borderRadius: 4, marginBottom: 10 }} />
         <SkeletonPulse style={{ width: '100%', height: 12, borderRadius: 4, marginBottom: 6 }} />
         <SkeletonPulse style={{ width: '90%', height: 12, borderRadius: 4, marginBottom: 6 }} />
@@ -80,10 +89,10 @@ const skeletonStyles = StyleSheet.create({
   infoBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
+    backgroundColor: '#FFF8E1',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     marginBottom: 20,
     gap: 10,
   },
@@ -91,7 +100,7 @@ const skeletonStyles = StyleSheet.create({
     backgroundColor: colors.common.white,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.grey[100],
+    borderColor: colors.grey[200],
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -100,22 +109,23 @@ const skeletonStyles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.grey[50],
+    borderBottomColor: colors.grey[100],
     gap: 14,
   },
   timeDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
-    gap: 16,
+    paddingVertical: 36,
+    paddingHorizontal: 24,
+    gap: 20,
   },
   infoCard: {
     backgroundColor: colors.common.white,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.grey[100],
-    padding: 16,
+    borderColor: colors.grey[200],
+    padding: 18,
   },
 });
 
@@ -284,22 +294,20 @@ export default function ConfigureSLAScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Info Banner */}
-        <View style={styles.infoBanner}>
-          <Icon name="information-outline" size={18} color={colors.primary.main} />
-          <Text style={styles.infoBannerText}>
-            SLA defines the maximum response time. Configure from web dashboard.
-          </Text>
-        </View>
+        <InfoBanner
+          message="SLA defines the maximum response time. Configure from web dashboard."
+          style={{ marginBottom: 20 }}
+        />
 
         {/* Main SLA Card */}
         <View style={styles.slaCard}>
           <View style={styles.cardHeader}>
             <View style={styles.cardIconBox}>
-              <Icon name="clock-check-outline" size={28} color={colors.primary.main} />
+              <Icon name="clock-check-outline" size={24} color={SLA_COLORS.icon} />
             </View>
             <View style={styles.cardTitleBox}>
               <Text style={styles.cardTitle}>Response Time SLA</Text>
-              <Text style={styles.cardSubtitle}>Max time to respond to customers</Text>
+              <Text style={styles.cardSubtitle}>Maximum time to respond to customers</Text>
             </View>
           </View>
 
@@ -310,26 +318,31 @@ export default function ConfigureSLAScreen() {
                 <View style={styles.timeValueBox}>
                   <Text style={styles.timeValue}>{formatTime(hours)}</Text>
                 </View>
-                <Text style={styles.timeLabel}>HOURS</Text>
+                <Text style={styles.timeLabel}>Hours</Text>
               </View>
 
-              {/* Separator */}
-              <Text style={styles.timeSeparator}>:</Text>
+              {/* Separator Dots */}
+              <View style={styles.separatorDots}>
+                <View style={styles.dot} />
+                <View style={styles.dot} />
+              </View>
 
               {/* Minutes */}
               <View style={styles.timeBlock}>
                 <View style={styles.timeValueBox}>
                   <Text style={styles.timeValue}>{formatTime(mins)}</Text>
                 </View>
-                <Text style={styles.timeLabel}>MINUTES</Text>
+                <Text style={styles.timeLabel}>Minutes</Text>
               </View>
             </View>
           ) : (
             <View style={styles.notConfigured}>
-              <Icon name="clock-alert-outline" size={48} color={colors.grey[300]} />
+              <View style={styles.emptyIconContainer}>
+                <Icon name="clock-check-outline" size={32} color={SLA_COLORS.icon} />
+              </View>
               <Text style={styles.notConfiguredTitle}>SLA Not Configured</Text>
               <Text style={styles.notConfiguredText}>
-                Set up response time SLA from the web dashboard
+                Set up response time SLA from the web dashboard to track team performance
               </Text>
             </View>
           )}
@@ -337,7 +350,10 @@ export default function ConfigureSLAScreen() {
 
         {/* Info Card */}
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>What is SLA?</Text>
+          <View style={styles.infoIconRow}>
+            <Icon name="lightbulb-outline" size={20} color="#FF9800" />
+            <Text style={styles.infoTitle}>What is SLA?</Text>
+          </View>
           <Text style={styles.infoText}>
             Service Level Agreement (SLA) sets the expected time limit to respond to customer messages. This helps track team performance and ensure timely support.
           </Text>
@@ -360,36 +376,16 @@ export default function ConfigureSLAScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 80,
   },
 
-  // Info Banner
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary.lighter,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginBottom: 20,
-    gap: 10,
-  },
-  infoBannerText: {
-    flex: 1,
-    fontSize: 13,
-    color: colors.primary.dark,
-  },
-
   // SLA Card
   slaCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
+    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -398,14 +394,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.grey[50],
+    borderBottomColor: colors.grey[100],
     gap: 14,
   },
   cardIconBox: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     borderRadius: 14,
-    backgroundColor: colors.primary.lighter,
+    backgroundColor: SLA_COLORS.iconBg,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -413,14 +409,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.text.primary,
   },
   cardSubtitle: {
     fontSize: 12,
     color: colors.text.secondary,
-    marginTop: 2,
+    marginTop: 3,
   },
 
   // Time Display
@@ -428,48 +424,62 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
-    gap: 16,
+    paddingVertical: 36,
+    paddingHorizontal: 24,
+    gap: 20,
   },
   timeBlock: {
     alignItems: 'center',
   },
   timeValueBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 16,
-    backgroundColor: colors.grey[50],
-    borderWidth: 2,
-    borderColor: colors.primary.main,
+    width: 100,
+    height: 100,
+    borderRadius: 20,
+    backgroundColor: SLA_COLORS.iconBg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   timeValue: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '800',
-    color: colors.primary.main,
+    color: SLA_COLORS.icon,
   },
   timeLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.text.secondary,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
-  timeSeparator: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: colors.grey[400],
-    marginBottom: 30,
+  separatorDots: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 28,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: SLA_COLORS.icon,
   },
 
-  // Not Configured
+  // Not Configured (Empty State)
   notConfigured: {
     alignItems: 'center',
-    padding: 40,
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+  },
+  emptyIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: SLA_COLORS.iconBg,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   notConfiguredTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.text.primary,
     marginTop: 16,
@@ -479,21 +489,24 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     marginTop: 6,
+    lineHeight: 19,
   },
 
   // Info Card
   infoCard: {
-    backgroundColor: colors.common.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.grey[100],
-    padding: 16,
+    ...cardStyles.card,
+    padding: 18,
+  },
+  infoIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
   },
   infoTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: colors.text.primary,
-    marginBottom: 8,
   },
   infoText: {
     fontSize: 13,
