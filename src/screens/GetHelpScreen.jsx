@@ -15,6 +15,8 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import ShadowCard from '../components/common/ShadowCard';
 import ChatflowLogo from '../components/ChatflowLogo';
+import { useNetwork } from '../contexts/NetworkContext';
+import OfflineBanner from '../components/common/OfflineBanner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_GAP = 12;
@@ -29,6 +31,7 @@ export default function GetHelpScreen() {
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const insets = useSafeAreaInsets();
+  const { isOffline } = useNetwork();
 
   // Video tutorials with actual thumbnails
   const videoTutorials = [
@@ -119,6 +122,10 @@ export default function GetHelpScreen() {
   ];
 
   const handleEmailSupport = () => {
+    if (isOffline) {
+      showSnackbar("You're offline. Email requires an internet connection.");
+      return;
+    }
     const email = 'support@pabbly.com';
     const subject = 'Pabbly Chatflow Mobile App Support';
     const body = `App Version: ${appVersion}\nPlatform: ${Platform.OS}\n\nDescribe your issue:\n\n`;
@@ -136,6 +143,10 @@ export default function GetHelpScreen() {
   };
 
   const handleOpenWebsite = (url) => {
+    if (isOffline) {
+      showSnackbar("You're offline. Please check your internet connection.");
+      return;
+    }
     Linking.canOpenURL(url)
       .then((supported) => {
         if (supported) {
@@ -160,7 +171,7 @@ export default function GetHelpScreen() {
       const video2 = videoTutorials[i + 1];
       rows.push(
         <View key={i} style={styles.videoRow}>
-          <ShadowCard variant="flat" style={styles.videoCard}>
+          <ShadowCard variant="flat" style={[styles.videoCard, isOffline && { opacity: 0.5 }]}>
             <TouchableOpacity
               onPress={() => handleOpenWebsite(video1.youtubeUrl)}
               activeOpacity={0.8}
@@ -180,7 +191,7 @@ export default function GetHelpScreen() {
           </ShadowCard>
 
           {video2 && (
-            <ShadowCard variant="flat" style={styles.videoCard}>
+            <ShadowCard variant="flat" style={[styles.videoCard, isOffline && { opacity: 0.5 }]}>
               <TouchableOpacity
                 onPress={() => handleOpenWebsite(video2.youtubeUrl)}
                 activeOpacity={0.8}
@@ -207,10 +218,12 @@ export default function GetHelpScreen() {
 
   return (
     <View style={styles.container}>
+      {isOffline && <OfflineBanner />}
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 24 }
+          { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 24 },
+          isOffline && { paddingTop: 44 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -232,7 +245,7 @@ export default function GetHelpScreen() {
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Video Tutorials</Text>
             <TouchableOpacity
-              style={styles.viewAllButton}
+              style={[styles.viewAllButton, isOffline && { opacity: 0.5 }]}
               onPress={() => handleOpenWebsite('https://youtube.com/@pabbly')}
             >
               <Text style={styles.viewAllText}>View All</Text>
@@ -250,7 +263,7 @@ export default function GetHelpScreen() {
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.quickActionsGrid}>
             {quickActions.map((action, index) => (
-              <ShadowCard key={index} variant="flat" style={styles.quickActionCard}>
+              <ShadowCard key={index} variant="flat" style={[styles.quickActionCard, isOffline && { opacity: 0.5 }]}>
                 <TouchableOpacity
                   onPress={action.onPress}
                   activeOpacity={0.7}
@@ -269,7 +282,7 @@ export default function GetHelpScreen() {
 
         {/* Contact Support - Compact */}
         <View style={styles.section}>
-          <View style={styles.contactCard}>
+          <View style={[styles.contactCard, isOffline && { opacity: 0.5 }]}>
             <View style={styles.contactLeft}>
               <View style={styles.contactIconBox}>
                 <Icon name="email-outline" size={22} color={colors.common.white} />
