@@ -2457,6 +2457,144 @@ async function fetchTimezoneFromServer() {
   return { timeZone: data?.timeZone || '' };
 }
 
+/**
+ * Fetch activity logs with cache-first strategy.
+ *
+ * Cache stores the first page of each filter (all, POST, PUT, DELETE) plus filter counts.
+ * On cache hit: returns cached data immediately, silently refreshes from API in background.
+ * On cache miss: fetches from API, caches, and returns.
+ * Pagination beyond page 1 always goes to the API.
+ */
+export const fetchActivityLogsWithCache = createAsyncThunk(
+  'settings/fetchActivityLogsWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false, action = 'all', skip = 0, limit = 20 } = params;
+
+      // Only cache the first page (skip === 0)
+      if (!forceRefresh && skip === 0) {
+        const cached = await cacheManager.getActivityLogs(action);
+
+        if (cached && cached.items?.length > 0) {
+          // Return cached data immediately, then silently refresh in background
+          fetchActivityLogsFromServer({ action, skip: 0, limit })
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateActivityLogs } = require('./slices/settingsSlice');
+                dispatch(silentUpdateActivityLogs({ action, ...freshData }));
+              }
+            })
+            .catch(() => {});
+
+          return {
+            items: cached.items,
+            totalCount: cached.totalCount || 0,
+            fromCache: true,
+            action,
+          };
+        }
+      }
+
+      // Cache miss or force refresh or pagination — fetch from server
+      const freshData = await fetchActivityLogsFromServer({ action, skip, limit });
+      return {
+        ...freshData,
+        fromCache: false,
+        action,
+      };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch activity logs from API and cache the first page.
+ */
+async function fetchActivityLogsFromServer({ action = 'all', skip = 0, limit = 20 }) {
+  let queries = `skip=${skip}&limit=${limit}&actorType=user`;
+  if (action && action !== 'all') {
+    queries += `&action=${action}`;
+  }
+
+  const url = `${endpoints.settings.getActivityLogs}?${queries}`;
+  const response = await callApi(url, httpMethods.GET);
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch activity logs');
+  }
+
+  const data = response.data || response;
+  const result = {
+    items: data.items || [],
+    totalCount: data.totalCount || 0,
+  };
+
+  // Cache the first page only
+  if (skip === 0) {
+    await cacheManager.saveActivityLogs(action, result);
+  }
+
+  return result;
+}
+
+/**
+ * Fetch activity log filter counts with cache-first strategy.
+ * Counts are cached as a single object: { all, POST, PUT, DELETE }
+ */
+export const fetchActivityLogCountsWithCache = createAsyncThunk(
+  'settings/fetchActivityLogCountsWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false, allTotal = 0 } = params;
+
+      if (!forceRefresh) {
+        const cached = await cacheManager.getActivityLogCounts();
+
+        if (cached) {
+          // Return cached counts, silently refresh in background
+          fetchActivityLogCountsFromServer(allTotal)
+            .then((freshCounts) => {
+              const { silentUpdateActivityLogCounts } = require('./slices/settingsSlice');
+              dispatch(silentUpdateActivityLogCounts(freshCounts));
+            })
+            .catch(() => {});
+
+          return { counts: cached, fromCache: true };
+        }
+      }
+
+      const freshCounts = await fetchActivityLogCountsFromServer(allTotal);
+      return { counts: freshCounts, fromCache: false };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch per-action-type counts from API and cache them.
+ */
+async function fetchActivityLogCountsFromServer(allTotal = 0) {
+  const actions = ['POST', 'PUT', 'DELETE'];
+
+  const results = await Promise.all(
+    actions.map((action) => {
+      const url = `${endpoints.settings.getActivityLogs}?skip=0&limit=1&actorType=user&action=${action}`;
+      return callApi(url, httpMethods.GET);
+    })
+  );
+
+  const counts = { all: allTotal };
+  actions.forEach((action, i) => {
+    const data = results[i]?.data || results[i];
+    counts[action] = data?.totalCount || 0;
+  });
+
+  await cacheManager.saveActivityLogCounts(counts);
+  return counts;
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -2491,4 +2629,6 @@ export default {
   fetchChatTeamMembersWithCache,
   fetchSlaWithCache,
   fetchTimezoneWithCache,
+  fetchActivityLogsWithCache,
+  fetchActivityLogCountsWithCache,
 };

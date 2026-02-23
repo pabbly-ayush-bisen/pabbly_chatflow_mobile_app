@@ -12,13 +12,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Text } from 'react-native-paper';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import { colors } from '../theme/colors';
 import { useNetwork } from '../contexts/NetworkContext';
 import { getActivityLogs } from '../redux/slices/settingsSlice';
+import { cacheManager } from '../database/CacheManager';
 import { InfoBanner, ShadowCard } from '../components/common';
 import { showSuccess, showError, showWarning } from '../utils/toast';
 
@@ -53,13 +55,7 @@ const capitalize = (str) => {
 export default function ActivityLogScreen() {
   const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
-  const { isOffline } = useNetwork();
-
-  // Redux state
-  const activityLogsStatus = useSelector((state) => state.settings.activityLogsStatus);
-  const totalCount = useSelector(
-    (state) => state.settings.settings?.activityLogs?.totalCount || 0
-  );
+  const { isOffline, isNetworkAvailable } = useNetwork();
 
   // Local state
   const [page, setPage] = useState(0);
@@ -73,11 +69,13 @@ export default function ActivityLogScreen() {
   const [filterTotalCount, setFilterTotalCount] = useState(0);
   const [filterCounts, setFilterCounts] = useState({ all: 0, POST: 0, PUT: 0, DELETE: 0 });
   const [isFilterLoading, setIsFilterLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const filterListRef = useRef(null);
 
-  const isInitialLoad =
-    activityLogsStatus === 'idle' ||
-    (activityLogsStatus === 'loading' && items.length === 0);
+  // Cache-first refs
+  const isFirstFocus = useRef(true);
+  const initialLoadDone = useRef(false);
+  const isLoadingRef = useRef(false);
 
   // Fetch activity logs for a given page + optional action filter
   const fetchLogs = useCallback(
@@ -101,6 +99,12 @@ export default function ActivityLogScreen() {
           setItems(newItems);
         } else {
           setItems((prev) => [...prev, ...newItems]);
+        }
+
+        // Cache the first page result
+        if (pageNum === 0) {
+          const filterKey = (action && action !== 'all') ? action : 'all';
+          cacheManager.saveActivityLogs(filterKey, { items: newItems, totalCount: newTotalCount }).catch(() => {});
         }
 
         return newTotalCount;
@@ -129,20 +133,72 @@ export default function ActivityLogScreen() {
         counts[action] = data?.totalCount || 0;
       });
       setFilterCounts(counts);
+      cacheManager.saveActivityLogCounts(counts).catch(() => {});
     } catch {
       // Silently fail — counts will show 0
     }
   }, [dispatch, isOffline]);
 
-  // Initial fetch + counts
+  // Initial fetch with cache-first strategy
   useEffect(() => {
-    fetchLogs(0).then((allTotal) => {
-      setFilterCounts((prev) => ({ ...prev, all: allTotal }));
-      fetchFilterCounts(allTotal);
-    });
+    const loadInitialData = async () => {
+      setIsInitialLoading(true);
+      isLoadingRef.current = true;
+
+      // Try cache first
+      try {
+        const [cachedData, cachedCounts] = await Promise.all([
+          cacheManager.getActivityLogs('all'),
+          cacheManager.getActivityLogCounts(),
+        ]);
+
+        if (cachedData && cachedData.items?.length > 0) {
+          // Cache hit — show cached data immediately
+          setItems(cachedData.items);
+          setFilterTotalCount(cachedData.totalCount || 0);
+          if (cachedCounts) {
+            setFilterCounts(cachedCounts);
+          } else {
+            setFilterCounts((prev) => ({ ...prev, all: cachedData.totalCount || 0 }));
+          }
+          setIsInitialLoading(false);
+          initialLoadDone.current = true;
+
+          // Silently refresh from server in background
+          if (!isOffline) {
+            fetchLogs(0, true, 'all').then((allTotal) => {
+              setFilterCounts((prev) => ({ ...prev, all: allTotal }));
+              fetchFilterCounts(allTotal);
+            }).catch(() => {});
+          }
+
+          isLoadingRef.current = false;
+          return;
+        }
+      } catch {
+        // Cache read failed — fall through to server fetch
+      }
+
+      // Cache miss — fetch from server
+      if (!isOffline) {
+        fetchLogs(0).then((allTotal) => {
+          setFilterCounts((prev) => ({ ...prev, all: allTotal }));
+          fetchFilterCounts(allTotal);
+          initialLoadDone.current = true;
+        }).catch(() => {}).finally(() => {
+          setIsInitialLoading(false);
+          isLoadingRef.current = false;
+        });
+      } else {
+        setIsInitialLoading(false);
+        isLoadingRef.current = false;
+      }
+    };
+
+    loadInitialData();
   }, []);
 
-  // Pull-to-refresh
+  // Pull-to-refresh — clears cache, fetches fresh data
   const onRefresh = useCallback(async () => {
     if (isOffline) {
       showWarning('Please check your internet connection.', "You're Offline");
@@ -150,12 +206,56 @@ export default function ActivityLogScreen() {
     }
     setIsRefreshing(true);
     setPage(0);
+
+    // Clear all cached activity logs before fresh fetch
+    cacheManager.clearActivityLogs().catch(() => {});
+
     const refreshedTotal = await fetchLogs(0, true, selectedAction);
     if (selectedAction === 'all') {
       fetchFilterCounts(refreshedTotal);
     }
     setIsRefreshing(false);
   }, [fetchLogs, isOffline, selectedAction, fetchFilterCounts]);
+
+  // Network recovery — re-fetch when connectivity is restored
+  useEffect(() => {
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      setIsInitialLoading(true);
+
+      fetchLogs(0).then((allTotal) => {
+        setFilterCounts((prev) => ({ ...prev, all: allTotal }));
+        fetchFilterCounts(allTotal);
+        initialLoadDone.current = true;
+      }).catch(() => {}).finally(() => {
+        isLoadingRef.current = false;
+        setIsInitialLoading(false);
+      });
+    }
+  }, [isNetworkAvailable]);
+
+  // Screen refocus — silently re-fetch when screen regains focus
+  useFocusEffect(
+    useCallback(() => {
+      // Skip on initial mount — the useEffect above already handles the first load
+      if (isFirstFocus.current) {
+        isFirstFocus.current = false;
+        return;
+      }
+
+      if (!initialLoadDone.current || isOffline) {
+        return;
+      }
+
+      // Silently refresh current filter
+      fetchLogs(0, true, selectedAction).then((allTotal) => {
+        if (selectedAction === 'all') {
+          setFilterCounts((prev) => ({ ...prev, all: allTotal }));
+          fetchFilterCounts(allTotal);
+        }
+      }).catch(() => {});
+    }, [isOffline, selectedAction, fetchLogs, fetchFilterCounts])
+  );
 
   // Infinite scroll — load more
   const onLoadMore = useCallback(() => {
@@ -239,20 +339,39 @@ export default function ActivityLogScreen() {
     { key: 'DELETE', label: 'Deleted', count: filterCounts.DELETE, icon: 'trash-can-outline', color: colors.error.main },
   ], [filterCounts]);
 
-  const handleActionFilter = useCallback((key) => {
+  const handleActionFilter = useCallback(async (key) => {
     if (key === selectedAction) return;
     setSelectedAction(key);
     setPage(0);
-    setItems([]);
     setIsFilterLoading(true);
-    fetchLogs(0, true, key).finally(() => setIsFilterLoading(false));
 
     // Scroll filter list to bring selected pill into view
     const index = filterPills.findIndex((p) => p.key === key);
     if (index >= 0 && filterListRef.current) {
       filterListRef.current.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
     }
-  }, [selectedAction, fetchLogs, filterPills]);
+
+    // Try cache first for instant filter switch
+    try {
+      const cached = await cacheManager.getActivityLogs(key);
+      if (cached && cached.items?.length > 0) {
+        setItems(cached.items);
+        setFilterTotalCount(cached.totalCount || 0);
+        setIsFilterLoading(false);
+        // Silently refresh in background
+        if (!isOffline) {
+          fetchLogs(0, true, key).catch(() => {});
+        }
+        return;
+      }
+    } catch {
+      // Cache read failed
+    }
+
+    // No cache — fetch from server
+    setItems([]);
+    fetchLogs(0, true, key).finally(() => setIsFilterLoading(false));
+  }, [selectedAction, fetchLogs, filterPills, isOffline]);
 
   // ─── Render Helpers ──────────────────────────────────────────────
 
@@ -651,7 +770,7 @@ export default function ActivityLogScreen() {
       return renderOffline();
     }
 
-    if (isInitialLoad || isFilterLoading) {
+    if (isInitialLoading || isFilterLoading) {
       return (
         <ScrollView
           contentContainerStyle={styles.listContent}
