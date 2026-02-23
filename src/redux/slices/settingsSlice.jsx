@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
-import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache, fetchUserAttributesWithCache, fetchQuickRepliesWithCache, fetchChatStatusRulesWithCache, fetchChatTeamMembersWithCache } from '../cacheThunks';
+import { fetchOptInManagementWithCache, fetchInboxSettingsWithCache, fetchTagsWithCache, fetchUserAttributesWithCache, fetchQuickRepliesWithCache, fetchChatStatusRulesWithCache, fetchChatTeamMembersWithCache, fetchTimezoneWithCache } from '../cacheThunks';
 
 // Async thunks
 export const getSettings = createAsyncThunk(
@@ -310,6 +310,9 @@ const settingsSlice = createSlice({
     silentUpdateSla: (state, action) => {
       state.settings.sla = action.payload;
     },
+    silentUpdateTimezone: (state, action) => {
+      state.settings.timeZone = action.payload?.timeZone ?? action.payload ?? '';
+    },
     resetSettingsData: (state) => {
       state.settings = initialState.settings;
       state.getSettingsStatus = 'idle';
@@ -571,6 +574,22 @@ const settingsSlice = createSlice({
         state.getSettingsError = action.payload;
       });
 
+    // Fetch Timezone with Cache
+    builder
+      .addCase(fetchTimezoneWithCache.pending, (state) => {
+        state.getSettingsStatus = 'loading';
+        state.getSettingsError = null;
+      })
+      .addCase(fetchTimezoneWithCache.fulfilled, (state, action) => {
+        state.getSettingsStatus = 'succeeded';
+        const data = action.payload?.data || action.payload;
+        state.settings.timeZone = data?.timeZone ?? '';
+      })
+      .addCase(fetchTimezoneWithCache.rejected, (state, action) => {
+        state.getSettingsStatus = 'failed';
+        state.getSettingsError = action.payload;
+      });
+
     // Reset state on logout (using string type to avoid circular imports)
     builder
       .addCase('user/logout/fulfilled', () => initialState)
@@ -580,5 +599,5 @@ const settingsSlice = createSlice({
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, silentUpdateChatStatusRules, silentUpdateChatTeamMembers, silentUpdateSla, resetSettingsData } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, silentUpdateChatStatusRules, silentUpdateChatTeamMembers, silentUpdateSla, silentUpdateTimezone, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;

@@ -1,14 +1,18 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   RefreshControl,
+  Animated,
 } from 'react-native';
-import { Text, ActivityIndicator, Snackbar } from 'react-native-paper';
-import { useDispatch, useSelector } from 'react-redux';
+import { Text, Snackbar } from 'react-native-paper';
+import { useDispatch } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { getSettings } from '../../redux/slices/settingsSlice';
+import { fetchTimezoneWithCache } from '../../redux/cacheThunks';
+import { cacheManager } from '../../database/CacheManager';
+import { useFocusEffect } from '@react-navigation/native';
+import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
 import { InfoBanner, ShadowCard } from '../../components/common';
 
@@ -31,6 +35,121 @@ const TIMEZONE_REGIONS = {
   'UTC': { region: 'UTC', city: 'Coordinated Universal Time', country: 'UTC', flag: '' },
 };
 
+// Skeleton Pulse Component
+const SkeletonPulse = ({ style }) => {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+  return <Animated.View style={[{ backgroundColor: colors.grey[200], borderRadius: 6 }, style, { opacity }]} />;
+};
+
+// Layout-Matched Skeleton for TimeZone Screen
+const TimeZoneSkeleton = () => (
+  <View style={styles.container}>
+    <View style={styles.scrollContent}>
+      {/* Info Banner Skeleton */}
+      <View style={skeletonStyles.infoBanner}>
+        <SkeletonPulse style={{ width: 18, height: 18, borderRadius: 9 }} />
+        <SkeletonPulse style={{ flex: 1, height: 14, borderRadius: 4 }} />
+      </View>
+
+      {/* Timezone Card Skeleton */}
+      <View style={skeletonStyles.timezoneCard}>
+        {/* Clock Section Skeleton */}
+        <View style={skeletonStyles.clockSection}>
+          <SkeletonPulse style={{ width: 80, height: 80, borderRadius: 40 }} />
+          <SkeletonPulse style={{ width: 180, height: 32, borderRadius: 6, marginTop: 16 }} />
+          <SkeletonPulse style={{ width: 220, height: 14, borderRadius: 4, marginTop: 8 }} />
+        </View>
+
+        {/* Details Section Skeleton */}
+        <View style={skeletonStyles.detailsSection}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={skeletonStyles.detailCard}>
+              <SkeletonPulse style={{ width: 44, height: 44, borderRadius: 12 }} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <SkeletonPulse style={{ width: 70, height: 10, borderRadius: 3 }} />
+                <SkeletonPulse style={{ width: 140, height: 14, borderRadius: 4 }} />
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Usage Card Skeleton */}
+      <View style={skeletonStyles.usageCard}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <SkeletonPulse style={{ width: 20, height: 20, borderRadius: 10 }} />
+          <SkeletonPulse style={{ width: 160, height: 15, borderRadius: 4 }} />
+        </View>
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+            <SkeletonPulse style={{ width: 38, height: 38, borderRadius: 10 }} />
+            <View style={{ flex: 1, gap: 4 }}>
+              <SkeletonPulse style={{ width: 130, height: 13, borderRadius: 4 }} />
+              <SkeletonPulse style={{ width: '90%', height: 11, borderRadius: 4 }} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  </View>
+);
+
+const skeletonStyles = StyleSheet.create({
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF8E1',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  timezoneCard: {
+    backgroundColor: colors.common.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.grey[200],
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  clockSection: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    backgroundColor: colors.primary.lighter,
+  },
+  detailsSection: {
+    padding: 16,
+    gap: 12,
+  },
+  detailCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: colors.grey[25] || '#FAFAFA',
+    borderRadius: 12,
+    gap: 14,
+  },
+  usageCard: {
+    backgroundColor: colors.common.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.grey[200],
+    padding: 16,
+  },
+});
+
 export default function TimeZoneScreen() {
   const dispatch = useDispatch();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -40,9 +159,15 @@ export default function TimeZoneScreen() {
 
   // Local state for timezone data
   const [timezone, setTimezone] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  const { getSettingsStatus } = useSelector((state) => state.settings);
+  // Refs for cache-first pattern
+  const initialLoadDone = useRef(false);
+  const isLoadingRef = useRef(false);
+  const isFirstFocus = useRef(true);
+
+  // Network state
+  const { isOffline, isNetworkAvailable } = useNetwork();
 
   // Update current time every second
   useEffect(() => {
@@ -53,29 +178,95 @@ export default function TimeZoneScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  // Load timezone data
-  const loadTimezoneData = useCallback(async () => {
-    try {
-      const result = await dispatch(getSettings('timeZone')).unwrap();
-      const data = result.data || result;
-      setTimezone(data.timeZone || '');
-    } catch (error) {
-      // Log:('Error loading timezone:', error);
-      showSnackbar('Failed to load timezone');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [dispatch]);
+  // Helper to apply timezone data to local state
+  const applyTimezoneData = useCallback((data) => {
+    if (!data) return;
+    setTimezone(data.timeZone || data?.timeZone || '');
+  }, []);
 
+  // Initial load — read cache locally for instant display, then fetch fresh from API
   useEffect(() => {
-    loadTimezoneData();
-  }, [loadTimezoneData]);
+    isLoadingRef.current = true;
 
+    // Read cache locally for instant display while API loads
+    cacheManager.getAppSetting('timezone').then((cached) => {
+      if (cached && cached.timeZone !== undefined) {
+        applyTimezoneData(cached);
+        setIsInitialLoading(false);
+      }
+    }).catch(() => {});
+
+    // Always fetch fresh from API to pick up changes made on web
+    dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
+      .then((result) => {
+        const data = result?.data || result || {};
+        applyTimezoneData(data);
+        initialLoadDone.current = true;
+      })
+      .catch(() => {})
+      .finally(() => {
+        isLoadingRef.current = false;
+        setIsInitialLoading(false);
+      });
+  }, []);
+
+  // Network recovery — re-fetch when connectivity restored and data never loaded
+  useEffect(() => {
+    if (isNetworkAvailable && !initialLoadDone.current && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      setIsInitialLoading(true);
+      dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
+        .then((result) => {
+          const data = result?.data || result || {};
+          applyTimezoneData(data);
+          initialLoadDone.current = true;
+        })
+        .catch(() => {})
+        .finally(() => {
+          isLoadingRef.current = false;
+          setIsInitialLoading(false);
+        });
+    }
+  }, [isNetworkAvailable]);
+
+  // Re-fetch when screen regains focus (picks up web dashboard changes)
+  useFocusEffect(
+    useCallback(() => {
+      // Skip on initial mount — the useEffect above already handles the first load
+      if (isFirstFocus.current) {
+        isFirstFocus.current = false;
+        return;
+      }
+      if (!initialLoadDone.current || isOffline) return;
+
+      dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
+        .then((result) => {
+          const data = result?.data || result || {};
+          applyTimezoneData(data);
+        })
+        .catch(() => {});
+    }, [isOffline])
+  );
+
+  // Pull-to-refresh with cache reset & offline guard
   const onRefresh = useCallback(async () => {
+    if (isOffline) return;
     setIsRefreshing(true);
-    await loadTimezoneData();
-    setIsRefreshing(false);
-  }, [loadTimezoneData]);
+    // Clear cache so fresh data is fetched from API
+    await cacheManager.saveAppSetting('timezone', null).catch(() => {});
+    dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
+      .then((result) => {
+        const data = result?.data || result || {};
+        applyTimezoneData(data);
+        initialLoadDone.current = true;
+      })
+      .catch(() => {
+        showSnackbar('Failed to load timezone');
+      })
+      .finally(() => {
+        setIsRefreshing(false);
+      });
+  }, [dispatch, isOffline, applyTimezoneData]);
 
   const showSnackbar = (message) => {
     setSnackbarMessage(message);
@@ -164,16 +355,26 @@ export default function TimeZoneScreen() {
   const { time, date } = formatTimeInTimezone();
   const utcOffset = getUTCOffset();
 
-  // Loading State
-  if (isLoading) {
+  // Offline with no data — only show if data was NEVER loaded
+  if (isOffline && !initialLoadDone.current && !timezone) {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Loading timezone...</Text>
+        <View style={styles.offlineBox}>
+          <View style={styles.offlineIconContainer}>
+            <Icon name="wifi-off" size={64} color="#DC2626" />
+          </View>
+          <Text style={styles.offlineTitle}>You're Offline</Text>
+          <Text style={styles.offlineSubtitle}>
+            Connect to the internet to load timezone configuration.{'\n'}Previously loaded data will appear here.
+          </Text>
         </View>
       </View>
     );
+  }
+
+  // Loading State — skeleton instead of spinner
+  if (isInitialLoading && !timezone && !isOffline) {
+    return <TimeZoneSkeleton />;
   }
 
   return (
@@ -340,26 +541,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.neutral,
   },
 
-  // Loading
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 50,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: colors.text.secondary,
-  },
-
   // Scroll Content
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 80,
   },
-
 
   // Timezone Card
   timezoneCard: {
@@ -508,6 +695,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.secondary,
     lineHeight: 16,
+  },
+
+  // Offline State
+  offlineBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  offlineIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 
   // Bottom Spacing

@@ -2388,6 +2388,75 @@ async function fetchSlaFromServer() {
   return data?.sla || {};
 }
 
+/**
+ * Fetch Time Zone configuration with cache-first strategy.
+ * Cache hit → return cached timezone instantly, silently refresh from API in background.
+ * Cache miss or forceRefresh → fetch from API, save to cache, return.
+ * Offline fallback → return cached data if available.
+ */
+export const fetchTimezoneWithCache = createAsyncThunk(
+  'settings/fetchTimezoneWithCache',
+  async (params = {}, { dispatch, rejectWithValue }) => {
+    try {
+      const { forceRefresh = false } = params;
+
+      if (!forceRefresh) {
+        const cached = await cacheManager.getAppSetting('timezone');
+
+        if (cached) {
+          // Silently refresh from server in background
+          fetchTimezoneFromServer()
+            .then((freshData) => {
+              if (freshData) {
+                const { silentUpdateTimezone } = require('./slices/settingsSlice');
+                dispatch(silentUpdateTimezone(freshData));
+                cacheManager.saveAppSetting('timezone', freshData).catch(() => {});
+              }
+            })
+            .catch(() => {});
+
+          return { data: cached, fromCache: true };
+        }
+      }
+
+      // Cache miss or force refresh — fetch from server
+      const freshData = await fetchTimezoneFromServer();
+      await cacheManager.saveAppSetting('timezone', freshData);
+      return { data: freshData, fromCache: false };
+    } catch (error) {
+      // Offline fallback — try cache
+      try {
+        const cached = await cacheManager.getAppSetting('timezone');
+        if (cached) {
+          return { data: cached, fromCache: true };
+        }
+      } catch (cacheErr) {
+        // Cache read also failed
+      }
+
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+/**
+ * Fetch Time Zone configuration from API.
+ * @returns {Promise<Object>} Timezone object { timeZone }
+ */
+async function fetchTimezoneFromServer() {
+  const response = await callApi(
+    `${endpoints.settings.getSettings}?keys=timeZone`,
+    httpMethods.GET
+  );
+
+  if (response.status === 'error') {
+    throw new Error(response.message || 'Failed to fetch timezone configuration');
+  }
+
+  const data = response.data || response;
+  return { timeZone: data?.timeZone || '' };
+}
+
 export default {
   fetchChatsWithCache,
   fetchConversationWithCache,
@@ -2421,4 +2490,5 @@ export default {
   fetchChatStatusRulesWithCache,
   fetchChatTeamMembersWithCache,
   fetchSlaWithCache,
+  fetchTimezoneWithCache,
 };
