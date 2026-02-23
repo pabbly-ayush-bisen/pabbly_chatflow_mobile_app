@@ -16,7 +16,6 @@ import { colors } from '../theme/colors';
 import ShadowCard from '../components/common/ShadowCard';
 import ChatflowLogo from '../components/ChatflowLogo';
 import { useNetwork } from '../contexts/NetworkContext';
-import OfflineBanner from '../components/common/OfflineBanner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_GAP = 12;
@@ -218,12 +217,10 @@ export default function GetHelpScreen() {
 
   return (
     <View style={styles.container}>
-      {isOffline && <OfflineBanner />}
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 24 },
-          isOffline && { paddingTop: 44 },
         ]}
         showsVerticalScrollIndicator={false}
       >
