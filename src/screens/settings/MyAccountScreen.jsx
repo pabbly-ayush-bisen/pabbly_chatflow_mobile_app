@@ -12,7 +12,7 @@ import { useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
+import ShadowCard from '../../components/common/ShadowCard';
 
 export default function MyAccountScreen() {
   const { user, activeWaNumber, teamMemberStatus } = useSelector((state) => state.user);
@@ -232,7 +232,7 @@ export default function MyAccountScreen() {
             <Icon name="account-details-outline" size={20} color={colors.text.secondary} />
             <Text style={styles.sectionTitle}>Account Details</Text>
           </View>
-          <View style={styles.infoCard}>
+          <ShadowCard variant="card" style={styles.infoCard}>
             {accountItems.map((item, index) => (
               <View
                 key={index}
@@ -258,7 +258,7 @@ export default function MyAccountScreen() {
                 )}
               </View>
             ))}
-          </View>
+          </ShadowCard>
         </View>
 
         {/* Quick Actions Section */}
@@ -267,7 +267,7 @@ export default function MyAccountScreen() {
             <Icon name="lightning-bolt-outline" size={20} color={colors.text.secondary} />
             <Text style={styles.sectionTitle}>Quick Actions</Text>
           </View>
-          <View style={styles.actionsCard}>
+          <ShadowCard variant="card" style={styles.actionsCard}>
             {quickActions.map((action, index) => (
               <React.Fragment key={index}>
                 <TouchableOpacity
@@ -289,7 +289,7 @@ export default function MyAccountScreen() {
                 {index < quickActions.length - 1 && <View style={styles.actionDivider} />}
               </React.Fragment>
             ))}
-          </View>
+          </ShadowCard>
         </View>
 
         {/* Info Note */}
@@ -535,7 +535,6 @@ const styles = StyleSheet.create({
 
   // Info Card
   infoCard: {
-    ...cardStyles.card,
     overflow: 'hidden',
   },
   infoRow: {
@@ -588,7 +587,6 @@ const styles = StyleSheet.create({
 
   // Actions Card
   actionsCard: {
-    ...cardStyles.card,
     overflow: 'hidden',
   },
   actionItem: {

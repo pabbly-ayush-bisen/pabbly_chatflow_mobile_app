@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { cardStyles } from '../theme/cardStyles';
+import ShadowCard from '../components/common/ShadowCard';
 import ChatflowLogo from '../components/ChatflowLogo';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -160,32 +160,13 @@ export default function GetHelpScreen() {
       const video2 = videoTutorials[i + 1];
       rows.push(
         <View key={i} style={styles.videoRow}>
-          <TouchableOpacity
-            style={styles.videoCard}
-            onPress={() => handleOpenWebsite(video1.youtubeUrl)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.thumbnailContainer}>
-              <Image source={video1.thumbnail} style={styles.thumbnailImage} resizeMode="cover" />
-              <View style={styles.playOverlay}>
-                <View style={styles.playButton}>
-                  <Icon name="play" size={20} color={colors.common.white} />
-                </View>
-              </View>
-            </View>
-            <View style={styles.videoInfo}>
-              <Text style={styles.videoTitle} numberOfLines={2}>{video1.title}</Text>
-            </View>
-          </TouchableOpacity>
-
-          {video2 && (
+          <ShadowCard variant="flat" style={styles.videoCard}>
             <TouchableOpacity
-              style={styles.videoCard}
-              onPress={() => handleOpenWebsite(video2.youtubeUrl)}
+              onPress={() => handleOpenWebsite(video1.youtubeUrl)}
               activeOpacity={0.8}
             >
               <View style={styles.thumbnailContainer}>
-                <Image source={video2.thumbnail} style={styles.thumbnailImage} resizeMode="cover" />
+                <Image source={video1.thumbnail} style={styles.thumbnailImage} resizeMode="cover" />
                 <View style={styles.playOverlay}>
                   <View style={styles.playButton}>
                     <Icon name="play" size={20} color={colors.common.white} />
@@ -193,9 +174,30 @@ export default function GetHelpScreen() {
                 </View>
               </View>
               <View style={styles.videoInfo}>
-                <Text style={styles.videoTitle} numberOfLines={2}>{video2.title}</Text>
+                <Text style={styles.videoTitle} numberOfLines={2}>{video1.title}</Text>
               </View>
             </TouchableOpacity>
+          </ShadowCard>
+
+          {video2 && (
+            <ShadowCard variant="flat" style={styles.videoCard}>
+              <TouchableOpacity
+                onPress={() => handleOpenWebsite(video2.youtubeUrl)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.thumbnailContainer}>
+                  <Image source={video2.thumbnail} style={styles.thumbnailImage} resizeMode="cover" />
+                  <View style={styles.playOverlay}>
+                    <View style={styles.playButton}>
+                      <Icon name="play" size={20} color={colors.common.white} />
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.videoInfo}>
+                  <Text style={styles.videoTitle} numberOfLines={2}>{video2.title}</Text>
+                </View>
+              </TouchableOpacity>
+            </ShadowCard>
           )}
         </View>
       );
@@ -248,18 +250,19 @@ export default function GetHelpScreen() {
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.quickActionsGrid}>
             {quickActions.map((action, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.quickActionCard}
-                onPress={action.onPress}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.quickActionIconBox, { backgroundColor: action.bgColor }]}>
-                  <Icon name={action.icon} size={22} color={action.color} />
-                </View>
-                <Text style={styles.quickActionTitle}>{action.title}</Text>
-                <Text style={styles.quickActionDesc}>{action.description}</Text>
-              </TouchableOpacity>
+              <ShadowCard key={index} variant="flat" style={styles.quickActionCard}>
+                <TouchableOpacity
+                  onPress={action.onPress}
+                  activeOpacity={0.7}
+                  style={styles.quickActionCardInner}
+                >
+                  <View style={[styles.quickActionIconBox, { backgroundColor: action.bgColor }]}>
+                    <Icon name={action.icon} size={22} color={action.color} />
+                  </View>
+                  <Text style={styles.quickActionTitle}>{action.title}</Text>
+                  <Text style={styles.quickActionDesc}>{action.description}</Text>
+                </TouchableOpacity>
+              </ShadowCard>
             ))}
           </View>
         </View>
@@ -398,7 +401,6 @@ const styles = StyleSheet.create({
     gap: CARD_GAP,
   },
   videoCard: {
-    ...cardStyles.cardFlat,
     width: VIDEO_CARD_WIDTH,
     overflow: 'hidden',
   },
@@ -446,8 +448,9 @@ const styles = StyleSheet.create({
     gap: CARD_GAP,
   },
   quickActionCard: {
-    ...cardStyles.cardFlat,
     width: VIDEO_CARD_WIDTH,
+  },
+  quickActionCardInner: {
     padding: 14,
     alignItems: 'flex-start',
   },

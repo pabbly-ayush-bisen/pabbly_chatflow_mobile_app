@@ -21,11 +21,10 @@ import { updateSettings, silentUpdateInboxSettings } from '../../redux/slices/se
 import { fetchInboxSettingsWithCache } from '../../redux/cacheThunks';
 import { fetchAllTemplates } from '../../redux/slices/templateSlice';
 import { colors, chatColors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
 import { cacheManager } from '../../database/CacheManager';
-import { MessagePreviewBubble, InfoBanner } from '../../components/common';
+import { MessagePreviewBubble, InfoBanner, ShadowCard } from '../../components/common';
 import { getEffectiveMessageType, getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
 
 // Generate hours array (0-23)
@@ -875,7 +874,7 @@ export default function InboxSettingsScreen() {
     const isUpdatingOffHour = updatingKey === offHourKey;
 
     return (
-      <View style={styles.card}>
+      <ShadowCard variant="card" style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={[styles.iconBox, styles.iconBoxGreen]}>
             <Icon name="message-text-outline" size={18} color="#16A34A" />
@@ -929,7 +928,7 @@ export default function InboxSettingsScreen() {
           </View>
           {renderMessagePreview('offHour')}
         </View>
-      </View>
+      </ShadowCard>
     );
   };
 
@@ -939,7 +938,7 @@ export default function InboxSettingsScreen() {
     const enabledDaysCount = DAYS_OF_WEEK.filter(day => workingHours[day]?.enabled).length;
 
     return (
-      <View style={styles.card}>
+      <ShadowCard variant="card" style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={[styles.iconBox, styles.iconBoxPurple]}>
             <Icon name="clock-time-four-outline" size={18} color="#8B5CF6" />
@@ -1050,7 +1049,7 @@ export default function InboxSettingsScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </ShadowCard>
     );
   };
 
@@ -1062,7 +1061,7 @@ export default function InboxSettingsScreen() {
     const isUpdatingAiAutoReply = updatingKey === aiAutoReplyKey;
 
     return (
-      <View style={styles.card}>
+      <ShadowCard variant="card" style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={[styles.iconBox, styles.iconBoxOrange]}>
             <Icon name="robot-outline" size={18} color="#F97316" />
@@ -1146,7 +1145,7 @@ export default function InboxSettingsScreen() {
             </View>
           )}
         </View>
-      </View>
+      </ShadowCard>
     );
   };
 
@@ -1473,7 +1472,6 @@ const styles = StyleSheet.create({
   },
   // Card
   card: {
-    ...cardStyles.card,
     marginBottom: 16,
   },
   cardHeader: {

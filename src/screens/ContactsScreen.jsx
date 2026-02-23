@@ -599,7 +599,7 @@ export default function ContactsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
 
   // Loading
@@ -638,6 +638,8 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
     height: 48,
+    borderWidth: 1,
+    borderColor: colors.grey[300],
   },
   searchInput: {
     fontSize: 15,

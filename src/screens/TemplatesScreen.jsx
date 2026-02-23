@@ -19,7 +19,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { resetTemplates } from '../redux/slices/templateSlice';
 import { fetchTemplatesWithCache, fetchTemplateStatsWithCache } from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
-import { cardStyles } from '../theme/cardStyles';
+import ShadowCard from '../components/common/ShadowCard';
 import { TemplatesListSkeleton, MessagePreviewBubble } from '../components/common';
 import { getTemplateHeader, getCarouselCards, getLimitedTimeOffer } from '../components/common/MessagePreview';
 import { useNetwork } from '../contexts/NetworkContext';
@@ -260,53 +260,54 @@ export default function TemplatesScreen() {
     const formatConfig = FORMAT_CONFIG[detectedFormat] || FORMAT_CONFIG.TEXT;
 
     return (
-      <TouchableOpacity
-        style={styles.templateCard}
-        onPress={() => handlePreview(item)}
-        activeOpacity={0.8}
-      >
-        {/* Card Content */}
-        <View style={styles.cardContent}>
-          {/* Top Row: Name and Status */}
-          <View style={styles.cardTopRow}>
-            <Text style={styles.templateName} numberOfLines={1}>{item.name}</Text>
-            <View style={[styles.statusChip, { backgroundColor: statusConfig.color + '15' }]}>
-              <View style={[styles.statusDot, { backgroundColor: statusConfig.color }]} />
-              <Text style={[styles.statusChipText, { color: statusConfig.color }]}>
-                {statusConfig.label}
-              </Text>
+      <ShadowCard variant="card" style={styles.templateCard}>
+        <TouchableOpacity
+          onPress={() => handlePreview(item)}
+          activeOpacity={0.8}
+        >
+          {/* Card Content */}
+          <View style={styles.cardContent}>
+            {/* Top Row: Name and Status */}
+            <View style={styles.cardTopRow}>
+              <Text style={styles.templateName} numberOfLines={1}>{item.name}</Text>
+              <View style={[styles.statusChip, { backgroundColor: statusConfig.color + '15' }]}>
+                <View style={[styles.statusDot, { backgroundColor: statusConfig.color }]} />
+                <Text style={[styles.statusChipText, { color: statusConfig.color }]}>
+                  {statusConfig.label}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          {/* Bottom Row: Type, Format, Language, Preview */}
-          <View style={styles.cardBottomRow}>
-            <View style={styles.cardTags}>
-              <View style={[styles.chip, { backgroundColor: typeConfig.color + '12' }]}>
-                <Icon name="tag-outline" size={12} color={typeConfig.color} />
-                <Text style={[styles.chipText, { color: typeConfig.color }]}>
-                  {typeConfig.label}
-                </Text>
+            {/* Bottom Row: Type, Format, Language, Preview */}
+            <View style={styles.cardBottomRow}>
+              <View style={styles.cardTags}>
+                <View style={[styles.chip, { backgroundColor: typeConfig.color + '12' }]}>
+                  <Icon name="tag-outline" size={12} color={typeConfig.color} />
+                  <Text style={[styles.chipText, { color: typeConfig.color }]}>
+                    {typeConfig.label}
+                  </Text>
+                </View>
+                <View style={[styles.chip, { backgroundColor: formatConfig.color + '12' }]}>
+                  <Icon name={formatConfig.icon} size={12} color={formatConfig.color} />
+                  <Text style={[styles.chipText, { color: formatConfig.color }]}>
+                    {formatConfig.label}
+                  </Text>
+                </View>
+                <View style={styles.langChip}>
+                  <Text style={styles.langChipText}>{item.language?.toUpperCase() || 'EN'}</Text>
+                </View>
               </View>
-              <View style={[styles.chip, { backgroundColor: formatConfig.color + '12' }]}>
-                <Icon name={formatConfig.icon} size={12} color={formatConfig.color} />
-                <Text style={[styles.chipText, { color: formatConfig.color }]}>
-                  {formatConfig.label}
-                </Text>
-              </View>
-              <View style={styles.langChip}>
-                <Text style={styles.langChipText}>{item.language?.toUpperCase() || 'EN'}</Text>
-              </View>
+              <TouchableOpacity
+                style={styles.previewBtn}
+                onPress={() => handlePreview(item)}
+                activeOpacity={0.7}
+              >
+                <Icon name="eye-outline" size={16} color={colors.primary.main} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.previewBtn}
-              onPress={() => handlePreview(item)}
-              activeOpacity={0.7}
-            >
-              <Icon name="eye-outline" size={16} color={colors.primary.main} />
-            </TouchableOpacity>
           </View>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </ShadowCard>
     );
   };
 
@@ -697,6 +698,8 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
     height: 48,
+    borderWidth: 1,
+    borderColor: colors.grey[300],
   },
   searchInput: {
     fontSize: 15,
@@ -782,7 +785,6 @@ const styles = StyleSheet.create({
 
   // Template Card - Modern Design
   templateCard: {
-    ...cardStyles.card,
     marginBottom: 10,
   },
   cardContent: {

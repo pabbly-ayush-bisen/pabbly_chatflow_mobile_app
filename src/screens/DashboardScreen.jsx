@@ -11,7 +11,7 @@ import {
   StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Text, ActivityIndicator, Button, Surface } from 'react-native-paper';
+import { Text, ActivityIndicator, Button } from 'react-native-paper';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
@@ -36,7 +36,7 @@ import {
   fetchSharedAccountsWithCache,
 } from '../redux/cacheThunks';
 import { colors } from '../theme/colors';
-import { cardStyles } from '../theme/cardStyles';
+import ShadowCard from '../components/common/ShadowCard';
 import { clearInboxData, fetchChats } from '../redux/slices/inboxSlice';
 import { clearContactsData } from '../redux/slices/contactSlice';
 import { useNetwork } from '../contexts/NetworkContext';
@@ -607,7 +607,7 @@ export default function DashboardScreen() {
     return (
       <View style={styles.cardList}>
         {teamMembers.map((m, index) => (
-          <Surface key={m?._id || m?.email || index} style={styles.memberPreviewCard} elevation={0}>
+          <ShadowCard key={m?._id || m?.email || index} variant="flat" style={styles.memberPreviewCard}>
             <View style={styles.memberPreviewRow}>
               <View style={styles.memberAvatar}>
                 <Text style={styles.memberAvatarText}>
@@ -628,7 +628,7 @@ export default function DashboardScreen() {
                 </Text>
               </View>
             </View>
-          </Surface>
+          </ShadowCard>
         ))}
       </View>
     );
@@ -670,7 +670,7 @@ export default function DashboardScreen() {
           const sharedByEmail = row?.email || 'Unknown';
 
           return (
-            <Surface key={key} style={styles.sharedCard} elevation={0}>
+            <ShadowCard key={key} variant="flat" style={styles.sharedCard}>
               <View style={styles.sharedCardContent}>
                 {/* WhatsApp Icon */}
                 <View style={styles.sharedIconBox}>
@@ -715,7 +715,7 @@ export default function DashboardScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </Surface>
+            </ShadowCard>
           );
         })}
 
@@ -1425,7 +1425,6 @@ const styles = StyleSheet.create({
 
   // Team Members preview cards
   memberPreviewCard: {
-    ...cardStyles.cardFlat,
     padding: 12,
   },
   memberPreviewRow: {
@@ -1494,7 +1493,6 @@ const styles = StyleSheet.create({
 
   // Shared Accounts - Clean design with Access button
   sharedCard: {
-    ...cardStyles.cardFlat,
   },
   sharedCardContent: {
     flexDirection: 'row',

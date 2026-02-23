@@ -10,8 +10,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { getSettings } from '../../redux/slices/settingsSlice';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
-import { InfoBanner } from '../../components/common';
+import { InfoBanner, ShadowCard } from '../../components/common';
 
 // Common timezone regions
 const TIMEZONE_REGIONS = {
@@ -198,7 +197,7 @@ export default function TimeZoneScreen() {
         />
 
         {/* Main Timezone Card */}
-        <View style={styles.timezoneCard}>
+        <ShadowCard variant="card" style={styles.timezoneCard}>
           {timezone ? (
             <>
               {/* Clock Display */}
@@ -260,10 +259,10 @@ export default function TimeZoneScreen() {
               </Text>
             </View>
           )}
-        </View>
+        </ShadowCard>
 
         {/* Usage Info Card */}
-        <View style={styles.usageCard}>
+        <ShadowCard variant="card" style={styles.usageCard}>
           <View style={styles.usageHeader}>
             <Icon name="lightbulb-outline" size={20} color={colors.warning.main} />
             <Text style={styles.usageTitle}>Where Timezone is Used</Text>
@@ -318,7 +317,7 @@ export default function TimeZoneScreen() {
               </View>
             </View>
           </View>
-        </View>
+        </ShadowCard>
 
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacing} />
@@ -364,7 +363,6 @@ const styles = StyleSheet.create({
 
   // Timezone Card
   timezoneCard: {
-    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -469,7 +467,6 @@ const styles = StyleSheet.create({
 
   // Usage Card
   usageCard: {
-    ...cardStyles.card,
     padding: 16,
   },
   usageHeader: {

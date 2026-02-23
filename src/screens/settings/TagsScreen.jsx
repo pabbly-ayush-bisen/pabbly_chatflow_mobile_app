@@ -16,8 +16,7 @@ import { cacheManager } from '../../database/CacheManager';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
-import { InfoBanner } from '../../components/common';
+import { InfoBanner, ShadowCard } from '../../components/common';
 
 const PAGE_SIZE = 10;
 
@@ -476,7 +475,7 @@ export default function TagsScreen() {
     const contactCount = item.contactCount ?? 0;
 
     return (
-      <View style={styles.tagCard}>
+      <ShadowCard variant="card" style={styles.tagCard}>
         <View style={styles.cardContent}>
           {/* Top Row: Tag Name and Auto-Tag Status Badge */}
           <View style={styles.cardTopRow}>
@@ -570,7 +569,7 @@ export default function TagsScreen() {
 
           </View>
         </View>
-      </View>
+      </ShadowCard>
     );
   };
 
@@ -709,6 +708,8 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
     height: 48,
+    borderWidth: 1,
+    borderColor: colors.grey[300],
   },
   searchInput: {
     fontSize: 15,
@@ -764,7 +765,6 @@ const styles = StyleSheet.create({
 
   // Tag Card - Template style
   tagCard: {
-    ...cardStyles.card,
   },
   cardContent: {
     padding: 16,
