@@ -19,7 +19,7 @@ import { cacheManager } from '../database/CacheManager';
 import { useFocusEffect } from '@react-navigation/native';
 import { useNetwork } from '../contexts/NetworkContext';
 import { colors } from '../theme/colors';
-import { cardStyles } from '../theme/cardStyles';
+import ShadowCard from '../components/common/ShadowCard';
 import { format, formatDistanceToNow } from 'date-fns';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -72,7 +72,7 @@ const STATUS_CONFIG = {
 const SkeletonBox = ({ style }) => <View style={[styles.skeleton, style]} />;
 
 const AssistantCardSkeleton = () => (
-  <View style={styles.card}>
+  <ShadowCard variant="card" style={styles.card}>
     {/* Provider Icon Skeleton */}
     <View style={styles.skeletonProviderIcon}>
       <SkeletonBox style={{ width: 48, height: 48, borderRadius: 12 }} />
@@ -95,7 +95,7 @@ const AssistantCardSkeleton = () => (
         <SkeletonBox style={{ width: 130, height: 12 }} />
       </View>
     </View>
-  </View>
+  </ShadowCard>
 );
 
 // Skeleton List for loading state
@@ -570,80 +570,82 @@ export default function AIAssistantScreen() {
     const updatedDate = formatRelativeDate(item.updatedAt);
 
     return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => handleAssistantPress(item)}
-        activeOpacity={0.8}
-      >
-        {/* Provider Icon - Left Side */}
-        <View style={[styles.providerIconContainer, { backgroundColor: provider.bgColor }]}>
-          <Icon name={provider.icon} size={24} color={provider.color} />
-        </View>
-
-        <View style={styles.cardContent}>
-          {/* Top Row: Name and Status */}
-          <View style={styles.cardTopRow}>
-            <Text style={styles.assistantName} numberOfLines={1}>
-              {item.name || 'Unnamed Assistant'}
-            </Text>
-            <View style={[styles.statusChip, { backgroundColor: statusConfig.color + '15' }]}>
-              <View style={[styles.statusDot, { backgroundColor: statusConfig.color }]} />
-              <Text style={[styles.statusChipText, { color: statusConfig.color }]}>
-                {statusConfig.label}
-              </Text>
-            </View>
+      <ShadowCard variant="card" style={styles.card}>
+        <TouchableOpacity
+          style={styles.cardTouchable}
+          onPress={() => handleAssistantPress(item)}
+          activeOpacity={0.8}
+        >
+          {/* Provider Icon - Left Side */}
+          <View style={[styles.providerIconContainer, { backgroundColor: provider.bgColor }]}>
+            <Icon name={provider.icon} size={24} color={provider.color} />
           </View>
 
-          {/* Middle Row: Model and Provider */}
-          <View style={styles.cardMiddleRow}>
-            <View style={[styles.modelChip, { backgroundColor: model.color + '12' }]}>
-              <Icon name={model.icon} size={14} color={model.color} />
-              <Text style={[styles.modelChipText, { color: model.color }]}>
-                Used AI/Model : {item.modelName || item.model || model.name}
+          <View style={styles.cardContent}>
+            {/* Top Row: Name and Status */}
+            <View style={styles.cardTopRow}>
+              <Text style={styles.assistantName} numberOfLines={1}>
+                {item.name || 'Unnamed Assistant'}
               </Text>
+              <View style={[styles.statusChip, { backgroundColor: statusConfig.color + '15' }]}>
+                <View style={[styles.statusDot, { backgroundColor: statusConfig.color }]} />
+                <Text style={[styles.statusChipText, { color: statusConfig.color }]}>
+                  {statusConfig.label}
+                </Text>
+              </View>
             </View>
-            {item.modelProvider && (
-              <View style={[styles.providerChip, { backgroundColor: provider.color + '10' }]}>
-                <Icon name={provider.icon} size={12} color={provider.color} />
-                <Text style={[styles.providerChipText, { color: provider.color }]}>{provider.name}</Text>
-              </View>
-            )}
-            {item.temperature !== undefined && (
-              <View style={styles.tempChip}>
-                <Icon name="thermometer" size={12} color={colors.text.tertiary} />
-                <Text style={styles.tempChipText}>{item.temperature}</Text>
-              </View>
-            )}
-          </View>
 
-          {/* Bottom Row: Created By, Created At */}
-          <View style={styles.cardBottomRow}>
-            <View style={styles.metaInfo}>
-              <Icon name="account-outline" size={14} color={colors.text.tertiary} />
-              <Text style={styles.metaText} numberOfLines={1}>{createdBy}</Text>
+            {/* Middle Row: Model and Provider */}
+            <View style={styles.cardMiddleRow}>
+              <View style={[styles.modelChip, { backgroundColor: model.color + '12' }]}>
+                <Icon name={model.icon} size={14} color={model.color} />
+                <Text style={[styles.modelChipText, { color: model.color }]}>
+                  Used AI/Model : {item.modelName || item.model || model.name}
+                </Text>
+              </View>
+              {item.modelProvider && (
+                <View style={[styles.providerChip, { backgroundColor: provider.color + '10' }]}>
+                  <Icon name={provider.icon} size={12} color={provider.color} />
+                  <Text style={[styles.providerChipText, { color: provider.color }]}>{provider.name}</Text>
+                </View>
+              )}
+              {item.temperature !== undefined && (
+                <View style={styles.tempChip}>
+                  <Icon name="thermometer" size={12} color={colors.text.tertiary} />
+                  <Text style={styles.tempChipText}>{item.temperature}</Text>
+                </View>
+              )}
             </View>
-            {createdDate && (
+
+            {/* Bottom Row: Created By, Created At */}
+            <View style={styles.cardBottomRow}>
               <View style={styles.metaInfo}>
-                <Icon name="calendar-plus-outline" size={14} color={colors.text.tertiary} />
-                <Text style={styles.metaText}>{createdDate}</Text>
+                <Icon name="account-outline" size={14} color={colors.text.tertiary} />
+                <Text style={styles.metaText} numberOfLines={1}>{createdBy}</Text>
+              </View>
+              {createdDate && (
+                <View style={styles.metaInfo}>
+                  <Icon name="calendar-plus-outline" size={14} color={colors.text.tertiary} />
+                  <Text style={styles.metaText}>{createdDate}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Updated info on separate row if available */}
+            {updatedDate && (
+              <View style={styles.cardUpdateRow}>
+                <Icon name="update" size={13} color={colors.text.tertiary} />
+                <Text style={styles.updateText}>Updated {updatedDate}</Text>
               </View>
             )}
           </View>
 
-          {/* Updated info on separate row if available */}
-          {updatedDate && (
-            <View style={styles.cardUpdateRow}>
-              <Icon name="update" size={13} color={colors.text.tertiary} />
-              <Text style={styles.updateText}>Updated {updatedDate}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Arrow indicator */}
-        <View style={styles.cardArrow}>
-          <Icon name="chevron-right" size={22} color={colors.grey[300]} />
-        </View>
-      </TouchableOpacity>
+          {/* Arrow indicator */}
+          <View style={styles.cardArrow}>
+            <Icon name="chevron-right" size={22} color={colors.grey[300]} />
+          </View>
+        </TouchableOpacity>
+      </ShadowCard>
     );
   };
 
@@ -1081,7 +1083,7 @@ export default function AIAssistantScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.default,
+    backgroundColor: colors.background.neutral,
   },
   scrollContent: {
     paddingBottom: 80,
@@ -1104,6 +1106,8 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
     height: 48,
+    borderWidth: 1,
+    borderColor: colors.grey[300],
   },
   searchInput: {
     fontSize: 15,
@@ -1184,9 +1188,10 @@ const styles = StyleSheet.create({
 
   // Card - Modern Design matching TemplatesScreen
   card: {
-    ...cardStyles.card,
     marginHorizontal: 16,
     marginBottom: 10,
+  },
+  cardTouchable: {
     flexDirection: 'row',
     alignItems: 'center',
   },

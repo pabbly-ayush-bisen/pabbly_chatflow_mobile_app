@@ -4,7 +4,7 @@ import { Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { cardStyles } from '../theme/cardStyles';
+import ShadowCard from '../components/common/ShadowCard';
 
 export default function SettingsScreen({ navigation }) {
 
@@ -95,7 +95,7 @@ export default function SettingsScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         {/* Settings List Card */}
-        <View style={styles.settingsCard}>
+        <ShadowCard variant="flat" style={styles.settingsCard}>
           {settingsItems.map((item, index) => (
             <TouchableOpacity
               key={index}
@@ -116,7 +116,7 @@ export default function SettingsScreen({ navigation }) {
               <Icon name="chevron-right" size={22} color={colors.grey[400]} />
             </TouchableOpacity>
           ))}
-        </View>
+        </ShadowCard>
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -136,7 +136,6 @@ const styles = StyleSheet.create({
 
   // Settings Card
   settingsCard: {
-    ...cardStyles.cardFlat,
     marginBottom: 16,
     overflow: 'hidden',
   },

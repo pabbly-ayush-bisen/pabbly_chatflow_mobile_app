@@ -25,8 +25,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
-import { MessagePreviewBubble, InfoBanner } from '../../components/common';
+import { MessagePreviewBubble, InfoBanner, ShadowCard } from '../../components/common';
 import AddQuickReplyModal from '../../components/settings/AddQuickReplyModal';
 import EditQuickReplyModal from '../../components/settings/EditQuickReplyModal';
 
@@ -562,7 +561,7 @@ export default function QuickRepliesScreen() {
     const date = formatDate(item.createdAt);
 
     return (
-      <View style={styles.replyCard}>
+      <ShadowCard variant="card" style={styles.replyCard}>
         <View style={styles.cardContent}>
           {/* Top Row: Shortcut and Type */}
           <View style={styles.cardTopRow}>
@@ -617,7 +616,7 @@ export default function QuickRepliesScreen() {
             </View>
           </View>
         </View>
-      </View>
+      </ShadowCard>
     );
   };
 
@@ -1022,6 +1021,8 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
     height: 48,
+    borderWidth: 1,
+    borderColor: colors.grey[300],
   },
   searchInput: {
     fontSize: 15,
@@ -1078,7 +1079,6 @@ const styles = StyleSheet.create({
 
   // Card
   replyCard: {
-    ...cardStyles.card,
   },
   cardContent: {
     padding: 14,

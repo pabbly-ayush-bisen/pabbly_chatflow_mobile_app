@@ -18,7 +18,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { colors, chatColors, getAvatarColor } from '../theme/colors';
-import { cardStyles } from '../theme/cardStyles';
+import ShadowCard from '../components/common/ShadowCard';
 import { format, formatDistanceToNow } from 'date-fns';
 import { updateContactChat, setChatStatus, updateChatInList } from '../redux/slices/inboxSlice';
 import { EnableAiAssistantDialog } from '../components/chat';
@@ -518,7 +518,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const renderOverviewTab = () => (
     <View style={styles.tabContent}>
       {/* Contact Info Card */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="information-outline" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>Contact Information</Text>
@@ -565,10 +565,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
             </View>
           </View>
         </View>
-      </View>
+      </ShadowCard>
 
       {/* Chat Status Section */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="message-processing-outline" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>Chat Status</Text>
@@ -610,10 +610,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
         <Text style={styles.statusDescription}>
           {getStatusConfig(currentStatus).description}
         </Text>
-      </View>
+      </ShadowCard>
 
       {/* Chat Owner Section */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="account-check-outline" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>Chat Owner</Text>
@@ -657,10 +657,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
             ? `Team member ${chatOwner.name} is managing this chat.`
             : 'Select a team member to manage this chat.'}
         </Text>
-      </View>
+      </ShadowCard>
 
       {/* Incoming Status Card */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="message-text-lock-outline" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>Incoming Status</Text>
@@ -687,10 +687,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
               ? 'Incoming messages from this contact are allowed.'
               : 'Incoming message status is unknown.'}
         </Text>
-      </View>
+      </ShadowCard>
 
       {/* User Status Card (Opt-in/Opt-out) */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="shield-check-outline" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>User Status</Text>
@@ -717,10 +717,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
               ? 'This contact has opted out of receiving messages.'
               : 'Opt-in status has not been set for this contact.'}
         </Text>
-      </View>
+      </ShadowCard>
 
       {/* Tags Section */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="tag-multiple-outline" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>Tags</Text>
@@ -769,10 +769,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         )}
-      </View>
+      </ShadowCard>
 
       {/* Attributes Section */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="format-list-bulleted" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>Custom Attributes</Text>
@@ -801,10 +801,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         )}
-      </View>
+      </ShadowCard>
 
       {/* Details Section */}
-      <View style={styles.sectionCard}>
+      <ShadowCard variant="card" style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <Icon name="card-account-details-outline" size={20} color={chatColors.primary} />
           <Text style={styles.sectionTitle}>Details</Text>
@@ -828,10 +828,10 @@ const ContactInfoScreen = ({ route, navigation }) => {
             </View>
           )}
         </View>
-      </View>
+      </ShadowCard>
 
       {/* Danger Zone */}
-      <View style={[styles.sectionCard, styles.dangerCard]}>
+      <ShadowCard variant="card" style={[styles.sectionCard, styles.dangerCard]}>
         <TouchableOpacity style={styles.dangerButton}>
           <Icon name="block-helper" size={20} color={colors.error.main} />
           <Text style={styles.dangerButtonText}>Block Contact</Text>
@@ -840,7 +840,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
           <Icon name="delete-outline" size={20} color={colors.error.main} />
           <Text style={styles.dangerButtonText}>Delete Contact</Text>
         </TouchableOpacity>
-      </View>
+      </ShadowCard>
     </View>
   );
 
@@ -848,7 +848,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
   const renderOrdersTab = () => (
     <View style={styles.tabContent}>
       {/* Orders Summary Card */}
-      <View style={styles.ordersSummaryCard}>
+      <ShadowCard variant="card" style={styles.ordersSummaryCard}>
         <View style={styles.ordersSummaryItem}>
           <Text style={styles.ordersSummaryValue}>{orders.length}</Text>
           <Text style={styles.ordersSummaryLabel}>Total Orders</Text>
@@ -867,7 +867,7 @@ const ContactInfoScreen = ({ route, navigation }) => {
           </Text>
           <Text style={styles.ordersSummaryLabel}>Total Spent</Text>
         </View>
-      </View>
+      </ShadowCard>
 
       {/* Orders List */}
       {orders.length > 0 ? (
@@ -876,54 +876,54 @@ const ContactInfoScreen = ({ route, navigation }) => {
           {orders.map((order) => {
             const statusConfig = getOrderStatusConfig(order.status);
             return (
-              <TouchableOpacity
-                key={order._id}
-                style={styles.orderCard}
-                activeOpacity={0.7}
-              >
-                <View style={styles.orderCardHeader}>
-                  <View style={[styles.orderStatusIcon, { backgroundColor: statusConfig.bg }]}>
-                    <Icon name={statusConfig.icon} size={18} color={statusConfig.color} />
-                  </View>
-                  <View style={styles.orderCardInfo}>
-                    <Text style={styles.orderCardId}>{order.reference_id}</Text>
-                    <Text style={styles.orderCardDate}>{formatDate(order.created_at)}</Text>
-                  </View>
-                  <View style={styles.orderCardAmount}>
-                    <Text style={styles.orderCardTotal}>
-                      {order.currency} {order.total.toLocaleString()}
-                    </Text>
-                    <View style={[styles.orderStatusBadge, { backgroundColor: statusConfig.bg }]}>
-                      <Text style={[styles.orderStatusText, { color: statusConfig.color }]}>
-                        {order.status}
+              <ShadowCard key={order._id} variant="card" style={styles.orderCard}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.orderCardHeader}>
+                    <View style={[styles.orderStatusIcon, { backgroundColor: statusConfig.bg }]}>
+                      <Icon name={statusConfig.icon} size={18} color={statusConfig.color} />
+                    </View>
+                    <View style={styles.orderCardInfo}>
+                      <Text style={styles.orderCardId}>{order.reference_id}</Text>
+                      <Text style={styles.orderCardDate}>{formatDate(order.created_at)}</Text>
+                    </View>
+                    <View style={styles.orderCardAmount}>
+                      <Text style={styles.orderCardTotal}>
+                        {order.currency} {order.total.toLocaleString()}
                       </Text>
+                      <View style={[styles.orderStatusBadge, { backgroundColor: statusConfig.bg }]}>
+                        <Text style={[styles.orderStatusText, { color: statusConfig.color }]}>
+                          {order.status}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
 
-                <View style={styles.orderCardFooter}>
-                  <View style={styles.orderCardMeta}>
-                    <Icon name="package-variant" size={14} color={colors.grey[400]} />
-                    <Text style={styles.orderCardMetaText}>
-                      {order.items_count} {order.items_count === 1 ? 'item' : 'items'}
-                    </Text>
+                  <View style={styles.orderCardFooter}>
+                    <View style={styles.orderCardMeta}>
+                      <Icon name="package-variant" size={14} color={colors.grey[400]} />
+                      <Text style={styles.orderCardMetaText}>
+                        {order.items_count} {order.items_count === 1 ? 'item' : 'items'}
+                      </Text>
+                    </View>
+                    <View style={styles.orderCardMeta}>
+                      <Icon
+                        name={order.payment_status === 'paid' ? 'check-circle' : 'clock-outline'}
+                        size={14}
+                        color={order.payment_status === 'paid' ? colors.success.main : colors.warning.main}
+                      />
+                      <Text style={[
+                        styles.orderCardMetaText,
+                        { color: order.payment_status === 'paid' ? colors.success.main : colors.warning.main }
+                      ]}>
+                        {order.payment_status}
+                      </Text>
+                    </View>
+                    <Icon name="chevron-right" size={18} color={colors.grey[400]} />
                   </View>
-                  <View style={styles.orderCardMeta}>
-                    <Icon
-                      name={order.payment_status === 'paid' ? 'check-circle' : 'clock-outline'}
-                      size={14}
-                      color={order.payment_status === 'paid' ? colors.success.main : colors.warning.main}
-                    />
-                    <Text style={[
-                      styles.orderCardMetaText,
-                      { color: order.payment_status === 'paid' ? colors.success.main : colors.warning.main }
-                    ]}>
-                      {order.payment_status}
-                    </Text>
-                  </View>
-                  <Icon name="chevron-right" size={18} color={colors.grey[400]} />
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </ShadowCard>
             );
           })}
         </View>
@@ -1503,7 +1503,6 @@ const styles = StyleSheet.create({
 
   // Quick Actions
   quickActionsCard: {
-    ...cardStyles.card,
     flexDirection: 'row',
     padding: 16,
     marginBottom: 12,
@@ -1528,7 +1527,6 @@ const styles = StyleSheet.create({
 
   // Section Card
   sectionCard: {
-    ...cardStyles.card,
     padding: 16,
     marginBottom: 12,
   },
@@ -1850,7 +1848,6 @@ const styles = StyleSheet.create({
 
   // Orders Tab
   ordersSummaryCard: {
-    ...cardStyles.card,
     flexDirection: 'row',
     padding: 20,
     marginBottom: 16,
@@ -1884,7 +1881,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   orderCard: {
-    ...cardStyles.card,
     padding: 16,
   },
   orderCardHeader: {

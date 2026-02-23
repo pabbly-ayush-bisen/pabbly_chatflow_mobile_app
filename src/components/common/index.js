@@ -9,6 +9,7 @@ export { default as SectionHeader } from './SectionHeader';
 export { default as EmptyState } from './EmptyState';
 export { default as CustomDialog } from './CustomDialog';
 export { default as InfoBanner } from './InfoBanner';
+export { default as ShadowCard } from './ShadowCard';
 export { OfflineBanner, OfflineAlert } from './OfflineBanner';
 
 // Skeleton loading components

@@ -14,8 +14,7 @@ import { cacheManager } from '../../database/CacheManager';
 import { useFocusEffect } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
-import { InfoBanner } from '../../components/common';
+import { InfoBanner, ShadowCard } from '../../components/common';
 
 // SLA screen accent colors (matching Settings/More screen)
 const SLA_COLORS = {
@@ -300,7 +299,7 @@ export default function ConfigureSLAScreen() {
         />
 
         {/* Main SLA Card */}
-        <View style={styles.slaCard}>
+        <ShadowCard variant="card" style={styles.slaCard}>
           <View style={styles.cardHeader}>
             <View style={styles.cardIconBox}>
               <Icon name="clock-check-outline" size={24} color={SLA_COLORS.icon} />
@@ -346,10 +345,10 @@ export default function ConfigureSLAScreen() {
               </Text>
             </View>
           )}
-        </View>
+        </ShadowCard>
 
         {/* Info Card */}
-        <View style={styles.infoCard}>
+        <ShadowCard variant="card" style={styles.infoCard}>
           <View style={styles.infoIconRow}>
             <Icon name="lightbulb-outline" size={20} color="#FF9800" />
             <Text style={styles.infoTitle}>What is SLA?</Text>
@@ -357,7 +356,7 @@ export default function ConfigureSLAScreen() {
           <Text style={styles.infoText}>
             Service Level Agreement (SLA) sets the expected time limit to respond to customer messages. This helps track team performance and ensure timely support.
           </Text>
-        </View>
+        </ShadowCard>
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -385,7 +384,6 @@ const styles = StyleSheet.create({
 
   // SLA Card
   slaCard: {
-    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -494,7 +492,6 @@ const styles = StyleSheet.create({
 
   // Info Card
   infoCard: {
-    ...cardStyles.card,
     padding: 18,
   },
   infoIconRow: {

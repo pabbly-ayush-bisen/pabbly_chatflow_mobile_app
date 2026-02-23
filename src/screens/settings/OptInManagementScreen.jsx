@@ -23,8 +23,7 @@ import { useNetwork } from '../../contexts/NetworkContext';
 import { callApi, endpoints, httpMethods } from '../../utils/axios';
 import { cacheManager } from '../../database/CacheManager';
 import { colors, chatColors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
-import { MessagePreviewBubble, InfoBanner } from '../../components/common';
+import { MessagePreviewBubble, InfoBanner, ShadowCard } from '../../components/common';
 import { getCarouselCards, getLimitedTimeOffer } from '../../components/common/MessagePreview/messagePreviewUtils';
 
 const CHIP_COLORS = [
@@ -541,7 +540,7 @@ export default function OptInManagementScreen() {
     const toggleKey = isOptIn ? 'optInManagement.optInSettings.response.enabled' : 'optInManagement.optOutSettings.response.enabled';
 
     return (
-      <View style={styles.card}>
+      <ShadowCard variant="card" style={styles.card}>
         {/* Header */}
         <View style={styles.cardHeader}>
           <View style={[styles.iconBox, isOptIn ? styles.iconBoxGreen : styles.iconBoxRed]}>
@@ -593,7 +592,7 @@ export default function OptInManagementScreen() {
           </View>
           {renderMessagePreview(type)}
         </View>
-      </View>
+      </ShadowCard>
     );
   };
 
@@ -696,7 +695,6 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
-    ...cardStyles.card,
     marginBottom: 16,
   },
   cardHeader: {

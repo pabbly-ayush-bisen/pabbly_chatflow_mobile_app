@@ -285,7 +285,7 @@ export default function ChatsScreenCached() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.common.white,
+    backgroundColor: colors.background.neutral,
   },
   header: {
     padding: 16,
@@ -328,6 +328,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F2F5',
     elevation: 0,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.grey[300],
   },
   searchInput: {
     fontSize: 15,

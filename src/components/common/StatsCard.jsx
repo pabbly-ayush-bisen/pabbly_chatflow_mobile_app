@@ -2,7 +2,7 @@ import { View, StyleSheet, Dimensions } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
+import ShadowCard from './ShadowCard';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -51,7 +51,7 @@ const StatsCard = ({
   const formattedValue = formatLargeNumber(value);
 
   return (
-    <View style={[styles.container, style]}>
+    <ShadowCard variant="flat" style={[styles.container, style]}>
       <View style={styles.topRow}>
         <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
           <Icon name={icon} size={18} color={iconColor} />
@@ -59,13 +59,12 @@ const StatsCard = ({
         <Text style={styles.label}>{title}</Text>
       </View>
       <Text style={styles.value}>{formattedValue}</Text>
-    </View>
+    </ShadowCard>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    ...cardStyles.cardFlat,
     width: (SCREEN_WIDTH - 44) / 2,
     padding: 14,
   },

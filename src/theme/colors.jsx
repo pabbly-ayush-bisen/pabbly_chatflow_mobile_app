@@ -117,7 +117,7 @@ export const colors = {
   },
   background: {
     paper: '#FFFFFF',
-    default: '#FFFFFF',
+    default: '#F4F6F8',
     neutral: '#F4F6F8',
   },
   divider: 'rgba(145, 158, 171, 0.2)',

@@ -14,8 +14,7 @@ import { cacheManager } from '../../database/CacheManager';
 import { useFocusEffect } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
-import { InfoBanner } from '../../components/common';
+import { InfoBanner, ShadowCard } from '../../components/common';
 
 // Status configurations with labels and colors
 const STATUS_CONFIG = {
@@ -472,7 +471,7 @@ export default function ChatRulesScreen() {
         />
 
         {/* ============ CHAT ASSIGNMENT RULES SECTION ============ */}
-        <View style={styles.sectionCard}>
+        <ShadowCard variant="card" style={styles.sectionCard}>
           {/* Section Header */}
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionIconBox, { backgroundColor: '#E3F2FD' }]}>
@@ -506,10 +505,10 @@ export default function ChatRulesScreen() {
               <Text style={styles.emptyText}>No team members with auto-assignment</Text>
             </View>
           )}
-        </View>
+        </ShadowCard>
 
         {/* ============ CHAT STATUS RULES SECTION ============ */}
-        <View style={styles.sectionCard}>
+        <ShadowCard variant="card" style={styles.sectionCard}>
           {/* Section Header */}
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionIconBox, { backgroundColor: '#E8EAF6' }]}>
@@ -543,7 +542,7 @@ export default function ChatRulesScreen() {
               <Text style={styles.emptyText}>No status rules configured</Text>
             </View>
           )}
-        </View>
+        </ShadowCard>
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -571,7 +570,6 @@ const styles = StyleSheet.create({
 
   // Section Card - Container for each section
   sectionCard: {
-    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
   },

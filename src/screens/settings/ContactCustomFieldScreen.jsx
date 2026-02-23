@@ -15,8 +15,7 @@ import { cacheManager } from '../../database/CacheManager';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useNetwork } from '../../contexts/NetworkContext';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
-import { InfoBanner } from '../../components/common';
+import { InfoBanner, ShadowCard } from '../../components/common';
 
 // Skeleton Pulse Component
 const SkeletonPulse = ({ style }) => {
@@ -290,11 +289,11 @@ export default function ContactCustomFieldScreen() {
     const hasDescription = description.trim().length > 0;
 
     return (
-      <TouchableOpacity
-        activeOpacity={0.8}
-        onPress={() => fieldKey && copyToClipboard(fieldKey)}
-        style={styles.fieldCard}
-      >
+      <ShadowCard variant="card" style={styles.fieldCard}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => fieldKey && copyToClipboard(fieldKey)}
+        >
         <View style={styles.cardContent}>
           {/* Main Row: Field Name (left) | Description (right) */}
           <View style={styles.mainRow}>
@@ -328,7 +327,8 @@ export default function ContactCustomFieldScreen() {
             </View>
           )}
         </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </ShadowCard>
     );
   };
 
@@ -437,7 +437,6 @@ const styles = StyleSheet.create({
 
   // Field Card
   fieldCard: {
-    ...cardStyles.card,
   },
   cardContent: {
     padding: 16,

@@ -4,7 +4,7 @@ import { Text, ActivityIndicator } from 'react-native-paper';
 import { useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
-import { cardStyles } from '../../theme/cardStyles';
+import ShadowCard from '../../components/common/ShadowCard';
 import { getDownloadedMediaSize, clearAllDownloadedMedia } from '../../services/mediaDownloadService';
 
 export default function StorageSettingsScreen() {
@@ -70,7 +70,7 @@ export default function StorageSettingsScreen() {
       showsVerticalScrollIndicator={false}
     >
       {/* Storage Usage Card */}
-      <View style={styles.card}>
+      <ShadowCard variant="card" style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={[styles.iconBox, { backgroundColor: '#E3F2FD' }]}>
             <Icon name="database" size={22} color="#2196F3" />
@@ -89,10 +89,10 @@ export default function StorageSettingsScreen() {
             <Text style={styles.storageSize}>{formatSize(mediaSize)}</Text>
           )}
         </View>
-      </View>
+      </ShadowCard>
 
       {/* Actions Card */}
-      <View style={styles.card}>
+      <ShadowCard variant="card" style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={[styles.iconBox, { backgroundColor: '#FFF3E0' }]}>
             <Icon name="broom" size={22} color="#FF9800" />
@@ -127,7 +127,7 @@ export default function StorageSettingsScreen() {
             />
           )}
         </TouchableOpacity>
-      </View>
+      </ShadowCard>
 
       {/* Info Card */}
       <View style={styles.infoCard}>
@@ -150,7 +150,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   card: {
-    ...cardStyles.card,
     marginBottom: 16,
     overflow: 'hidden',
   },
