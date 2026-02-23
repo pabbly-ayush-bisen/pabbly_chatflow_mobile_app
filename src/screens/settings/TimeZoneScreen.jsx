@@ -8,7 +8,7 @@ import {
   InteractionManager,
 } from 'react-native';
 import { Text, Snackbar } from 'react-native-paper';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { fetchTimezoneWithCache } from '../../redux/cacheThunks';
 import { cacheManager } from '../../database/CacheManager';
@@ -153,17 +153,18 @@ const skeletonStyles = StyleSheet.create({
 
 export default function TimeZoneScreen() {
   const dispatch = useDispatch();
+  const reduxTimezone = useSelector((state) => state.settings?.settings?.timeZone || '');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Local state for timezone data
-  const [timezone, setTimezone] = useState('');
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // Local state — seeded from Redux so reopens skip skeleton entirely
+  const [timezone, setTimezone] = useState(reduxTimezone);
+  const [isInitialLoading, setIsInitialLoading] = useState(!reduxTimezone);
 
   // Refs for cache-first pattern
-  const initialLoadDone = useRef(false);
+  const initialLoadDone = useRef(!!reduxTimezone);
   const isLoadingRef = useRef(false);
   const isFirstFocus = useRef(true);
 
