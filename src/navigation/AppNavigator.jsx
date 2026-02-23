@@ -23,6 +23,7 @@ import TemplatesScreen from '../screens/TemplatesScreen';
 import BroadcastScreen from '../screens/BroadcastScreen';
 import CreateBroadcastScreen from '../screens/CreateBroadcastScreen';
 import AIAssistantScreen from '../screens/AIAssistantScreen';
+import ActivityLogScreen from '../screens/ActivityLogScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import GetHelpScreen from '../screens/GetHelpScreen';
 
@@ -78,7 +79,7 @@ function CustomDrawerContent(props) {
     { title: 'Broadcast', description: 'Send bulk messages to contacts', icon: 'bullhorn-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
     { title: 'Flow', description: 'Create automated workflows', icon: 'sitemap-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
     { title: 'Catalog', description: 'Manage product catalogs', icon: 'shopping-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
-    { title: 'Activity Log', description: 'View system activity', icon: 'history', showForTeamMember: false, url: 'https://chatflow.pabbly.com' },
+
     { title: 'WhatsApp Payments', description: 'Payment integration settings', icon: 'credit-card-outline', showForTeamMember: true, url: 'https://chatflow.pabbly.com' },
     { title: 'Webhook and API', description: 'Configure webhooks', icon: 'webhook', showForTeamMember: false, url: 'https://chatflow.pabbly.com' },
   ].filter(feature => isTeamMemberLoggedIn ? feature.showForTeamMember : true);
@@ -124,6 +125,20 @@ function CustomDrawerContent(props) {
         });
       },
       color: colors.secondary.main,
+    },
+    // Activity Log is owner-only — hidden for team members
+    !isTeamMemberLoggedIn && {
+      title: 'Activity Log',
+      description: 'View system activity',
+      icon: 'history',
+      onPress: () => {
+        navigation.closeDrawer();
+        navigation.navigate('MainTabs', {
+          screen: 'MoreTab',
+          params: { screen: 'ActivityLog' },
+        });
+      },
+      color: colors.info.main,
     },
     {
       title: 'Settings',
@@ -172,7 +187,7 @@ function CustomDrawerContent(props) {
       >
         {/* Menu Items */}
         <View style={styles.drawerMenuContainer}>
-          {menuItems.map((item, index) => (
+          {menuItems.filter(Boolean).map((item, index) => (
             <TouchableOpacity
               key={index}
               style={styles.drawerMenuItem}
@@ -513,6 +528,11 @@ function MoreStackNavigator() {
         name="AIAssistant"
         component={AIAssistantScreen}
         options={({ navigation }) => getChildScreenOptions(navigation, 'AI Assistant')}
+      />
+      <MoreStack.Screen
+        name="ActivityLog"
+        component={ActivityLogScreen}
+        options={({ navigation }) => getChildScreenOptions(navigation, 'Activity Log')}
       />
       <MoreStack.Screen
         name="Settings"
