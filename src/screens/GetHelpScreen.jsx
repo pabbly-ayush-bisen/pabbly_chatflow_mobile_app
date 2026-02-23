@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   StyleSheet,
@@ -10,12 +10,13 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text, Snackbar } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import ShadowCard from '../components/common/ShadowCard';
 import ChatflowLogo from '../components/ChatflowLogo';
 import { useNetwork } from '../contexts/NetworkContext';
+import { showWarning, showError } from '../utils/toast';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_GAP = 12;
@@ -27,8 +28,6 @@ const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 90 : 70;
 
 export default function GetHelpScreen() {
   const appVersion = '1.0.0';
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
   const insets = useSafeAreaInsets();
   const { isOffline } = useNetwork();
 
@@ -122,7 +121,7 @@ export default function GetHelpScreen() {
 
   const handleEmailSupport = () => {
     if (isOffline) {
-      showSnackbar("You're offline. Email requires an internet connection.");
+      showWarning("Email requires an internet connection.", "You're Offline");
       return;
     }
     const email = 'support@pabbly.com';
@@ -135,15 +134,15 @@ export default function GetHelpScreen() {
         if (supported) {
           return Linking.openURL(url);
         } else {
-          showSnackbar('Unable to open email client');
+          showError('Unable to open email client.', 'Error');
         }
       })
-      .catch(() => showSnackbar('Failed to open email'));
+      .catch(() => showError('Failed to open email.', 'Error'));
   };
 
   const handleOpenWebsite = (url) => {
     if (isOffline) {
-      showSnackbar("You're offline. Please check your internet connection.");
+      showWarning("Please check your internet connection.", "You're Offline");
       return;
     }
     Linking.canOpenURL(url)
@@ -151,15 +150,10 @@ export default function GetHelpScreen() {
         if (supported) {
           return Linking.openURL(url);
         } else {
-          showSnackbar('Unable to open link');
+          showError('Unable to open link.', 'Error');
         }
       })
-      .catch(() => showSnackbar('Failed to open link'));
-  };
-
-  const showSnackbar = (message) => {
-    setSnackbarMessage(message);
-    setSnackbarVisible(true);
+      .catch(() => showError('Failed to open link.', 'Error'));
   };
 
   // Render video cards in pairs (2 per row)
@@ -313,14 +307,6 @@ export default function GetHelpScreen() {
           </View>
         </View>
       </ScrollView>
-
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={2000}
-      >
-        {snackbarMessage}
-      </Snackbar>
     </View>
   );
 }
