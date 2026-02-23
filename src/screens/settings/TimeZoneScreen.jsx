@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   RefreshControl,
   Animated,
+  InteractionManager,
 } from 'react-native';
 import { Text, Snackbar } from 'react-native-paper';
 import { useDispatch } from 'react-redux';
@@ -169,13 +170,19 @@ export default function TimeZoneScreen() {
   // Network state
   const { isOffline, isNetworkAvailable } = useNetwork();
 
-  // Update current time every second
+  // Update current time every second — deferred to avoid lag during navigation animation
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
+    let timer;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      timer = setInterval(() => {
+        setCurrentTime(new Date());
+      }, 1000);
+    });
 
-    return () => clearInterval(timer);
+    return () => {
+      handle.cancel();
+      if (timer) clearInterval(timer);
+    };
   }, []);
 
   // Helper to apply timezone data to local state
@@ -184,7 +191,7 @@ export default function TimeZoneScreen() {
     setTimezone(data.timeZone || data?.timeZone || '');
   }, []);
 
-  // Initial load — read cache locally for instant display, then fetch fresh from API
+  // Initial load — read cache locally for instant display, then fetch fresh from API (deferred)
   useEffect(() => {
     isLoadingRef.current = true;
 
@@ -196,18 +203,22 @@ export default function TimeZoneScreen() {
       }
     }).catch(() => {});
 
-    // Always fetch fresh from API to pick up changes made on web
-    dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
-      .then((result) => {
-        const data = result?.data || result || {};
-        applyTimezoneData(data);
-        initialLoadDone.current = true;
-      })
-      .catch(() => {})
-      .finally(() => {
-        isLoadingRef.current = false;
-        setIsInitialLoading(false);
-      });
+    // Defer API call until after navigation animation completes
+    const handle = InteractionManager.runAfterInteractions(() => {
+      dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
+        .then((result) => {
+          const data = result?.data || result || {};
+          applyTimezoneData(data);
+          initialLoadDone.current = true;
+        })
+        .catch(() => {})
+        .finally(() => {
+          isLoadingRef.current = false;
+          setIsInitialLoading(false);
+        });
+    });
+
+    return () => handle.cancel();
   }, []);
 
   // Network recovery — re-fetch when connectivity restored and data never loaded
@@ -229,7 +240,7 @@ export default function TimeZoneScreen() {
     }
   }, [isNetworkAvailable]);
 
-  // Re-fetch when screen regains focus (picks up web dashboard changes)
+  // Re-fetch when screen regains focus (picks up web dashboard changes) — deferred
   useFocusEffect(
     useCallback(() => {
       // Skip on initial mount — the useEffect above already handles the first load
@@ -239,12 +250,16 @@ export default function TimeZoneScreen() {
       }
       if (!initialLoadDone.current || isOffline) return;
 
-      dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
-        .then((result) => {
-          const data = result?.data || result || {};
-          applyTimezoneData(data);
-        })
-        .catch(() => {});
+      const handle = InteractionManager.runAfterInteractions(() => {
+        dispatch(fetchTimezoneWithCache({ forceRefresh: true })).unwrap()
+          .then((result) => {
+            const data = result?.data || result || {};
+            applyTimezoneData(data);
+          })
+          .catch(() => {});
+      });
+
+      return () => handle.cancel();
     }, [isOffline])
   );
 
@@ -273,14 +288,11 @@ export default function TimeZoneScreen() {
     setSnackbarVisible(true);
   };
 
-  // Get timezone info
-  const getTimezoneInfo = () => {
+  // Memoized timezone info — only recalculates when timezone changes
+  const timezoneInfo = useMemo(() => {
     const info = TIMEZONE_REGIONS[timezone];
-    if (info) {
-      return info;
-    }
+    if (info) return info;
 
-    // Parse unknown timezone format (e.g., "America/New_York")
     const parts = timezone.split('/');
     if (parts.length >= 2) {
       return {
@@ -297,48 +309,45 @@ export default function TimeZoneScreen() {
       country: '',
       flag: '',
     };
-  };
+  }, [timezone]);
 
-  // Format time in the configured timezone
-  const formatTimeInTimezone = () => {
+  // Memoized time formatting — recalculates only when currentTime or timezone changes
+  const { time, date } = useMemo(() => {
     if (!timezone) {
       return { time: '--:--:--', date: 'Not configured' };
     }
 
     try {
-      const timeOptions = {
+      const time = currentTime.toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
         hour12: true,
         timeZone: timezone,
-      };
+      });
 
-      const dateOptions = {
+      const date = currentTime.toLocaleDateString('en-US', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
         day: 'numeric',
         timeZone: timezone,
-      };
-
-      const time = currentTime.toLocaleTimeString('en-US', timeOptions);
-      const date = currentTime.toLocaleDateString('en-US', dateOptions);
+      });
 
       return { time, date };
     } catch (error) {
       return { time: '--:--:--', date: 'Invalid timezone' };
     }
-  };
+  }, [currentTime, timezone]);
 
-  // Get UTC offset
-  const getUTCOffset = () => {
+  // Memoized UTC offset — only recalculates when timezone changes (offset doesn't change every second)
+  const utcOffset = useMemo(() => {
     if (!timezone) return '';
 
     try {
-      const date = new Date();
-      const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
-      const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+      const now = new Date();
+      const utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+      const tzDate = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
       const offset = (tzDate - utcDate) / (1000 * 60 * 60);
 
       const hours = Math.floor(Math.abs(offset));
@@ -349,11 +358,7 @@ export default function TimeZoneScreen() {
     } catch {
       return '';
     }
-  };
-
-  const timezoneInfo = getTimezoneInfo();
-  const { time, date } = formatTimeInTimezone();
-  const utcOffset = getUTCOffset();
+  }, [timezone]);
 
   // Offline with no data — only show if data was NEVER loaded
   if (isOffline && !initialLoadDone.current && !timezone) {
