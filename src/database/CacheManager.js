@@ -698,6 +698,62 @@ class CacheManager {
   }
 
   // ==========================================
+  // ACTIVITY LOGS CACHE OPERATIONS
+  // ==========================================
+
+  /**
+   * Get cached activity logs for a filter key (e.g., 'all', 'POST', 'PUT', 'DELETE')
+   * @param {string} [filterKey='all'] - Filter key
+   * @returns {Promise<{items: Array, totalCount: number}|null>}
+   */
+  async getActivityLogs(filterKey = 'all') {
+    await this.ensureInitialized();
+    return AppSettingsModel.get(`activity_logs_${filterKey}`);
+  }
+
+  /**
+   * Save activity logs to cache for a filter key
+   * @param {string} [filterKey='all'] - Filter key
+   * @param {Object} data - { items: Array, totalCount: number }
+   * @returns {Promise<void>}
+   */
+  async saveActivityLogs(filterKey = 'all', data) {
+    await this.ensureInitialized();
+    await AppSettingsModel.save(`activity_logs_${filterKey}`, data);
+  }
+
+  /**
+   * Get cached activity log filter counts
+   * @returns {Promise<{all: number, POST: number, PUT: number, DELETE: number}|null>}
+   */
+  async getActivityLogCounts() {
+    await this.ensureInitialized();
+    return AppSettingsModel.get('activity_logs_counts');
+  }
+
+  /**
+   * Save activity log filter counts to cache
+   * @param {Object} counts - { all, POST, PUT, DELETE }
+   * @returns {Promise<void>}
+   */
+  async saveActivityLogCounts(counts) {
+    await this.ensureInitialized();
+    await AppSettingsModel.save('activity_logs_counts', counts);
+  }
+
+  /**
+   * Clear all cached activity logs (all filters + counts)
+   * @returns {Promise<void>}
+   */
+  async clearActivityLogs() {
+    await this.ensureInitialized();
+    for (const key of ['all', 'POST', 'PUT', 'DELETE']) {
+      await AppSettingsModel.remove(`activity_logs_${key}`);
+    }
+    await AppSettingsModel.remove('activity_logs_counts');
+  }
+
+  // ==========================================
   // DASHBOARD STATS CACHE OPERATIONS
   // ==========================================
 

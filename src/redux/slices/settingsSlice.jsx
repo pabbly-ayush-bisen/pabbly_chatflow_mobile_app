@@ -313,6 +313,17 @@ const settingsSlice = createSlice({
     silentUpdateTimezone: (state, action) => {
       state.settings.timeZone = action.payload?.timeZone ?? action.payload ?? '';
     },
+    silentUpdateActivityLogs: (state, action) => {
+      const { action: filterAction, items, totalCount } = action.payload;
+      if (filterAction === 'all' || !filterAction) {
+        state.settings.activityLogs.items = items || [];
+        state.settings.activityLogs.totalCount = totalCount || 0;
+      }
+    },
+    silentUpdateActivityLogCounts: (state, action) => {
+      // Counts are stored in activityLogs for convenience
+      state.settings.activityLogs.filterCounts = action.payload;
+    },
     resetSettingsData: (state) => {
       state.settings = initialState.settings;
       state.getSettingsStatus = 'idle';
@@ -599,5 +610,5 @@ const settingsSlice = createSlice({
   },
 });
 
-export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, silentUpdateChatStatusRules, silentUpdateChatTeamMembers, silentUpdateSla, silentUpdateTimezone, resetSettingsData } = settingsSlice.actions;
+export const { clearSettingsError, silentUpdateOptInManagement, silentUpdateInboxSettings, silentUpdateTags, silentUpdateUserAttributes, silentUpdateQuickReplies, silentUpdateChatStatusRules, silentUpdateChatTeamMembers, silentUpdateSla, silentUpdateTimezone, silentUpdateActivityLogs, silentUpdateActivityLogCounts, resetSettingsData } = settingsSlice.actions;
 export default settingsSlice.reducer;
